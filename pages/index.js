@@ -317,6 +317,7 @@ export default function Home() {
                     <div style={{fontSize:'0.875rem',color:theme.textSecondary}}>Page {song.song_page}{song.old_page ? ` (${song.old_page})` : ''}</div>
                     <div style={{fontSize:'1.5rem',color:'#86efac'}}>- {song.requester}</div>
                   </div>
+                  </div>
                 ))}
                 {queue.length>8&&(
                   <div style={{fontSize:'1.5rem',color:'#86efac',textAlign:'center'}}>+ {queue.length-8} more songs</div>
