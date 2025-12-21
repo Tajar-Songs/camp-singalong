@@ -240,7 +240,7 @@ export default function Home() {
 
   if (!roomCode) {
     return (
-      <div style={{minHeight:'100vh',background:theme.bgGradient,display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}}>
+      <div style={{minHeight:'100vh',background:theme.bgGradient,display:'flex',alignItems:'center',justifyContent:'center',padding:'0'}}>
         <div style={{background:theme.bg,borderRadius:'1rem',boxShadow:'0 25px 50px -12px rgba(0,0,0,0.25)',padding:'2rem',maxWidth:'28rem',width:'100%'}}>
           <div style={{textAlign:'center',marginBottom:'2rem'}}>
             <div style={{fontSize:'4rem',marginBottom:'1rem'}}>🎵</div>
@@ -282,7 +282,7 @@ export default function Home() {
 
   if (view==='display') {
     return (
-      <div style={{minHeight:'100vh',background:theme.bgGradient,color:'white',padding:'2rem'}}>
+      <div style={{minHeight:'100vh',background:theme.bgGradient,color:'white',padding:'0'}}>
         <button onClick={()=>setView('control')}
           style={{position:'fixed',top:'1rem',right:'1rem',background:'rgba(255,255,255,0.2)',padding:'0.5rem 1rem',borderRadius:'0.5rem',border:'none',color:'white',cursor:'pointer',display:'flex',alignItems:'center',gap:'0.5rem'}}>
           📱 Switch to Control View
