@@ -101,11 +101,9 @@ export default function Home() {
       });
       const roomData = await roomResponse.json();
       if (roomData && roomData.length > 0) {
-        setCurrentSong(roomData[0].current_song);
-        setSungSongs(roomData[0].sung_songs || []);
+const roomResponse = await fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${roomCode}&select=*`, {        setSungSongs(roomData[0].sung_songs || []);
       }
-      const queueResponse = await fetch(`${SUPABASE_URL}/rest/v1/queue?room_id=eq.${roomCode}&select=*,songs!inner(old_page)&order=position.asc`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+const queueResponse = await fetch(`${SUPABASE_URL}/rest/v1/queue?room_id=eq.${roomCode}&select=*,songs!inner(old_page)&order=position.asc`, {        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
       });
       setQueue((await queueResponse.json()) || []);
     } catch (error) { console.error('Error loading room data:', error); }
