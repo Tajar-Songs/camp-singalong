@@ -1,25 +1,31 @@
-html, body, #__next {
+* {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+html {
   background-color: #0f172a;
-  min-height: 100vh;
-  height: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
+  background-color: #0f172a;
+  min-height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   overflow-x: hidden;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+#__next {
+  background-color: #0f172a;
+  min-height: 100vh;
 }
 
 /* Dark scrollbar for webkit browsers */
 ::-webkit-scrollbar {
   width: 14px;
+  background-color: #0f172a;
 }
 
 ::-webkit-scrollbar-track {
