@@ -12,13 +12,28 @@ const SECTION_INFO = {
   T: "Rounds that need Translation", U: "Rounds & Canons", V: "Contemporary Folk Songs",
   W: "Kids' Movies & Musicals"
 };
+const ROOM_CODE_WORDS = [
+  'SUNSHINE', 'MOONLIGHT', 'STARLIGHT', 'RAINBOW', 'BARGES', 'CAMPFIRE',
+  'MOUNTAIN', 'MEADOW', 'RIVER', 'FOREST', 'WILDFLOWER', 'BLACKBERRY',
+  'SPARROW', 'TURTLE', 'CRICKET', 'HARMONY', 'MELODY', 'LULLABY',
+  'CANOE', 'LANTERN', 'DEWDROP', 'SUNRISE', 'SUNSET', 'MAGIC',
+  'DREAM', 'WIND', 'PEACE', 'FRIENDS', 'LINGER', 'WANDER',
+  'ROVER', 'HAPPY', 'BUGS', 'LAKE', 'WANEEYA', 'ELAHAN',
+  'TAHOMA', 'MOWICH', 'KLICKITAT', 'LOOWIT', 'TYHEE', 'ILLAHEE',
+  'WYEAST', 'CELILO', 'ROMANY', 'CHEESIAH', 'DOGMTN', 'WINDMTN',
+  'TAJAR', 'PHIF', 'TILLIE', 'CEDAR', 'MAPLE', 'HEMLOCK',
+  'ALDER', 'CASCADE', 'GORGE', 'RAPIDS', 'SALMON', 'TRILLIUM',
+  'FERN', 'MOSS', 'HUCKLEBERRY', 'CHINOOK', 'RAVEN', 'EAGLE',
+  'VOLCANO', 'LANDSLIDE', 'BANDANA', 'TRAILHEAD', 'SUMMIT', 'RIDGE',
+  'CREEK', 'PINE', 'SPRUCE', 'EVERGREEN', 'PIXIE'
+];
 
 const generateRoomCode = () => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-  return code;
+  const word = ROOM_CODE_WORDS[Math.floor(Math.random() * ROOM_CODE_WORDS.length)];
+  const number = Math.floor(Math.random() * 90) + 10; // 10-99
+  return word + number;
 };
+
 
 export default function Home() {
   const [roomCode, setRoomCode] = useState('');
@@ -268,7 +283,7 @@ export default function Home() {
                   onChange={(e)=>setRoomCodeInput(e.target.value.toUpperCase())}
                   onKeyPress={(e)=>e.key==='Enter'&&joinRoom()}
                   style={{flex:1,padding:'0.75rem 1rem',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',textTransform:'uppercase',background:theme.bg,color:theme.text}}
-                  maxLength={6}/>
+                  maxLength={15}/>
                 <button onClick={joinRoom} disabled={loading||!roomCodeInput}
                   style={{background:'#2563eb',color:'white',padding:'0.75rem 1.5rem',borderRadius:'0.5rem',fontWeight:'600',border:'none',cursor:'pointer',opacity:(loading||!roomCodeInput)?0.5:1}}>
                   Join
