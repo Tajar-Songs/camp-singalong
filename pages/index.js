@@ -369,7 +369,18 @@ export default function Home() {
             Filter Sections ({selectedSections.length} selected)
           </button>
           {showSectionFilter&&(
-            <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.5rem',marginBottom:'1rem',maxHeight:'15rem',overflowY:'auto',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',padding:'0.75rem',background:theme.bgSecondary}}>
+            <div style={{marginBottom:'1rem',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',padding:'0.75rem',background:theme.bgSecondary}}>
+              <div style={{display:'flex',gap:'0.5rem',marginBottom:'0.75rem'}}>
+                <button onClick={()=>setSelectedSections(Object.keys(SECTION_INFO))}
+                  style={{flex:1,padding:'0.5rem',background:theme.primary,color:'white',border:'none',borderRadius:'0.25rem',cursor:'pointer',fontSize:'0.875rem'}}>
+                  Select All
+                </button>
+                <button onClick={()=>setSelectedSections([])}
+                  style={{flex:1,padding:'0.5rem',background:theme.border,color:theme.text,border:'none',borderRadius:'0.25rem',cursor:'pointer',fontSize:'0.875rem'}}>
+                  Clear All
+                </button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.5rem',maxHeight:'15rem',overflowY:'auto'}}>
               {Object.entries(SECTION_INFO).map(([letter,name])=>(
                 <label key={letter} style={{display:'flex',alignItems:'center',gap:'0.5rem',fontSize:'0.875rem',color:theme.text}}>
                   <input type="checkbox" checked={selectedSections.includes(letter)}
@@ -377,6 +388,7 @@ export default function Home() {
                   <span>{letter}: {name}</span>
                 </label>
               ))}
+            </div>
             </div>
           )}
           <button onClick={generateRandomSong} disabled={allSongs.length===0}
