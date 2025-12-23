@@ -42,9 +42,10 @@ export default function Admin() {
     setMessage(msg);
     setTimeout(() => setMessage(''), 3000);
   };
+
 const logChange = async (action, song, fieldChanged = null, oldValue = null, newValue = null, fullBefore = null, fullAfter = null) => {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/change_log`, {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/change_log`, {
         method: 'POST',
         headers: {
           'apikey': SUPABASE_KEY,
@@ -64,10 +65,14 @@ const logChange = async (action, song, fieldChanged = null, oldValue = null, new
           changed_by: 'admin'
         })
       });
+      if (!response.ok) {
+        console.error('Failed to log change:', response.status, await response.text());
+      }
     } catch (error) {
       console.error('Error logging change:', error);
     }
   };
+
   const startEdit = (song) => {
     setEditingSong(song);
     setFormTitle(song.title);
