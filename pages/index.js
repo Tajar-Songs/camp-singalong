@@ -282,7 +282,7 @@ export default function Home() {
                 <input type="text" placeholder="Enter room code" value={roomCodeInput}
                   onChange={(e)=>setRoomCodeInput(e.target.value.toUpperCase())}
                   onKeyPress={(e)=>e.key==='Enter'&&joinRoom()}
-                  style={{flex:1,padding:'0.75rem 1rem',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',textTransform:'uppercase',background:theme.bg,color:theme.text}}
+                  style={{flex:1,padding:'0.75rem 1rem',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',textTransform:'uppercase',background:theme.bg,color:theme.text,fontSize:'16px'}}
                   maxLength={15}/>
                 <button onClick={joinRoom} disabled={loading||!roomCodeInput}
                   style={{background:'#2563eb',color:'white',padding:'0.75rem 1.5rem',borderRadius:'0.5rem',fontWeight:'600',border:'none',cursor:'pointer',opacity:(loading||!roomCodeInput)?0.5:1}}>
