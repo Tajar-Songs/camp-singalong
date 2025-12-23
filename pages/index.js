@@ -392,7 +392,7 @@ export default function Home() {
             style={{width:'100%',background:theme.bgSecondary,padding:'0.5rem 1rem',borderRadius:'0.5rem',marginBottom:'1rem',border:`1px solid ${theme.border}`,cursor:'pointer',color:theme.text}}>
             Filter Sections ({selectedSections.length} selected)
           </button>
-          {showSectionFilter&&(
+     {showSectionFilter&&(
             <div style={{marginBottom:'1rem',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',padding:'0.75rem',background:theme.bgSecondary}}>
               <div style={{display:'flex',gap:'0.5rem',marginBottom:'0.75rem'}}>
                 <button onClick={()=>setSelectedSections(Object.keys(SECTION_INFO))}
@@ -404,15 +404,15 @@ export default function Home() {
                   Clear All
                 </button>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.5rem',maxHeight:'15rem',overflowY:'auto'}}>
-              {Object.entries(SECTION_INFO).map(([letter,name])=>(
-                <label key={letter} style={{display:'flex',alignItems:'center',gap:'0.5rem',fontSize:'0.875rem',color:theme.text}}>
-                  <input type="checkbox" checked={selectedSections.includes(letter)}
-                    onChange={()=>toggleSection(letter)} style={{width:'1rem',height:'1rem'}}/>
-                  <span>{letter}: {name}</span>
-                </label>
-              ))}
-            </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))',gap:'0.5rem',maxHeight:'15rem',overflowY:'auto'}}>
+                {Object.entries(SECTION_INFO).map(([letter,name])=>(
+                  <label key={letter} style={{display:'flex',alignItems:'center',gap:'0.5rem',fontSize:'0.875rem',color:theme.text}}>
+                    <input type="checkbox" checked={selectedSections.includes(letter)}
+                      onChange={()=>toggleSection(letter)} style={{width:'1rem',height:'1rem',flexShrink:0}}/>
+                    <span>{letter}: {name}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
           <button onClick={generateRandomSong} disabled={allSongs.length===0}
