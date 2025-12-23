@@ -292,9 +292,16 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </div>
+           <div style={{marginTop:'1.5rem',textAlign:'center'}}>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF5jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header"
+            target="_blank" rel="noopener noreferrer"
+            style={{color:theme.textSecondary,fontSize:'0.875rem',textDecoration:'none'}}>
+            📝 Share Feedback
+          </a>
+        </div>
+</div>
     );
-  }
+  }  
 
   if (view==='display') {
     return (
