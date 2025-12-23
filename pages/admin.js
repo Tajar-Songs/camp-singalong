@@ -42,7 +42,32 @@ export default function Admin() {
     setMessage(msg);
     setTimeout(() => setMessage(''), 3000);
   };
-
+const logChange = async (action, song, fieldChanged = null, oldValue = null, newValue = null, fullBefore = null, fullAfter = null) => {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/change_log`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          action: action,
+          song_id: song?.id || null,
+          song_title: song?.title || fieldChanged,
+          field_changed: fieldChanged,
+          old_value: oldValue,
+          new_value: newValue,
+          full_song_before: fullBefore,
+          full_song_after: fullAfter,
+          changed_by: 'admin'
+        })
+      });
+    } catch (error) {
+      console.error('Error logging change:', error);
+    }
+  };
   const startEdit = (song) => {
     setEditingSong(song);
     setFormTitle(song.title);
@@ -66,11 +91,84 @@ export default function Admin() {
     setIsAddingNew(false);
   };
 
-  const saveSong = async () => {
+const saveSong = async () => {
     if (!formTitle.trim()) {
       showMessage('Title is required');
       return;
     }
+    setSaving(true);
+    try {
+      const newSongData = {
+        title: formTitle.trim(),
+        page: formPage.trim() || null,
+        old_page: formOldPage.trim() || null,
+        section: formSection
+      };
+
+      if (isAddingNew) {
+        // Create new song
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json', 'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(newSongData)
+        });
+        if (response.ok) {
+          const createdSong = await response.json();
+          await logChange('add', createdSong[0], null, null, null, null, createdSong[0]);
+          showMessage('Song added!');
+          setIsAddingNew(false);
+          await loadSongs();
+        } else {
+          showMessage('Error adding song');
+        }
+      } else {
+        // Log each field that changed
+        const oldSong = editingSong;
+        const changes = [];
+        if (oldSong.title !== newSongData.title) {
+          changes.push({ field: 'title', old: oldSong.title, new: newSongData.title });
+        }
+        if (oldSong.page !== newSongData.page) {
+          changes.push({ field: 'page', old: oldSong.page, new: newSongData.page });
+        }
+        if (oldSong.old_page !== newSongData.old_page) {
+          changes.push({ field: 'old_page', old: oldSong.old_page, new: newSongData.old_page });
+        }
+        if (oldSong.section !== newSongData.section) {
+          changes.push({ field: 'section', old: oldSong.section, new: newSongData.section });
+        }
+
+        // Update the song
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${editingSong.id}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify(newSongData)
+        });
+        if (response.ok) {
+          const fullAfter = { ...oldSong, ...newSongData };
+          // Log each change
+          for (const change of changes) {
+            await logChange('edit', oldSong, change.field, change.old, change.new, oldSong, fullAfter);
+          }
+          showMessage('Song updated!');
+          setEditingSong(null);
+          await loadSongs();
+        } else {
+          showMessage('Error updating song');
+        }
+      }
+    } catch (error) {
+      console.error('Error saving song:', error);
+      showMessage('Error saving song');
+    }
+    setSaving(false);
+  };
     setSaving(true);
     try {
       if (isAddingNew) {
@@ -128,6 +226,26 @@ export default function Admin() {
   const deleteSong = async () => {
     if (!editingSong) return;
     if (!confirm(`Are you sure you want to delete "${editingSong.title}"?`)) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${editingSong.id}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      });
+      if (response.ok) {
+        await logChange('delete', editingSong, null, null, null, editingSong, null);
+        showMessage('Song deleted');
+        setEditingSong(null);
+        await loadSongs();
+      } else {
+        showMessage('Error deleting song');
+      }
+    } catch (error) {
+      console.error('Error deleting song:', error);
+      showMessage('Error deleting song');
+    }
+    setSaving(false);
+  };
     setSaving(true);
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${editingSong.id}`, {
