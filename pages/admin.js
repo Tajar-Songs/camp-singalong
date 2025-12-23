@@ -255,8 +255,8 @@ export default function Admin() {
             style={{width:'100%',padding:'0.75rem 1rem',borderRadius:'0.5rem',border:`1px solid ${theme.border}`,background:theme.bgSecondary,color:theme.text,fontSize:'1rem'}}/>
         </div>
 
-        {/* Song List */}
-        <div style={{background:theme.bgSecondary,borderRadius:'0.75rem',border:`1px solid ${theme.border}`,overflow:'hidden'}}>
+      {/* Song List */}
+        <div style={{background:theme.bgSecondary,borderRadius:'0.75rem',border:`1px solid ${theme.border}`,overflow:'hidden',marginBottom:'3rem'}}>
           <div style={{maxHeight:'60vh',overflowY:'auto'}}>
             {filteredSongs.map(song => (
               <div key={song.id} onClick={() => startEdit(song)}
