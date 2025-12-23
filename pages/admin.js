@@ -281,7 +281,7 @@ export default function Admin() {
           Showing {filteredSongs.length} of {allSongs.length} songs
         </div>
 
-        <div style={{position:'fixed',bottom:'1rem',left:'0',right:'0',textAlign:'center'}}>
+    <div style={{position:'fixed',bottom:'1rem',left:'0',right:'0',textAlign:'center',background:'#111827',paddingTop:'0.5rem'}}>
           <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF5jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header"
             target="_blank" rel="noopener noreferrer"
             style={{color:'#9ca3af',fontSize:'0.875rem',textDecoration:'none'}}>
