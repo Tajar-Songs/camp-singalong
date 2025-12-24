@@ -453,7 +453,15 @@ const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
             <div style={{background:theme.primaryLight,borderRadius:'0.5rem',padding:'1rem',border:`2px solid ${theme.borderLight}`,marginTop:'1rem'}}>
               <div style={{fontSize:'0.875rem',color:theme.textAccent,fontWeight:'600',marginBottom:'0.25rem'}}>NOW SINGING</div>
               <div style={{fontSize:'1.5rem',fontWeight:'bold',color:theme.text}}>{currentSong.title}</div>
-               <div style={{fontSize:'1.125rem',color:theme.textAccent}}>Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}</div>
+              <div style={{fontSize:'1.125rem',color:theme.textAccent}}>Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}</div>
+              {currentSong.has_lyrics && (
+                <div style={{marginTop:'0.75rem'}}>
+                  <button onClick={()=>setShowLyricsOnTV(!showLyricsOnTV)}
+                    style={{background:showLyricsOnTV ? theme.primary : theme.bgSecondary,color:showLyricsOnTV ? 'white' : theme.text,padding:'0.5rem 1rem',borderRadius:'0.5rem',border:`1px solid ${theme.border}`,cursor:'pointer',fontSize:'0.875rem'}}>
+                    {showLyricsOnTV ? '📄 Lyrics on TV: ON' : '📄 Lyrics on TV: OFF'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
