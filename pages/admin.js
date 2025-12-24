@@ -288,7 +288,7 @@ export default function Admin() {
             {filteredSongs.map(song => (
               <div key={song.id} onClick={() => startEdit(song)} style={{padding:'0.75rem 1rem',borderBottom:`1px solid ${theme.border}`,cursor:'pointer',display:'flex',justifyContent:'space-between',background: editingSong?.id === song.id ? theme.bg : 'transparent'}}>
                 <div>
-                  <div style={{fontWeight:'500'}}>{song.title}</div>
+                 <div style={{fontWeight:'500'}}>{song.title}{song.has_lyrics && ' 📄'}</div>
                   <div style={{fontSize:'0.875rem',color:theme.textSecondary}}>Section {song.section} • Page {song.page}</div>
                 </div>
                 <div style={{color:theme.textSecondary,fontSize:'0.875rem'}}>Edit</div>

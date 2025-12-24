@@ -524,7 +524,7 @@ if (showLyrics && currentSong) {
               <div key={song.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:theme.bgSecondary,padding:'0.75rem',borderRadius:'0.5rem',marginBottom:'0.5rem'}}>
                 <div>
                   <div style={{fontWeight:'600',color:theme.text}}>
-                    {song.title} {song.has_lyrics ? '📄' : ''}
+                    {song.title}{song.has_lyrics && ' 📄'}
                   </div>
                   <div style={{fontSize:'0.875rem',color:theme.textSecondary}}>Page {song.page}{song.old_page ? ` (${song.old_page})` : ''}</div>
                 </div>
