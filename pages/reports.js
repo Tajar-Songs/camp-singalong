@@ -21,7 +21,14 @@ export default function Reports() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSections, setSelectedSections] = useState(Object.keys(SECTION_INFO));
   const [showSectionFilter, setShowSectionFilter] = useState(false);
+  
+  // New Filter States
   const [viewerName, setViewerName] = useState('');
+  const [userFilter, setUserFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [rowLimit, setRowLimit] = useState(100);
+  
   const [lastViewDate, setLastViewDate] = useState(null);
   const [showSinceLastView, setShowSinceLastView] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -37,9 +44,19 @@ export default function Reports() {
     danger: '#dc2626'
   };
 
+  const inputStyle = {
+    padding: '0.5rem',
+    borderRadius: '0.25rem',
+    border: `1px solid ${theme.border}`,
+    background: theme.bg,
+    color: theme.text,
+    fontSize: '0.875rem'
+  };
+
+  // Re-run loadData whenever filters change
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeTab, startDate, endDate, userFilter, rowLimit, showSinceLastView, lastViewDate]);
 
   useEffect(() => {
     if (viewerName) {
@@ -55,17 +72,30 @@ export default function Reports() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // Build Dynamic Change Log URL
+      let logParams = `select=*&order=created_at.desc&limit=${rowLimit}`;
+      
+      if (showSinceLastView && lastViewDate) {
+        logParams += `&created_at=gt.${lastViewDate.toISOString()}`;
+      } else {
+        if (startDate) logParams += `&created_at=gte.${startDate}`;
+        if (endDate) logParams += `&created_at=lte.${endDate}T23:59:59`;
+      }
+      
+      if (userFilter) logParams += `&changed_by=ilike.*${userFilter}*`;
+
       const [songsRes, logRes, viewsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc`, {
+        fetch(`${SUPABASE_URL}/rest/v1/change_log?${logParams}`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
         fetch(`${SUPABASE_URL}/rest/v1/report_views?select=*&order=created_at.desc`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         })
       ]);
+      
       setAllSongs(await songsRes.json());
       setChangeLog(await logRes.json());
       setReportViews(await viewsRes.json());
@@ -105,12 +135,11 @@ export default function Reports() {
     selectedSections.includes(song.section)
   );
 
-  const filteredLog = changeLog.filter(entry => {
-    if (showSinceLastView && lastViewDate) {
-      return new Date(entry.created_at) > lastViewDate;
-    }
-    return true;
-  });
+  // Note: filteredLog is now handled mostly by the server, 
+  // but we keep the search filter for song titles here for "instant" feel.
+  const displayLog = changeLog.filter(entry => 
+    entry.song_title?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const exportSongsCSV = () => {
     const headers = ['Title', 'Section', 'Page', 'Old Page'];
@@ -126,7 +155,7 @@ export default function Reports() {
 
   const exportLogCSV = () => {
     const headers = ['Date', 'Action', 'Song Title', 'Field Changed', 'Old Value', 'New Value', 'Changed By'];
-    const rows = filteredLog.map(entry => [
+    const rows = displayLog.map(entry => [
       new Date(entry.created_at).toLocaleString(),
       entry.action,
       `"${(entry.song_title || '').replace(/"/g, '""')}"`,
@@ -161,117 +190,82 @@ export default function Reports() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>📊 Reports</h1>
-            <p style={{ color: theme.textSecondary }}>{allSongs.length} songs • {changeLog.length} changes logged</p>
+            <p style={{ color: theme.textSecondary }}>{allSongs.length} songs • {changeLog.length} changes showing</p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <a href="/admin"
-              style={{ background: theme.bgSecondary, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.5rem', border: `1px solid ${theme.border}`, textDecoration: 'none' }}>
-              ← Admin
-            </a>
-            <a href="/"
-              style={{ background: theme.bgSecondary, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.5rem', border: `1px solid ${theme.border}`, textDecoration: 'none' }}>
-              ← Back to App
-            </a>
+            <a href="/admin" style={{ background: theme.bgSecondary, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.5rem', border: `1px solid ${theme.border}`, textDecoration: 'none' }}>← Admin</a>
+            <a href="/" style={{ background: theme.bgSecondary, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.5rem', border: `1px solid ${theme.border}`, textDecoration: 'none' }}>← Back to App</a>
           </div>
         </div>
 
-        {/* Viewer Name Input */}
-        <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}` }}>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ color: theme.textSecondary, fontSize: '0.875rem' }}>Your name (optional):</label>
-            <input
-              type="text"
-              value={viewerName}
-              onChange={(e) => setViewerName(e.target.value)}
-              placeholder="e.g. Dodger"
-              style={{ padding: '0.5rem', borderRadius: '0.25rem', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '1rem' }}
-            />
-            {viewerName && (
-              <button onClick={recordView}
-                style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer' }}>
-                Mark as Viewed
-              </button>
-            )}
-            {lastViewDate && (
-              <span style={{ color: theme.textSecondary, fontSize: '0.875rem' }}>
-                Last viewed: {formatDate(lastViewDate)}
-              </span>
-            )}
+        {/* Global Search & Limit Filter Bar */}
+        <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1rem', border: `1px solid ${theme.border}`, display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: 2, minWidth: '200px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Search Songs</label>
+            <input type="text" placeholder="Title search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
           </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Rows to Load</label>
+            <select value={rowLimit} onChange={(e) => setRowLimit(e.target.value)} style={inputStyle}>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="500">500</option>
+              <option value="2000">All</option>
+            </select>
+          </div>
+          <button onClick={activeTab === 'songs' ? exportSongsCSV : exportLogCSV} style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer', height: '38px' }}>
+            Export CSV
+          </button>
         </div>
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-          <button onClick={() => setActiveTab('songs')}
-            style={{ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: '600',
-              background: activeTab === 'songs' ? theme.primary : theme.bgSecondary,
-              color: activeTab === 'songs' ? 'white' : theme.text }}>
-            Song Report
-          </button>
-          <button onClick={() => setActiveTab('changelog')}
-            style={{ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: '600',
-              background: activeTab === 'changelog' ? theme.primary : theme.bgSecondary,
-              color: activeTab === 'changelog' ? 'white' : theme.text }}>
-            Change Log {filteredLog.length > 0 && `(${filteredLog.length})`}
-          </button>
+          <button onClick={() => setActiveTab('songs')} style={{ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: '600', background: activeTab === 'songs' ? theme.primary : theme.bgSecondary, color: activeTab === 'songs' ? 'white' : theme.text }}>Song Report</button>
+          <button onClick={() => setActiveTab('changelog')} style={{ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: '600', background: activeTab === 'changelog' ? theme.primary : theme.bgSecondary, color: activeTab === 'changelog' ? 'white' : theme.text }}>Change Log</button>
         </div>
 
-        {/* Songs Tab */}
-        {activeTab === 'songs' && (
-          <div>
-            {/* Filters */}
-            <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1rem', border: `1px solid ${theme.border}` }}>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  placeholder="Search by title..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{ flex: 1, minWidth: '200px', padding: '0.5rem', borderRadius: '0.25rem', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: '1rem' }}
-                />
-                <button onClick={exportSongsCSV}
-                  style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer' }}>
-                  Export CSV
-                </button>
-              </div>
-              <button onClick={() => setShowSectionFilter(!showSectionFilter)}
-                style={{ background: theme.bg, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.25rem', border: `1px solid ${theme.border}`, cursor: 'pointer', width: '100%', textAlign: 'left' }}>
-                Filter Sections ({selectedSections.length} selected)
-              </button>
-              {showSectionFilter && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <button onClick={() => setSelectedSections(Object.keys(SECTION_INFO))}
-                      style={{ flex: 1, padding: '0.5rem', background: theme.primary, color: 'white', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                      Select All
-                    </button>
-                    <button onClick={() => setSelectedSections([])}
-                      style={{ flex: 1, padding: '0.5rem', background: theme.border, color: theme.text, border: 'none', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                      Clear All
-                    </button>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', maxHeight: '15rem', overflowY: 'auto' }}>
-                    {Object.entries(SECTION_INFO).map(([letter, name]) => (
-                      <label key={letter} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: theme.text }}>
-                        <input type="checkbox" checked={selectedSections.includes(letter)}
-                          onChange={() => toggleSection(letter)} style={{ width: '1rem', height: '1rem', flexShrink: 0 }} />
-                        <span>{letter}: {name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+        {/* Change Log Advanced Filters (Only visible on Change Log tab) */}
+        {activeTab === 'changelog' && (
+          <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}`, display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Start Date</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
             </div>
-
-            {/* Results count */}
-            <div style={{ marginBottom: '0.5rem', color: theme.textSecondary, fontSize: '0.875rem' }}>
-              Showing {filteredSongs.length} of {allSongs.length} songs
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>End Date</label>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inputStyle} />
             </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Changed By</label>
+              <input type="text" placeholder="Admin name..." value={userFilter} onChange={(e) => setUserFilter(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+               <button onClick={() => { setStartDate(''); setEndDate(''); setUserFilter(''); setShowSinceLastView(false); }} style={{ ...inputStyle, cursor: 'pointer' }}>Reset Filters</button>
+            </div>
+          </div>
+        )}
 
-            {/* Songs Table */}
+        {/* Viewer Tracking Section */}
+        <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}`, display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+           <input type="text" value={viewerName} onChange={(e) => setViewerName(e.target.value)} placeholder="Your name..." style={inputStyle} />
+           {viewerName && <button onClick={recordView} style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer' }}>Mark as Viewed</button>}
+           {lastViewDate && <span style={{ color: theme.textSecondary, fontSize: '0.875rem' }}>Last viewed: {formatDate(lastViewDate)}</span>}
+           {lastViewDate && activeTab === 'changelog' && (
+              <label style={{ color: theme.text, fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showSinceLastView} onChange={(e) => setShowSinceLastView(e.target.checked)} />
+                Only show changes since my last view
+              </label>
+           )}
+        </div>
+
+        {/* Tab Content Rendering */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: theme.textSecondary }}>Loading data...</div>
+        ) : (
+          activeTab === 'songs' ? (
+            /* Songs Table Code - Using filteredSongs */
             <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: theme.bg }}>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Title</th>
@@ -281,7 +275,7 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSongs.slice(0, 100).map(song => (
+                    {filteredSongs.slice(0, rowLimit).map(song => (
                       <tr key={song.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                         <td style={{ padding: '0.75rem' }}>{song.title}</td>
                         <td style={{ padding: '0.75rem' }}>{song.section}</td>
@@ -291,47 +285,11 @@ export default function Reports() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-              {filteredSongs.length > 100 && (
-                <div style={{ padding: '0.75rem', color: theme.textSecondary, textAlign: 'center' }}>
-                  Showing first 100 results. Export CSV for full list.
-                </div>
-              )}
             </div>
-          </div>
-        )}
-
-        {/* Change Log Tab */}
-        {activeTab === 'changelog' && (
-          <div>
-            {/* Filters */}
-            <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1rem', border: `1px solid ${theme.border}` }}>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {lastViewDate && (
-                  <button onClick={() => setShowSinceLastView(!showSinceLastView)}
-                    style={{ padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer',
-                      background: showSinceLastView ? theme.primary : theme.bg,
-                      color: showSinceLastView ? 'white' : theme.text }}>
-                    {showSinceLastView ? '✓ Since last view' : 'Since last view'}
-                  </button>
-                )}
-                <button onClick={exportLogCSV}
-                  style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer' }}>
-                  Export CSV
-                </button>
-              </div>
-            </div>
-
-            {/* Results count */}
-            <div style={{ marginBottom: '0.5rem', color: theme.textSecondary, fontSize: '0.875rem' }}>
-              Showing {filteredLog.length} changes
-              {showSinceLastView && lastViewDate && ` since ${formatDate(lastViewDate)}`}
-            </div>
-
-            {/* Change Log Table */}
+          ) : (
+            /* Change Log Table Code - Using displayLog */
             <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: theme.bg }}>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Date</th>
@@ -344,27 +302,14 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredLog.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: theme.textSecondary }}>
-                          No changes logged yet
-                        </td>
-                      </tr>
+                    {displayLog.length === 0 ? (
+                      <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: theme.textSecondary }}>No changes found matching these filters</td></tr>
                     ) : (
-                      filteredLog.slice(0, 100).map(entry => (
+                      displayLog.map(entry => (
                         <tr key={entry.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                           <td style={{ padding: '0.75rem', whiteSpace: 'nowrap' }}>{formatDate(entry.created_at)}</td>
                           <td style={{ padding: '0.75rem' }}>
-                            <span style={{
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '0.25rem',
-                              fontSize: '0.75rem',
-                              fontWeight: '600',
-                              background: entry.action === 'add' ? '#166534' : entry.action === 'edit' ? '#1e40af' : '#991b1b',
-                              color: 'white'
-                            }}>
-                              {entry.action.toUpperCase()}
-                            </span>
+                            <span style={{ padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', background: entry.action === 'add' ? '#166534' : entry.action === 'edit' ? '#1e40af' : '#991b1b', color: 'white' }}>{entry.action.toUpperCase()}</span>
                           </td>
                           <td style={{ padding: '0.75rem' }}>{entry.song_title}</td>
                           <td style={{ padding: '0.75rem' }}>{entry.field_changed || '-'}</td>
@@ -376,25 +321,13 @@ export default function Reports() {
                     )}
                   </tbody>
                 </table>
-              </div>
-              {filteredLog.length > 100 && (
-                <div style={{ padding: '0.75rem', color: theme.textSecondary, textAlign: 'center' }}>
-                  Showing first 100 results. Export CSV for full list.
-                </div>
-              )}
             </div>
-          </div>
+          )
         )}
 
-        {/* Footer */}
         <div style={{ position: 'fixed', bottom: '1rem', left: '0', right: '0', textAlign: 'center', background: theme.bg, paddingTop: '0.5rem' }}>
-          <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF5jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header"
-            target="_blank" rel="noopener noreferrer"
-            style={{ color: '#9ca3af', fontSize: '0.875rem', textDecoration: 'none' }}>
-            📝 Share Feedback
-          </a>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF5jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header" target="_blank" rel="noopener noreferrer" style={{ color: '#9ca3af', fontSize: '0.875rem', textDecoration: 'none' }}>📝 Share Feedback</a>
         </div>
-
       </div>
     </div>
   );
