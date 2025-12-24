@@ -377,7 +377,7 @@ const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
                 <div style={{fontSize:'clamp(1.25rem, 6vw, 3.75rem)',color:'#bbf7d0'}}>Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}</div>
                 
                 {/* Lyrics button for personal devices */}
-                {isPersonalDevice && currentSong.has_lyrics && (
+                {currentSong.has_lyrics && (
                   <button onClick={()=>setShowLyrics(true)}
                     style={{marginTop:'1rem',background:theme.primary,color:'white',padding:'0.75rem 1.5rem',borderRadius:'0.5rem',border:'none',cursor:'pointer',fontWeight:'600',fontSize:'1rem'}}>
                     📄 View Lyrics
