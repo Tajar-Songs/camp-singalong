@@ -53,16 +53,21 @@ export default function Reports() {
     fontSize: '0.875rem'
   };
 
-  // Re-run loadData whenever filters change
+  // 1. Only reload data when actual REPORT filters change
+  // We REMOVED lastViewDate and viewerName from the brackets below
   useEffect(() => {
     loadData();
-  }, [activeTab, startDate, endDate, userFilter, rowLimit, showSinceLastView, lastViewDate]);
+  }, [activeTab, startDate, endDate, userFilter, rowLimit, showSinceLastView]); 
 
+  // 2. Separate logic to find the last view date when viewerName changes
+  // This stays local and doesn't trigger a database reload
   useEffect(() => {
-    if (viewerName) {
+    if (viewerName.trim()) {
+      const nameLower = viewerName.toLowerCase();
       const lastView = reportViews
-        .filter(v => v.viewer_name.toLowerCase() === viewerName.toLowerCase())
+        .filter(v => v.viewer_name?.toLowerCase() === nameLower)
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      
       setLastViewDate(lastView ? new Date(lastView.created_at) : null);
     } else {
       setLastViewDate(null);
