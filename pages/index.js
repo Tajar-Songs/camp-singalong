@@ -322,8 +322,8 @@ const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
     // Check if we're on a small screen (personal device)
     const isPersonalDevice = typeof window !== 'undefined' && window.innerWidth < 1024;
     
-    // If showing lyrics on personal device
-    if (showLyrics && currentSong && isPersonalDevice) {
+  // If showing lyrics full-screen
+if (showLyrics && currentSong) {
       return (
         <div style={{minHeight:'100vh',background:theme.bgGradient,color:'white',display:'flex',flexDirection:'column'}}>
           {/* Sticky Header */}
