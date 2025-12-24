@@ -520,10 +520,12 @@ if (showLyrics && currentSong) {
             onChange={(e)=>setSearchTerm(e.target.value)}
             style={{width:'100%',padding:'0.5rem 1rem',border:`1px solid ${theme.border}`,borderRadius:'0.5rem',marginBottom:'1rem',background:theme.bg,color:theme.text,fontSize:'1rem'}}/>
           <div style={{maxHeight:'15rem',overflowY:'auto',marginBottom:'1rem'}}>
-            {filteredSongs.slice(0,50).map(song=>(
+           {filteredSongs.slice(0,50).map(song=>(
               <div key={song.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:theme.bgSecondary,padding:'0.75rem',borderRadius:'0.5rem',marginBottom:'0.5rem'}}>
                 <div>
-                  <div style={{fontWeight:'600',color:theme.text}}>{song.title}</div>
+                  <div style={{fontWeight:'600',color:theme.text}}>
+                    {song.title} {song.has_lyrics ? '📄' : ''}
+                  </div>
                   <div style={{fontSize:'0.875rem',color:theme.textSecondary}}>Page {song.page}{song.old_page ? ` (${song.old_page})` : ''}</div>
                 </div>
                 <button onClick={()=>addToQueue(song)}
