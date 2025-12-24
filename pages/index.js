@@ -152,13 +152,19 @@ const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
           'Content-Type': 'application/json', 'Prefer': 'return=minimal'
         },
         body: JSON.stringify({
-  room_id: roomCode, song_title: song.title, song_page: song.page,
-  song_section: song.section, requester: requester, position: maxPosition + 1,
-  old_page: song.old_page || null
-})
+          room_id: roomCode, 
+          song_title: song.title, 
+          song_page: song.page,
+          song_section: song.section, 
+          requester: requester, 
+          position: maxPosition + 1,
+          old_page: song.old_page || null,
+          has_lyrics: song.has_lyrics || false,
+          lyrics_text: song.lyrics_text || null
+        })
       });
-      await loadRoomData();
     } catch (error) { console.error('Error adding to queue:', error); }
+    await loadRoomData();
   };
 
   const generateRandomSong = () => {
@@ -169,8 +175,15 @@ const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
     addToQueue(availableSongs[Math.floor(Math.random() * availableSongs.length)], 'Random');
   };
 
-  const playSong = async (song) => {
-    const songObj = { title: song.song_title, page: song.song_page, section: song.song_section, old_page: song.old_page };
+ const playSong = async (song) => {
+    const songObj = { 
+      title: song.song_title, 
+      page: song.song_page, 
+      section: song.song_section, 
+      old_page: song.old_page,
+      has_lyrics: song.has_lyrics || false,
+      lyrics_text: song.lyrics_text || null
+    };
     await updateRoom({ current_song: songObj, sung_songs: [...sungSongs, songObj] });
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue?id=eq.${song.id}`, {
