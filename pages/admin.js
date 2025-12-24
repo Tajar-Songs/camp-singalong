@@ -14,6 +14,13 @@ const SECTION_INFO = {
 };
 
 export default function Admin() {
+  const [sessionName, setSessionName] = useState(() => {
+  // This looks in the browser's memory when the page first loads
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('camp_admin_name') || '';
+  }
+  return '';
+});
   const [allSongs, setAllSongs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingSong, setEditingSong] = useState(null);
@@ -56,8 +63,8 @@ const logChange = async (action, song, fieldChanged = null, oldValue = null, new
           old_value: oldValue ? String(oldValue) : null,
           new_value: newValue ? String(newValue) : null,
           full_song_before: fullBefore,
-          full_song_after: fullAfter,
-          changed_by: 'admin'
+        full_song_after: fullAfter,
+          changed_by: sessionName || 'unknown'
         };
       
       console.log("2. Payload built:", payload);
@@ -114,6 +121,12 @@ setFormHasLyrics(false);
     setIsAddingNew(false);
   };
 const saveSong = async () => {
+    // Check for session name first
+    if (!sessionName.trim()) {
+      showMessage('❌ Please enter your name at the top of the page before saving.');
+      return;
+    }
+
     if (!formTitle.trim()) {
       showMessage('Title is required');
       return;
@@ -195,7 +208,16 @@ const saveSong = async () => {
     setSaving(false);
   };
 
-  const deleteSong = async () => {
+
+    const deleteSong = async () => {
+    // Add this check:
+    if (!sessionName.trim()) {
+      showMessage('❌ Please enter your name at the top of the page before deleting.');
+      return;
+    }
+    
+    if (!editingSong) return;
+    // ... rest of your delete code
     if (!editingSong) return;
     if (!confirm(`Are you sure you want to delete "${editingSong.title}"?`)) return;
     setSaving(true);
@@ -241,9 +263,60 @@ const saveSong = async () => {
     <div style={{minHeight:'100vh',background:theme.bg,color:theme.text,padding:'2rem'}}>
       <div style={{maxWidth:'64rem',margin:'0 auto'}}>
         
-        {/* Header */}
+      {/* Header */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
-          <div>
+          {/* ... existing header content ... */}
+        </div>
+
+        {/* --- PASTE STICKY HEADER HERE --- */}
+        <div style={{ 
+          position: 'sticky', 
+          top: '1rem', 
+          zIndex: 100,
+          background: sessionName.trim() ? theme.bgSecondary : '#450a0a', 
+          padding: '1rem', 
+          borderRadius: '0.5rem', 
+          marginBottom: '1.5rem', 
+          border: `1px solid ${sessionName.trim() ? theme.border : '#dc2626'}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '1rem',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)'
+        }}>
+          <span style={{ fontWeight: 'bold' }}>👤 Your Name:</span>
+          <input 
+            type="text" 
+            placeholder="Enter name to enable saving..." 
+            value={sessionName} 
+            onChange={(e) => {
+              const newName = e.target.value;
+              setSessionName(newName);
+              localStorage.setItem('camp_admin_name', newName); // This is the "Remember Me" part!
+            }}
+            style={{ 
+              flex: 1, 
+              padding: '0.5rem', 
+              borderRadius: '0.25rem', 
+              border: `1px solid ${theme.border}`, 
+              background: theme.bg, 
+              color: theme.text 
+            }} 
+          />
+          {!sessionName.trim() && (
+            <span style={{ color: '#f87171', fontSize: '0.875rem', fontWeight: 'bold' }}>
+              ⚠️ Required to save
+            </span>
+          )}
+        </div>
+
+        {/* Message */}
+        {message && (
+          <div style={{background:theme.primary,color:'white',padding:'0.75rem 1rem',borderRadius:'0.5rem',marginBottom:'1rem'}}>
+            {message}
+          </div>
+        )}
+
+
             <h1 style={{fontSize:'1.875rem',fontWeight:'bold',marginBottom:'0.25rem'}}>🎵 Song Admin</h1>
             <p style={{color:theme.textSecondary}}>{allSongs.length} songs in database</p>
           </div>
