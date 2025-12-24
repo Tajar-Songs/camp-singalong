@@ -421,7 +421,7 @@ if (showLyrics && currentSong) {
                     <div>
                       <div style={{fontSize:'clamp(1rem, 3vw, 1.875rem)',fontWeight:'600'}}>
                         {idx+1}. {song.song_title}
-                        {song.has_lyrics && <span style={{marginLeft:'0.5rem',fontSize:'0.875rem'}}>📄</span>}
+                        {song.has_lyrics && <span style={{marginLeft:'0.5rem',fontSize:'0.75rem'}} title="Lyrics available">📄</span>}
                       </div>
                       <div style={{fontSize:'clamp(0.75rem, 2vw, 1.25rem)',color:'#bbf7d0'}}>Page {song.song_page}{song.old_page ? ` (${song.old_page})` : ''}</div>
                       <div style={{fontSize:'clamp(0.875rem, 2.5vw, 1.5rem)',color:'#86efac'}}>- {song.requester}</div>
