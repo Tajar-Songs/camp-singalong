@@ -437,9 +437,19 @@ export default function Home() {
           
           {showSectionFilter && (
             <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex gap-4 mb-4 text-[10px] font-black uppercase tracking-widest opacity-60">
-                <button onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} className="hover:text-blue-500">Select All</button>
-                <button onClick={() => setSelectedSections([])} className="hover:text-blue-500">Clear All</button>
+              <div className="flex gap-2 mb-4">
+                <button 
+                    onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
+                >
+                    Select All
+                </button>
+                <button 
+                    onClick={() => setSelectedSections([])} 
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
+                >
+                    Clear All
+                </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
                 {Object.keys(SECTION_INFO).map(sec => (
@@ -451,7 +461,7 @@ export default function Home() {
               </div>
             </div>
           )}
-          <button onClick={generateRandomSong} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-900/20 active:scale-95 transition-transform">Pick Random Song</button>
+          <button onClick={generateRandomSong} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all">Pick Random Song</button>
         </div>
 
         {/* Queue */}
