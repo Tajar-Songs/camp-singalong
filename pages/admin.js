@@ -197,20 +197,24 @@ export default function Admin() {
     setSaving(false);
   };
 
-  const filteredSongs = allSongs.filter(song =>
-    song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (song.page && song.page.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredSongs = allSongs.filter(song => {
+    const searchLower = searchTerm.toLowerCase().trim();
+    
+    // 1. Check Title
+    const matchesTitle = song.title.toLowerCase().includes(searchLower);
+    
+    // 2. Check Page Numbers (New and Old)
+    const matchesPage = (song.page && song.page.toLowerCase().includes(searchLower)) || 
+                        (song.old_page && song.old_page.toLowerCase().includes(searchLower));
+    
+    // 3. Check Section Letter or Section Name
+    const sectionLetter = song.section ? song.section.toLowerCase() : "";
+    const sectionFullText = SECTION_INFO[song.section] ? SECTION_INFO[song.section].toLowerCase() : "";
+    
+    const matchesSection = sectionLetter === searchLower || sectionFullText.includes(searchLower);
 
-  const theme = {
-    bg: '#111827',
-    bgSecondary: '#1f2937',
-    text: '#f9fafb',
-    textSecondary: '#9ca3af',
-    primary: '#22c55e',
-    border: '#374151',
-    danger: '#dc2626'
-  };
+    return matchesTitle || matchesPage || matchesSection;
+  });
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-50 selection:bg-green-500/30">
