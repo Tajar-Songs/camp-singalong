@@ -1,13 +1,6 @@
-@import "tailwindcss";
-
-@theme {
-  --color-camp-green: #22c55e;
-  --color-camp-green-hover: #16a34a;
-  --color-camp-green-light: #86efac;
-  --color-camp-green-dark: #14532d;
-  
-  --breakpoint-tv: 1920px;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 * {
   margin: 0;
