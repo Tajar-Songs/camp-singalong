@@ -275,7 +275,9 @@ export default function Home() {
         <div style={{background:theme.bg,borderRadius:'1rem',boxShadow:'0 25px 50px -12px rgba(0,0,0,0.25)',padding:'2rem',maxWidth:'28rem',width:'100%'}}>
           <div style={{textAlign:'center',marginBottom:'2rem'}}>
             <div style={{fontSize:'4rem',marginBottom:'1rem'}}>🎵</div>
-<h1 className="border-4 border-red-500" style={{fontSize:'1.875rem',fontWeight:'bold',color:theme.text,marginBottom:'0.5rem'}}>Camp Singalong</h1>
+
+<h1 className="test-red-border" style={{...}}>Camp Singalong</h1>
+
             <p style={{color:theme.textSecondary}}>Start or join a singalong session</p>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'1.5rem'}}>
