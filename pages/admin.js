@@ -306,25 +306,88 @@ export default function Admin() {
           </div>
         )}
 
-        {/* List Section */}
-        <input type="text" placeholder="Search songs..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{width:'100%',padding:'0.75rem 1rem',borderRadius:'0.5rem',border:`1px solid ${theme.border}`,background:theme.bgSecondary,color:theme.text,marginBottom:'1rem'}}/>
-        
-        <div style={{background:theme.bgSecondary,borderRadius:'0.75rem',border:`1px solid ${theme.border}`,overflow:'hidden',marginBottom:'3rem'}}>
-          <div style={{maxHeight:'60vh',overflowY:'auto'}}>
-            {filteredSongs.map(song => (
-              <div key={song.id} onClick={() => startEdit(song)} style={{padding:'0.75rem 1rem',borderBottom:`1px solid ${theme.border}`,cursor:'pointer',display:'flex',justifyContent:'space-between',background: editingSong?.id === song.id ? theme.bg : 'transparent'}}>
-                <div>
-                 <div style={{fontWeight:'500'}}>{song.title}{song.has_lyrics && ' 📄'}</div>
-                  <div style={{fontSize:'0.875rem',color:theme.textSecondary}}>Section {song.section} • Page {song.page}</div>
-                </div>
-                <div style={{color:theme.textSecondary,fontSize:'0.875rem'}}>Edit</div>
-              </div>
-            ))}
+        {/* Search & Stats Bar */}
+        <div className="mb-6 space-y-2">
+          <div className="relative group">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-green-500 transition-colors">
+              🔍
+            </span>
+            <input 
+              type="text" 
+              placeholder="Search by title, page, or section..."
+              value={searchTerm} 
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-800/50 border border-slate-700 rounded-xl pl-12 pr-4 py-4 text-white placeholder:text-slate-500 focus:bg-slate-800 focus:border-green-500 focus:ring-4 focus:ring-green-500/10 outline-none transition-all shadow-inner"
+            />
+          </div>
+          <div className="flex justify-between items-center px-2">
+            <p className="text-sm text-slate-400 font-medium">
+              Showing <span className="text-green-400 font-bold">{filteredSongs.length}</span> of {allSongs.length} songs
+            </p>
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="text-sm text-green-500 hover:text-green-400 font-bold transition-colors"
+              >
+                Clear Search
+              </button>
+            )}
           </div>
         </div>
 
-        <div style={{marginTop:'0.5rem',color:theme.textSecondary,fontSize:'0.875rem'}}>Showing {filteredSongs.length} of {allSongs.length} songs</div>
-
+        {/* Song List Container */}
+        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl overflow-hidden backdrop-blur-sm shadow-xl mb-12">
+          <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden">
+            {filteredSongs.length > 0 ? (
+              <div className="divide-y divide-slate-700/50">
+                {filteredSongs.map(song => (
+                  <button 
+                    key={song.id} 
+                    onClick={() => startEdit(song)}
+                    className={`w-full text-left p-4 sm:px-6 transition-all flex items-center justify-between group hover:bg-slate-700/40 outline-none focus:bg-slate-700/60 ${
+                      editingSong?.id === song.id ? 'bg-green-500/10 border-l-4 border-l-green-500' : 'border-l-4 border-l-transparent'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-slate-100 group-hover:text-white transition-colors truncate text-lg">
+                        {song.title}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-black bg-slate-700 text-slate-300">
+                          Sec {song.section}
+                        </span>
+                        <span className="text-sm text-slate-400 flex items-center gap-1">
+                          📄 Page {song.page || '—'}
+                          {song.old_page && (
+                            <span className="text-slate-500 text-xs">(Old: {song.old_page})</span>
+                          )}
+                        </span>
+                        {song.has_lyrics && (
+                          <span className="text-xs text-green-500 font-bold flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                            Lyrics
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="ml-4 shrink-0 opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity hidden sm:block">
+                      <span className="bg-slate-700 text-slate-300 px-3 py-1 rounded-md text-xs font-bold flex items-center gap-2 border border-slate-600">
+                        EDIT ✏️
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-16 text-center">
+                <div className="text-5xl mb-4 grayscale opacity-20">📂</div>
+                <h3 className="text-lg font-bold text-slate-300">No matches found</h3>
+                <p className="text-slate-500 text-sm mt-1">Try a different title or page number</p>
+              </div>
+            )}
+          </div>
+        </div>
+        
         <div style={{position:'fixed',bottom:'1rem',left:'0',right:'0',textAlign:'center',background:theme.bg,paddingTop:'0.5rem'}}>
           <a href="https://docs.google.com/forms/..." target="_blank" rel="noopener noreferrer" style={{color:'#9ca3af',fontSize:'0.875rem',textDecoration:'none'}}>📝 Share Feedback</a>
         </div>
