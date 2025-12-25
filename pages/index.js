@@ -276,7 +276,7 @@ const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
           <div style={{textAlign:'center',marginBottom:'2rem'}}>
             <div style={{fontSize:'4rem',marginBottom:'1rem'}}>🎵</div>
             
-            <h1 className="underline" style={{fontSize:'1.875rem',fontWeight:'bold',color:theme.text,marginBottom:'0.5rem'}}>Camp Singalong</h1>
+            <h1 className="text-red-500" style={{fontSize:'1.875rem',fontWeight:'bold',marginBottom:'0.5rem'}}>Camp Singalong</h1>
             <p style={{color:theme.textSecondary}}>Start or join a singalong session</p>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'1.5rem'}}>
