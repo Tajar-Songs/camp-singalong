@@ -604,9 +604,9 @@ export default function Home() {
           </button>
         </div>
 
-       
-{/* Request a Song */}
-        <div className={`rounded-xl shadow-lg p-4 sm:p-6 ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+
+{/* Request a Song Section */}
+        <div className={`rounded-xl shadow-lg p-4 sm:p-6 ${isDark ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-green-100'}`}>
           <h2 className={`text-lg sm:text-xl font-bold mb-4 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
             Request a Song
           </h2>
@@ -683,33 +683,7 @@ export default function Home() {
           </div>
         </div>
 
-
-          <div className={`border-t pt-4 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-            <div className={`text-sm font-semibold mb-2 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
-              Request unlisted song:
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Enter song title..."
-                value={customSongInput}
-                onChange={(e) => setCustomSongInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addCustomSong()}
-                className={`flex-1 px-4 py-2 rounded-lg border text-base
-                  ${isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}
-                  focus:outline-none focus:ring-2 focus:ring-green-500`}
-              />
-              <button
-                onClick={addCustomSong}
-                className="px-4 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Queue */}
+        {/* Queue Section */}
         <div className={`rounded-xl shadow-lg p-4 sm:p-6 ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
           <h2 className={`text-lg sm:text-xl font-bold mb-4 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
             Queue ({queue.length} songs)
@@ -723,73 +697,33 @@ export default function Home() {
             <div className="space-y-2">
               {queue.map((song, idx) => (
                 <div key={song.id} className={`flex items-center gap-2 sm:gap-3 p-3 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
-                  {/* Reorder Buttons */}
                   <div className="flex flex-col gap-1">
-                    <button
-                      onClick={() => moveInQueue(song, -1)}
-                      disabled={idx === 0}
-                      className={`p-1 transition-opacity ${idx === 0 ? 'opacity-30' : 'hover:opacity-70'} ${isDark ? 'text-gray-100' : 'text-gray-900'}`}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => moveInQueue(song, 1)}
-                      disabled={idx === queue.length - 1}
-                      className={`p-1 transition-opacity ${idx === queue.length - 1 ? 'opacity-30' : 'hover:opacity-70'} ${isDark ? 'text-gray-100' : 'text-gray-900'}`}
-                    >
-                      ▼
-                    </button>
+                    <button onClick={() => moveInQueue(song, -1)} className="p-1 hover:bg-gray-700 rounded text-xs">▲</button>
+                    <button onClick={() => moveInQueue(song, 1)} className="p-1 hover:bg-gray-700 rounded text-xs">▼</button>
                   </div>
-
-                  {/* Song Info */}
                   <div className="flex-1 min-w-0">
-                    <div className={`font-semibold truncate ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
-                      {song.song_title}
-                      {song.has_lyrics && <span className="ml-2 text-xs" title="Lyrics available">📄</span>}
-                    </div>
-                    <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Page {song.song_page}{song.old_page ? ` (${song.old_page})` : ''}
-                    </div>
+                    <div className={`font-semibold truncate ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{song.song_title}</div>
+                    <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Page {song.song_page}</div>
                   </div>
-
-                  {/* Action Buttons */}
-                  <button
-                    onClick={() => playSong(song)}
-                    className={`px-3 py-2 rounded-lg font-semibold text-sm transition-colors
-                      ${isDark ? 'bg-green-600 hover:bg-green-500' : 'bg-green-600 hover:bg-green-700'} text-white`}
-                  >
-                    Play Now
-                  </button>
-                  <button
-                    onClick={() => removeFromQueue(song.id)}
-                    className="p-2 text-red-500 hover:text-red-400 transition-colors"
-                  >
-                    🗑️
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => playSong(song)}
+                      className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition-colors"
+                    >
+                      Play
+                    </button>
+                    <button
+                      onClick={() => removeFromQueue(song.id)}
+                      className="px-3 py-1 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded text-sm font-medium transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
-
-        {/* Already Sung */}
-        {sungSongs.length > 0 && (
-          <div className={`rounded-xl shadow-lg p-4 sm:p-6 ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
-            <h2 className={`text-lg sm:text-xl font-bold mb-4 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
-              Already Sung ({sungSongs.length})
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {sungSongs.map((song, idx) => (
-                <span
-                  key={idx}
-                  className={`px-3 py-1 rounded-full text-sm ${isDark ? 'bg-gray-800 text-gray-100' : 'bg-gray-100 text-gray-900'}`}
-                >
-                  {song.title}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
