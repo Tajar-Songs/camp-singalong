@@ -216,9 +216,6 @@ export default function Admin() {
     <div style={{minHeight:'100vh',background:theme.bg,color:theme.text,padding:'2rem'}}>
       <div style={{maxWidth:'64rem',margin:'0 auto'}}>
         
-<div className="bg-orange-500 text-white p-10 text-center font-bold">
-  TAILWIND TEST: IS THIS ORANGE?
-</div>
 
 
         {/* Header */}
