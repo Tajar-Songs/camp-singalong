@@ -604,7 +604,8 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Request a Song */}
+       
+{/* Request a Song */}
         <div className={`rounded-xl shadow-lg p-4 sm:p-6 ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
           <h2 className={`text-lg sm:text-xl font-bold mb-4 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
             Request a Song
@@ -612,57 +613,76 @@ export default function Home() {
 
           <input
             type="text"
-            placeholder="Search songs..."
+            placeholder="Search by title, page, or section..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className={`w-full px-4 py-3 rounded-lg mb-4 border text-base
-              ${isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}
-              focus:outline-none focus:ring-2 focus:ring-green-500`}
+            className={`w-full px-4 py-3 rounded-lg mb-4 border text-base transition-all
+              ${isDark ? 'bg-slate-800 border-slate-700 text-gray-100 focus:border-green-500' : 'bg-white border-gray-300 text-gray-900 focus:border-green-500'}
+              focus:outline-none focus:ring-2 focus:ring-green-500/20`}
           />
 
-          <div className="max-h-60 overflow-y-auto mb-4 space-y-2">
-            
+          <div className="max-h-80 overflow-y-auto mb-4 space-y-2 pr-1 custom-scrollbar">
             {filteredSongs.slice(0, 50).map(song => (
-  <div key={song.id} className={`flex justify-between items-center p-4 rounded-xl border transition-all ${
-    isDark 
-      ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' 
-      : 'bg-white border-green-100 hover:bg-green-50/50 shadow-sm'
-  }`}>
-    <div className="min-w-0 flex-1">
-      <div className={`font-bold truncate text-lg ${isDark ? 'text-white' : 'text-green-900'}`}>
-        {song.title}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-        <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-          isDark ? 'bg-slate-700 text-slate-300' : 'bg-green-100 text-green-700'
-        }`}>
-          Sec {song.section}
-        </span>
-        <span className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-green-600'}`}>
-          Page {song.page || '—'} {song.old_page && <span className="opacity-60 text-xs">({song.old_page})</span>}
-        </span>
-        {song.has_lyrics && (
-          <span className="text-[10px] font-bold text-green-500 flex items-center gap-1 uppercase tracking-tighter">
-            <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span> Lyrics
-          </span>
-        )}
-      </div>
-    </div>
-    <button
-      onClick={() => addToQueue(song)}
-      className="ml-4 shrink-0 bg-green-600 hover:bg-green-500 text-white p-3 rounded-xl font-bold transition-all active:scale-90 shadow-lg shadow-green-900/20"
-      title="Add to Queue"
-    >
-      ➕
-    </button>
-  </div>
-))}
-
-                  ➕ Add
+              <div key={song.id} className={`flex justify-between items-center p-4 rounded-xl border transition-all ${
+                isDark 
+                  ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' 
+                  : 'bg-white border-green-100 hover:bg-green-50/50 shadow-sm'
+              }`}>
+                <div className="min-w-0 flex-1">
+                  <div className={`font-bold truncate text-lg ${isDark ? 'text-white' : 'text-green-900'}`}>
+                    {song.title}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                      isDark ? 'bg-slate-700 text-slate-300' : 'bg-green-100 text-green-700'
+                    }`}>
+                      Sec {song.section}
+                    </span>
+                    <span className={`text-sm font-medium ${isDark ? 'text-slate-400' : 'text-green-600'}`}>
+                      Page {song.page || '—'} {song.old_page && <span className="opacity-60 text-xs">({song.old_page})</span>}
+                    </span>
+                    {song.has_lyrics && (
+                      <span className="text-[10px] font-bold text-green-500 flex items-center gap-1 uppercase tracking-tighter">
+                        <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse"></span> Lyrics
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => addToQueue(song)}
+                  className="ml-4 shrink-0 bg-green-600 hover:bg-green-500 text-white p-3 rounded-xl font-bold transition-all active:scale-90 shadow-lg shadow-green-900/20"
+                >
+                  ➕
                 </button>
               </div>
             ))}
           </div>
+
+          <div className={`border-t pt-4 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+            <div className={`text-sm font-semibold mb-2 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
+              Request unlisted song:
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Enter song title..."
+                value={customSongInput}
+                onChange={(e) => setCustomSongInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addCustomSong()}
+                className={`flex-1 px-4 py-2 rounded-lg border text-base
+                  ${isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-300 text-gray-900'}
+                  focus:outline-none focus:ring-2 focus:ring-green-500`}
+              />
+              <button
+                onClick={addCustomSong}
+                className="px-4 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+
 
           <div className={`border-t pt-4 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
             <div className={`text-sm font-semibold mb-2 ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
