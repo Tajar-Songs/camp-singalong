@@ -212,47 +212,71 @@ export default function Admin() {
     danger: '#dc2626'
   };
 
+  
   return (
-    <div style={{minHeight:'100vh',background:theme.bg,color:theme.text,padding:'2rem'}}>
-      <div style={{maxWidth:'64rem',margin:'0 auto'}}>
+    <div className="min-h-screen bg-slate-900 text-slate-50 selection:bg-green-500/30">
+      <div className="max-w-5xl mx-auto px-4 py-8">
         
-
-
-        {/* Header */}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.5rem'}}>
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 style={{fontSize:'1.875rem',fontWeight:'bold',marginBottom:'0.25rem'}}>🎵 Song Admin</h1>
-            <p style={{color:theme.textSecondary}}>{allSongs.length} songs in database</p>
+            <h1 className="text-3xl md:text-4xl font-black flex items-center gap-3">
+              <span className="text-green-500">🎵</span> Song Admin
+            </h1>
+            <p className="text-slate-400 mt-1 font-medium">
+              {allSongs.length} songs in database
+            </p>
           </div>
-          <div style={{display:'flex',gap:'0.5rem'}}>
-            <button onClick={startAddNew} style={{background:theme.primary,color:'white',padding:'0.5rem 1rem',borderRadius:'0.5rem',border:'none',cursor:'pointer',fontWeight:'600'}}>+ Add Song</button>
-            <a href="/" style={{background:theme.bgSecondary,color:theme.text,padding:'0.5rem 1rem',borderRadius:'0.5rem',border:`1px solid ${theme.border}`,textDecoration:'none',display:'flex',alignItems:'center'}}>← Back to App</a>
+          <div className="flex gap-3">
+            <button 
+              onClick={startAddNew} 
+              className="flex-1 md:flex-none bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded-lg font-bold transition-all active:scale-95 shadow-lg shadow-green-900/20 focus:ring-4 focus:ring-green-500/50 outline-none"
+            >
+              + Add Song
+            </button>
+            <a 
+              href="/" 
+              className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-slate-200 px-6 py-2.5 rounded-lg font-bold border border-slate-700 transition-all text-center focus:ring-4 focus:ring-slate-500/50 outline-none"
+            >
+              ← Back
+            </a>
           </div>
-        </div>
+        </header>
 
-        {/* Sticky Name Bar */}
-        <div style={{ 
-          position: 'sticky', top: '1rem', zIndex: 100,
-          background: sessionName.trim() ? theme.bgSecondary : '#450a0a', 
-          padding: '1rem', borderRadius: '0.5rem', marginBottom: '1.5rem', 
-          border: `1px solid ${sessionName.trim() ? theme.border : '#dc2626'}`,
-          display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)'
-        }}>
-          <span style={{ fontWeight: 'bold' }}>👤 Your Name:</span>
+        {/* Sticky Name Bar - Accessible Version */}
+        <section 
+          className={`sticky top-4 z-50 p-4 rounded-xl mb-8 border transition-all duration-300 shadow-2xl flex flex-col sm:flex-row items-center gap-4 ${
+            sessionName.trim() 
+              ? 'bg-slate-800/95 backdrop-blur border-slate-700 shadow-black/50' 
+              : 'bg-red-950/90 backdrop-blur border-red-500 shadow-red-900/20'
+          }`}
+        >
+          <label htmlFor="admin-name" className="font-bold flex items-center gap-2 whitespace-nowrap">
+            <span className="text-xl">👤</span> Your Name:
+          </label>
           <input 
-            type="text" placeholder="Enter name to enable saving..." value={sessionName} 
+            id="admin-name"
+            type="text" 
+            placeholder="Type your name to unlock editing..." 
+            value={sessionName} 
             onChange={(e) => {
               setSessionName(e.target.value);
               localStorage.setItem('camp_admin_name', e.target.value);
             }}
-            style={{ flex: 1, padding: '0.5rem', borderRadius: '0.25rem', border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text }} 
+            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder:text-slate-500 focus:border-green-500 focus:ring-4 focus:ring-green-500/20 outline-none transition-all" 
           />
-          {!sessionName.trim() && <span style={{ color: '#f87171', fontSize: '0.875rem', fontWeight: 'bold' }}>⚠️ Required to save</span>}
-        </div>
+          {!sessionName.trim() && (
+            <span className="text-red-400 font-bold text-sm animate-pulse whitespace-nowrap text-center">
+              ⚠️ Required to save
+            </span>
+          )}
+        </section>
 
-        {/* Status Message */}
+        {/* Status Message - Toast style */}
         {message && (
-          <div style={{background:theme.primary,color:'white',padding:'0.75rem 1rem',borderRadius:'0.5rem',marginBottom:'1rem'}}>{message}</div>
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-green-600 text-white px-8 py-4 rounded-2xl font-bold shadow-2xl flex items-center gap-3 border border-green-400 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <span>✅</span> {message}
+          </div>
         )}
 
         {/* Form Section */}
