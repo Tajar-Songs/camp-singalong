@@ -13,13 +13,7 @@ const SECTION_INFO = {
   W: "Kids' Movies & Musicals"
 };
 
-const CATEGORY_OPTIONS = [
-  { value: 'round_type', label: 'Round Type' },
-  { value: 'energy', label: 'Energy Level' },
-  { value: 'era', label: 'Era' },
-  { value: 'restriction', label: 'Restriction' },
-  { value: 'other', label: 'Other' }
-];
+
 
 export default function TagManagement() {
   // Session name for tracking who makes changes
@@ -44,7 +38,6 @@ export default function TagManagement() {
   const [editingTag, setEditingTag] = useState(null);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagName, setTagName] = useState('');
-  const [tagCategory, setTagCategory] = useState('other');
   const [tagDescription, setTagDescription] = useState('');
 
   // Song filtering state (for Apply tab)
@@ -102,7 +95,6 @@ export default function TagManagement() {
   const startAddTag = () => {
     setEditingTag(null);
     setTagName('');
-    setTagCategory('other');
     setTagDescription('');
     setIsAddingTag(true);
   };
@@ -110,7 +102,6 @@ export default function TagManagement() {
   const startEditTag = (tag) => {
     setEditingTag(tag);
     setTagName(tag.name);
-    setTagCategory(tag.category);
     setTagDescription(tag.description || '');
     setIsAddingTag(false);
   };
@@ -133,7 +124,6 @@ export default function TagManagement() {
     try {
       const tagData = {
         name: tagName.trim(),
-        category: tagCategory,
         description: tagDescription.trim() || null,
         created_by: sessionName
       };
@@ -429,7 +419,7 @@ export default function TagManagement() {
                   <button onClick={cancelTagEdit} className="text-slate-400 hover:text-white p-2">✕</button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label className="block text-sm font-bold text-slate-400 mb-2">Tag Name *</label>
                     <input
@@ -441,18 +431,6 @@ export default function TagManagement() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-400 mb-2">Category</label>
-                    <select
-                      value={tagCategory}
-                      onChange={(e) => setTagCategory(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-green-500 outline-none cursor-pointer"
-                    >
-                      {CATEGORY_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-slate-400 mb-2">Description (optional)</label>
                     <input
                       type="text"
@@ -503,9 +481,6 @@ export default function TagManagement() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3">
                             <span className="font-bold text-white">{tag.name}</span>
-                            <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
-                              {CATEGORY_OPTIONS.find(c => c.value === tag.category)?.label || tag.category}
-                            </span>
                             <span className="text-xs text-slate-500">
                               {songCount} song{songCount !== 1 ? 's' : ''}
                             </span>
@@ -696,4 +671,3 @@ export default function TagManagement() {
     </div>
   );
 }
-
