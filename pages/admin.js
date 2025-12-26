@@ -22,8 +22,10 @@ export default function Admin() {
   });
   
   const [allSongs, setAllSongs] = useState([]);
+  const [songVersions, setSongVersions] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingSong, setEditingSong] = useState(null);
+  const [editingVersion, setEditingVersion] = useState(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -39,11 +41,28 @@ export default function Admin() {
 
   const loadSongs = async () => {
     try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-      });
-      setAllSongs(await response.json());
+      const [songsRes, versionsRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        })
+      ]);
+      setAllSongs(await songsRes.json());
+      setSongVersions(await versionsRes.json());
     } catch (error) { console.error('Error loading songs:', error); }
+  };
+
+  // Get the default singalong version for a song
+  const getDefaultVersion = (songId) => {
+    return songVersions.find(v => v.song_id === songId && v.is_default_singalong) 
+      || songVersions.find(v => v.song_id === songId);
+  };
+
+  // Check if a song has any version with lyrics
+  const songHasLyrics = (songId) => {
+    return songVersions.some(v => v.song_id === songId && v.lyrics_content);
   };
 
   const showMessage = (msg) => {
@@ -82,17 +101,20 @@ export default function Admin() {
 
   const startEdit = (song) => {
     setEditingSong(song);
+    const version = getDefaultVersion(song.id);
+    setEditingVersion(version || null);
     setFormTitle(song.title);
     setFormPage(song.page || '');
     setFormOldPage(song.old_page || '');
     setFormSection(song.section || 'A');
     setIsAddingNew(false);
-    setFormLyrics(song.lyrics_text || '');
-    setFormHasLyrics(song.has_lyrics || false);
+    setFormLyrics(version?.lyrics_content || '');
+    setFormHasLyrics(!!version?.lyrics_content);
   };
 
   const startAddNew = () => {
     setEditingSong(null);
+    setEditingVersion(null);
     setFormTitle('');
     setFormPage('');
     setFormOldPage('');
@@ -104,6 +126,7 @@ export default function Admin() {
 
   const cancelEdit = () => {
     setEditingSong(null);
+    setEditingVersion(null);
     setIsAddingNew(false);
   };
 
@@ -123,11 +146,11 @@ export default function Admin() {
         page: formPage.trim() || null,
         old_page: formOldPage.trim() || null,
         section: formSection,
-        lyrics_text: formLyrics.trim() || null,
         has_lyrics: formLyrics.trim().length > 0
       };
 
       if (isAddingNew) {
+        // Create new song
         const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, {
           method: 'POST',
           headers: {
@@ -138,20 +161,51 @@ export default function Admin() {
         });
         if (response.ok) {
           const createdSong = await response.json();
+          const songId = createdSong[0].id;
+          
+          // If lyrics were provided, create a version
+          if (formLyrics.trim()) {
+            await fetch(`${SUPABASE_URL}/rest/v1/song_versions`, {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+              },
+              body: JSON.stringify({
+                song_id: songId,
+                version_type: 'canonical',
+                label: 'Original',
+                lyrics_content: formLyrics.trim(),
+                is_default_singalong: true,
+                is_default_explore: true,
+                created_by: sessionName
+              })
+            });
+          }
+          
           await logChange('add', createdSong[0], null, null, null, null, createdSong[0]);
           showMessage('Song added!');
           setIsAddingNew(false);
           await loadSongs();
         }
       } else {
+        // Update existing song
         const oldSong = editingSong;
-const changes = [];
-if (oldSong.title !== newSongData.title) changes.push({ field: 'title', old: oldSong.title, new: newSongData.title });
-if (oldSong.page !== newSongData.page) changes.push({ field: 'page', old: oldSong.page, new: newSongData.page });
-if (oldSong.old_page !== newSongData.old_page) changes.push({ field: 'old_page', old: oldSong.old_page, new: newSongData.old_page });
-if (oldSong.section !== newSongData.section) changes.push({ field: 'section', old: oldSong.section, new: newSongData.section });
-if ((oldSong.lyrics_text || '') !== (newSongData.lyrics_text || '')) changes.push({ field: 'lyrics_text', old: oldSong.lyrics_text ? '[had lyrics]' : '[no lyrics]', new: newSongData.lyrics_text ? '[has lyrics]' : '[no lyrics]' });
+        const oldVersion = editingVersion;
+        const changes = [];
+        
+        if (oldSong.title !== newSongData.title) changes.push({ field: 'title', old: oldSong.title, new: newSongData.title });
+        if (oldSong.page !== newSongData.page) changes.push({ field: 'page', old: oldSong.page, new: newSongData.page });
+        if (oldSong.old_page !== newSongData.old_page) changes.push({ field: 'old_page', old: oldSong.old_page, new: newSongData.old_page });
+        if (oldSong.section !== newSongData.section) changes.push({ field: 'section', old: oldSong.section, new: newSongData.section });
+        
+        const oldLyrics = oldVersion?.lyrics_content || '';
+        const newLyrics = formLyrics.trim();
+        if (oldLyrics !== newLyrics) {
+          changes.push({ field: 'lyrics_content', old: oldLyrics ? '[had lyrics]' : '[no lyrics]', new: newLyrics ? '[has lyrics]' : '[no lyrics]' });
+        }
 
+        // Update the song record
         const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${editingSong.id}`, {
           method: 'PATCH',
           headers: {
@@ -160,13 +214,56 @@ if ((oldSong.lyrics_text || '') !== (newSongData.lyrics_text || '')) changes.pus
           },
           body: JSON.stringify(newSongData)
         });
+        
         if (response.ok) {
+          // Handle lyrics/version update
+          if (newLyrics && oldVersion) {
+            // Update existing version
+            await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${oldVersion.id}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+              },
+              body: JSON.stringify({ lyrics_content: newLyrics })
+            });
+          } else if (newLyrics && !oldVersion) {
+            // Create new version
+            await fetch(`${SUPABASE_URL}/rest/v1/song_versions`, {
+              method: 'POST',
+              headers: {
+                'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+              },
+              body: JSON.stringify({
+                song_id: editingSong.id,
+                version_type: 'canonical',
+                label: 'Original',
+                lyrics_content: newLyrics,
+                is_default_singalong: true,
+                is_default_explore: true,
+                created_by: sessionName
+              })
+            });
+          } else if (!newLyrics && oldVersion) {
+            // Remove lyrics from version (set to null, don't delete the version)
+            await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${oldVersion.id}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+              },
+              body: JSON.stringify({ lyrics_content: null })
+            });
+          }
+          
           const fullAfter = { ...oldSong, ...newSongData };
           for (const change of changes) {
             await logChange('edit', oldSong, change.field, change.old, change.new, oldSong, fullAfter);
           }
           showMessage('Song updated!');
           setEditingSong(null);
+          setEditingVersion(null);
           await loadSongs();
         }
       }
@@ -379,7 +476,7 @@ if ((oldSong.lyrics_text || '') !== (newSongData.lyrics_text || '')) changes.pus
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-black bg-slate-700 text-slate-300">Sec {song.section}</span>
                         <span className="text-sm text-slate-400">Page {song.page || '—'} {song.old_page && <span className="text-slate-500 text-xs">(Old: {song.old_page})</span>}</span>
-                        {song.has_lyrics && (
+                        {songHasLyrics(song.id) && (
                           <span className="text-xs text-green-500 font-bold flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> Lyrics
                           </span>

@@ -56,6 +56,7 @@ export default function Home() {
   // Tag filtering state
   const [tags, setTags] = useState([]);
   const [songTags, setSongTags] = useState([]);
+  const [songVersions, setSongVersions] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]); // "Also include" tags
   const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
 
@@ -77,11 +78,28 @@ export default function Home() {
 
   const loadSongs = async () => {
     try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-      });
-      setAllSongs(await response.json());
+      const [songsRes, versionsRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        })
+      ]);
+      setAllSongs(await songsRes.json());
+      setSongVersions(await versionsRes.json());
     } catch (error) { console.error('Error loading songs:', error); }
+  };
+
+  // Get the default singalong version for a song
+  const getDefaultVersion = (songId) => {
+    return songVersions.find(v => v.song_id === songId && v.is_default_singalong) 
+      || songVersions.find(v => v.song_id === songId);
+  };
+
+  // Check if a song has any version with lyrics
+  const songHasLyrics = (songId) => {
+    return songVersions.some(v => v.song_id === songId && v.lyrics_content);
   };
 
   const loadTags = async () => {
@@ -176,6 +194,7 @@ export default function Home() {
   const addToQueue = async (song, requester = 'Someone') => {
     if (queue.some(s => s.song_title === song.title)) return;
     const maxPosition = queue.length > 0 ? Math.max(...queue.map(s => s.position)) : -1;
+    const version = getDefaultVersion(song.id);
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue`, {
         method: 'POST',
@@ -191,8 +210,8 @@ export default function Home() {
           requester: requester,
           position: maxPosition + 1,
           old_page: song.old_page || null,
-          has_lyrics: song.has_lyrics || false,
-          lyrics_text: song.lyrics_text || null
+          has_lyrics: !!version?.lyrics_content,
+          lyrics_text: version?.lyrics_content || null
         })
       });
     } catch (error) { console.error('Error adding to queue:', error); }
@@ -683,7 +702,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {filteredSongs.slice(0, 30).map(song => (
               <div key={song.id} className="flex justify-between items-center p-3 rounded-xl border border-black/5 bg-black/5">
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm truncate">{song.title} {song.has_lyrics && '📄'}</div>
+                  <div className="font-bold text-sm truncate">{song.title} {songHasLyrics(song.id) && '📄'}</div>
                   <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {song.section} • Page {song.page}</div>
                 </div>
                 <button onClick={() => addToQueue(song)} className="ml-3 bg-green-600 text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
