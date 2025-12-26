@@ -52,6 +52,12 @@ export default function Home() {
   const [isDark, setIsDark] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
+  
+  // Tag filtering state
+  const [tags, setTags] = useState([]);
+  const [songTags, setSongTags] = useState([]);
+  const [includeTagIds, setIncludeTagIds] = useState([]); // "Also include" tags
+  const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -61,7 +67,7 @@ export default function Home() {
     return () => darkModeQuery.removeEventListener('change', handler);
   }, []);
 
-  useEffect(() => { loadSongs(); }, []);
+  useEffect(() => { loadSongs(); loadTags(); }, []);
 
   useEffect(() => {
     if (!roomCode) return;
@@ -76,6 +82,32 @@ export default function Home() {
       });
       setAllSongs(await response.json());
     } catch (error) { console.error('Error loading songs:', error); }
+  };
+
+  const loadTags = async () => {
+    try {
+      const [tagsRes, songTagsRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        })
+      ]);
+      setTags(await tagsRes.json());
+      setSongTags(await songTagsRes.json());
+    } catch (error) { console.error('Error loading tags:', error); }
+  };
+
+  // Helper: Check if song has a specific tag
+  const songHasTag = (songId, tagId) => {
+    return songTags.some(st => st.song_id === songId && st.tag_id === tagId);
+  };
+
+  // Helper: Check if song has ANY of the given tags
+  const songHasAnyTag = (songId, tagIds) => {
+    if (!tagIds || tagIds.length === 0) return false;
+    return tagIds.some(tagId => songHasTag(songId, tagId));
   };
 
   const createRoom = async () => {
@@ -168,9 +200,20 @@ export default function Home() {
   };
 
   const generateRandomSong = () => {
-    const availableSongs = allSongs.filter(song =>
-      selectedSections.includes(song.section) && !sungSongs.some(s => s.title === song.title)
-    );
+    const availableSongs = allSongs.filter(song => {
+      // Already sung? Skip
+      if (sungSongs.some(s => s.title === song.title)) return false;
+      
+      // Check if song should be EXCLUDED (exclude tags take priority)
+      if (songHasAnyTag(song.id, excludeTagIds)) return false;
+      
+      // Check if song matches section OR has an "include" tag
+      const matchesSection = selectedSections.includes(song.section);
+      const matchesIncludeTag = songHasAnyTag(song.id, includeTagIds);
+      
+      // Song is eligible if it matches section OR has an include tag
+      return matchesSection || matchesIncludeTag;
+    });
     if (availableSongs.length === 0) { alert('No songs available with current filters!'); return; }
     addToQueue(availableSongs[Math.floor(Math.random() * availableSongs.length)], 'Random');
   };
@@ -480,34 +523,109 @@ if (view === 'display' && showLyrics && currentSong) {
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-black text-lg">🎲 Random Song</h2>
             <button onClick={() => setShowSectionFilter(!showSectionFilter)} className="text-xs font-bold text-blue-500 uppercase tracking-wider">
-              {showSectionFilter ? 'Hide Filters' : 'Filter Sections'}
+              {showSectionFilter ? 'Hide Filters' : 'Show Filters'}
             </button>
           </div>
           
           {showSectionFilter && (
-            <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex gap-2 mb-4">
-                <button 
-                    onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
-                >
-                    Select All
-                </button>
-                <button 
-                    onClick={() => setSelectedSections([])} 
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
-                >
-                    Clear All
-                </button>
+            <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300 space-y-6">
+              {/* Section Filters */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">Sections</span>
+                  <div className="flex gap-2">
+                    <button 
+                        onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
+                        className="text-xs text-blue-500 hover:text-blue-400"
+                    >
+                        Select All
+                    </button>
+                    <button 
+                        onClick={() => setSelectedSections([])} 
+                        className="text-xs text-slate-500 hover:text-slate-400"
+                    >
+                        Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
+                  {Object.keys(SECTION_INFO).map(sec => (
+                    <label key={sec} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
+                      <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(sec)} onChange={() => toggleSection(sec)} />
+                      <span className="text-xs font-medium leading-tight">{sec}: {SECTION_INFO[sec]}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
-                {Object.keys(SECTION_INFO).map(sec => (
-                  <label key={sec} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
-                    <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(sec)} onChange={() => toggleSection(sec)} />
-                    <span className="text-xs font-medium leading-tight">{sec}: {SECTION_INFO[sec]}</span>
-                  </label>
-                ))}
-              </div>
+
+              {/* Tag Filters - Only show if tags exist */}
+              {tags.length > 0 && (
+                <>
+                  {/* Also Include Tags */}
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">Also Include (even if section not selected)</span>
+                      {includeTagIds.length > 0 && (
+                        <button onClick={() => setIncludeTagIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map(tag => {
+                        const isSelected = includeTagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            onClick={() => setIncludeTagIds(prev => 
+                              isSelected ? prev.filter(id => id !== tag.id) : [...prev, tag.id]
+                            )}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                              isSelected 
+                                ? 'bg-green-600 text-white' 
+                                : isDark 
+                                  ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' 
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {isSelected ? '✓ ' : '+ '}{tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Exclude Tags */}
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider opacity-60">Exclude (even if section selected)</span>
+                      {excludeTagIds.length > 0 && (
+                        <button onClick={() => setExcludeTagIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map(tag => {
+                        const isSelected = excludeTagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            onClick={() => setExcludeTagIds(prev => 
+                              isSelected ? prev.filter(id => id !== tag.id) : [...prev, tag.id]
+                            )}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                              isSelected 
+                                ? 'bg-red-600 text-white' 
+                                : isDark 
+                                  ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' 
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {isSelected ? '✗ ' : '− '}{tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
           <button onClick={generateRandomSong} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all">Pick Random Song</button>
