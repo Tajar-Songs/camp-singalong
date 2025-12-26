@@ -531,22 +531,19 @@ if (view === 'display' && showLyrics && currentSong) {
             <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300 space-y-6">
               {/* Section Filters */}
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">Sections</span>
-                  <div className="flex gap-2">
-                    <button 
-                        onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
-                        className="text-xs text-blue-500 hover:text-blue-400"
-                    >
-                        Select All
-                    </button>
-                    <button 
-                        onClick={() => setSelectedSections([])} 
-                        className="text-xs text-slate-500 hover:text-slate-400"
-                    >
-                        Clear
-                    </button>
-                  </div>
+                <div className="flex gap-2 mb-4">
+                  <button 
+                      onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
+                  >
+                      Select All
+                  </button>
+                  <button 
+                      onClick={() => setSelectedSections([])} 
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
+                  >
+                      Clear All
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
                   {Object.keys(SECTION_INFO).map(sec => (
