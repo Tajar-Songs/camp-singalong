@@ -56,7 +56,6 @@ export default function Home() {
   // Tag filtering state
   const [tags, setTags] = useState([]);
   const [songTags, setSongTags] = useState([]);
-  const [songVersions, setSongVersions] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]); // "Also include" tags
   const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
 
@@ -78,28 +77,11 @@ export default function Home() {
 
   const loadSongs = async () => {
     try {
-      const [songsRes, versionsRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-        })
-      ]);
-      setAllSongs(await songsRes.json());
-      setSongVersions(await versionsRes.json());
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      });
+      setAllSongs(await response.json());
     } catch (error) { console.error('Error loading songs:', error); }
-  };
-
-  // Get the default singalong version for a song
-  const getDefaultVersion = (songId) => {
-    return songVersions.find(v => v.song_id === songId && v.is_default_singalong) 
-      || songVersions.find(v => v.song_id === songId);
-  };
-
-  // Check if a song has any version with lyrics
-  const songHasLyrics = (songId) => {
-    return songVersions.some(v => v.song_id === songId && v.lyrics_content);
   };
 
   const loadTags = async () => {
@@ -194,7 +176,6 @@ export default function Home() {
   const addToQueue = async (song, requester = 'Someone') => {
     if (queue.some(s => s.song_title === song.title)) return;
     const maxPosition = queue.length > 0 ? Math.max(...queue.map(s => s.position)) : -1;
-    const version = getDefaultVersion(song.id);
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue`, {
         method: 'POST',
@@ -210,8 +191,8 @@ export default function Home() {
           requester: requester,
           position: maxPosition + 1,
           old_page: song.old_page || null,
-          has_lyrics: !!version?.lyrics_content,
-          lyrics_text: version?.lyrics_content || null
+          has_lyrics: song.has_lyrics || false,
+          lyrics_text: song.lyrics_text || null
         })
       });
     } catch (error) { console.error('Error adding to queue:', error); }
@@ -450,13 +431,13 @@ if (view === 'display' && showLyrics && currentSong) {
         </div>
 
         <div className="flex-1 flex flex-col justify-center items-center text-center px-6 tv:max-w-6xl tv:mx-auto w-full">
-          <h1 className="text-3xl tv:text-5xl font-black mb-4 opacity-40 uppercase tracking-widest">Now Singing</h1>
+          <h1 className="text-4xl tv:text-6xl font-black mb-6 opacity-40 uppercase tracking-widest">Now Singing</h1>
           {currentSong ? (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <div className="text-5xl tv:text-8xl font-black mb-4 leading-tight">
+              <div className="text-6xl tv:text-9xl font-black mb-6 leading-tight">
                 {currentSong.title} {currentSong.has_lyrics && '📄'}
               </div>
-              <div className="text-3xl tv:text-5xl text-green-400 font-bold">
+              <div className="text-4xl tv:text-7xl text-green-400 font-bold">
                 Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
               </div>
 {currentSong.has_lyrics && (
@@ -481,20 +462,20 @@ if (view === 'display' && showLyrics && currentSong) {
 
         {/* Vertical Queue for TV */}
         {queue.length > 0 && (
-          <div className="p-8 w-full max-w-4xl mx-auto mt-auto mb-10">
-            <h2 className="text-xl tv:text-3xl font-bold mb-4 opacity-40 border-b border-white/10 pb-2">Up Next</h2>
-            <div className="space-y-3">
+          <div className="p-8 w-full max-w-5xl mx-auto mt-auto mb-10">
+            <h2 className="text-2xl tv:text-4xl font-bold mb-6 opacity-40 border-b border-white/10 pb-3">Up Next</h2>
+            <div className="space-y-4">
                {queue.slice(0, 5).map((song, i) => (
-                 <div key={song.id} className="flex justify-between items-center text-xl tv:text-3xl font-medium">
+                 <div key={song.id} className="flex justify-between items-center text-2xl tv:text-4xl font-medium">
                    <div className="truncate">
-                    <span className="opacity-50 mr-3">{i+1}.</span>
+                    <span className="opacity-50 mr-4">{i+1}.</span>
                     {song.song_title} {song.has_lyrics && '📄'}
                    </div>
                    <div className="text-green-400 ml-4 whitespace-nowrap">Page {song.song_page}</div>
                  </div>
                ))}
                {queue.length > 5 && (
-                 <div className="text-lg opacity-40 italic mt-2">+ {queue.length - 5} more songs</div>
+                 <div className="text-xl opacity-40 italic mt-3">+ {queue.length - 5} more songs</div>
                )}
             </div>
           </div>
@@ -702,7 +683,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {filteredSongs.slice(0, 30).map(song => (
               <div key={song.id} className="flex justify-between items-center p-3 rounded-xl border border-black/5 bg-black/5">
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm truncate">{song.title} {songHasLyrics(song.id) && '📄'}</div>
+                  <div className="font-bold text-sm truncate">{song.title} {song.has_lyrics && '📄'}</div>
                   <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {song.section} • Page {song.page}</div>
                 </div>
                 <button onClick={() => addToQueue(song)} className="ml-3 bg-green-600 text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
