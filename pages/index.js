@@ -57,8 +57,12 @@ export default function Home() {
   const [tags, setTags] = useState([]);
   const [songTags, setSongTags] = useState([]);
   const [songVersions, setSongVersions] = useState([]);
+  const [songNotes, setSongNotes] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]); // "Also include" tags
   const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
+  
+  // Expanded notes tracking (which note types are currently shown)
+  const [expandedNotes, setExpandedNotes] = useState([]);
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -78,16 +82,20 @@ export default function Home() {
 
   const loadSongs = async () => {
     try {
-      const [songsRes, versionsRes] = await Promise.all([
+      const [songsRes, versionsRes, notesRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         })
       ]);
       setAllSongs(await songsRes.json());
       setSongVersions(await versionsRes.json());
+      setSongNotes(await notesRes.json());
     } catch (error) { console.error('Error loading songs:', error); }
   };
 
@@ -100,6 +108,47 @@ export default function Home() {
   // Check if a song has any version with lyrics
   const songHasLyrics = (songId) => {
     return songVersions.some(v => v.song_id === songId && v.lyrics_content);
+  };
+
+  // Get notes for a song by type
+  const getNotesForSong = (songId) => {
+    return songNotes.filter(n => n.song_id === songId);
+  };
+
+  // Get notes for a song grouped by type
+  const getNotesByType = (songId, noteType) => {
+    return songNotes.filter(n => n.song_id === songId && n.note_type === noteType);
+  };
+
+  // Toggle a note type expansion
+  const toggleNoteType = (noteType) => {
+    setExpandedNotes(prev => 
+      prev.includes(noteType) 
+        ? prev.filter(t => t !== noteType)
+        : [...prev, noteType]
+    );
+  };
+
+  // Note type display names
+  const NOTE_TYPE_LABELS = {
+    'round_instruction': 'Round Instructions',
+    'performance_instruction': 'Performance Tips',
+    'history': 'History',
+    'pronunciation': 'Pronunciation',
+    'call_response_structure': 'Call & Response',
+    'accompaniment': 'Accompaniment',
+    'fill_in_blank': 'Fill in the Blank',
+    'alternate_verse_info': 'Alternate Verses',
+    'other': 'Notes'
+  };
+
+  // Instruction types (shown above lyrics)
+  const INSTRUCTION_TYPES = ['round_instruction', 'performance_instruction', 'call_response_structure'];
+
+  // Get the full song object for the current song (to get ID for notes lookup)
+  const getCurrentSongFull = () => {
+    if (!currentSong) return null;
+    return allSongs.find(s => s.title === currentSong.title);
   };
 
   const loadTags = async () => {
@@ -379,7 +428,7 @@ export default function Home() {
         </div>
         <div className="fixed bottom-4 left-0 right-0 text-center">
         
-         <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF5jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header"
+         <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF8jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header"
           target="_blank"
           rel="noopener noreferrer"
           className="text-gray-400 text-sm hover:text-gray-300 transition-colors"
@@ -391,54 +440,247 @@ export default function Home() {
     );
   }
 
-  // Display View - Full Screen Lyrics
+  // Display View - Full Screen Lyrics (with sidebar on large screens, column on mobile)
 if (view === 'display' && showLyrics && currentSong) {
-  return (
-    <div className={`min-h-screen flex flex-col ${isDark ? 'bg-slate-900' : 'bg-green-900'} text-white`}>
-      {/* Sticky Header */}
-      <div className="sticky top-0 bg-black/80 backdrop-blur p-4 z-10 border-b border-white/10">
-        <div className="flex items-center justify-between max-w-3xl mx-auto">
-          <button 
-            onClick={() => setShowLyrics(false)} 
-            className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
-          >
-            ← Back
-          </button>
-          <div className="text-center">
-            <div className="text-base sm:text-xl font-bold">{currentSong.title}</div>
-            <div className="text-xs sm:text-sm text-green-300">
-              Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}
-            </div>
-          </div>
-          <div className="w-20"></div>
-        </div>
-      </div>
+  const currentSongFull = getCurrentSongFull();
+  const songId = currentSongFull?.id;
+  const currentNotes = songId ? getNotesForSong(songId) : [];
+  const yearWritten = currentSongFull?.year_written;
+  
+  // Group notes by type
+  const instructionNotes = currentNotes.filter(n => INSTRUCTION_TYPES.includes(n.note_type));
+  const otherNotes = currentNotes.filter(n => !INSTRUCTION_TYPES.includes(n.note_type));
+  
+  // Get unique note types for buttons
+  const availableNoteTypes = [...new Set(currentNotes.map(n => n.note_type))];
+  const instructionTypes = availableNoteTypes.filter(t => INSTRUCTION_TYPES.includes(t));
+  const otherTypes = availableNoteTypes.filter(t => !INSTRUCTION_TYPES.includes(t));
 
-      {/* Scrollable Lyrics */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-sm text-green-300 mb-4 text-center">Now Singing</div>
-          {currentSong.lyrics_text ? (
-            <div className="text-lg sm:text-xl lg:text-2xl tv:text-3xl leading-relaxed whitespace-pre-wrap text-center">
-              {currentSong.lyrics_text}
+  return (
+    <div className={`min-h-screen ${isDark ? 'bg-slate-900' : 'bg-green-900'} text-white`}>
+      {/* Mobile Layout (column) */}
+      <div className="lg:hidden flex flex-col min-h-screen">
+        {/* Mobile Header */}
+        <div className="sticky top-0 bg-black/80 backdrop-blur p-4 z-10 border-b border-white/10">
+          <div className="flex items-center justify-between">
+            <button 
+              onClick={() => setShowLyrics(false)} 
+              className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
+            >
+              ← Back
+            </button>
+            <div className="text-center flex-1 mx-4">
+              <div className="text-base font-bold truncate">{currentSong.title}</div>
+              <div className="text-xs text-green-300">
+                Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}
+              </div>
             </div>
-          ) : (
-            <div className="text-center text-gray-400 py-8">
-              <div className="text-5xl mb-4">📄</div>
-              <div>No lyrics available for this song</div>
+            <div className="w-16"></div>
+          </div>
+        </div>
+
+        {/* Mobile Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {/* Instruction Note Buttons (above lyrics) */}
+          {instructionTypes.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {instructionTypes.map(noteType => (
+                <div key={noteType}>
+                  <button
+                    onClick={() => toggleNoteType(noteType)}
+                    className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors ${
+                      expandedNotes.includes(noteType) 
+                        ? 'bg-yellow-600 text-white' 
+                        : 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/50'
+                    }`}
+                  >
+                    {expandedNotes.includes(noteType) ? '▼' : '▶'} {NOTE_TYPE_LABELS[noteType] || noteType}
+                  </button>
+                  {expandedNotes.includes(noteType) && (
+                    <div className="mt-2 p-4 bg-yellow-900/30 rounded-xl text-yellow-100 text-sm">
+                      {getNotesByType(songId, noteType).map((note, i) => (
+                        <p key={i} className={i > 0 ? 'mt-2' : ''}>{note.note_content}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Lyrics */}
+          <div className="text-center mb-6">
+            {currentSong.lyrics_text ? (
+              <div className="text-lg leading-relaxed whitespace-pre-wrap">
+                {currentSong.lyrics_text}
+              </div>
+            ) : (
+              <div className="text-gray-400 py-8">
+                <div className="text-5xl mb-4">📄</div>
+                <div>No lyrics available for this song</div>
+              </div>
+            )}
+            
+            {/* Year written */}
+            {yearWritten && (
+              <div className="mt-6 text-sm text-gray-400 italic">
+                Written: {yearWritten}
+              </div>
+            )}
+          </div>
+
+          {/* Other Note Buttons (below lyrics) */}
+          {otherTypes.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {otherTypes.map(noteType => (
+                <div key={noteType}>
+                  <button
+                    onClick={() => toggleNoteType(noteType)}
+                    className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors ${
+                      expandedNotes.includes(noteType) 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-blue-600/30 text-blue-200 hover:bg-blue-600/50'
+                    }`}
+                  >
+                    {expandedNotes.includes(noteType) ? '▼' : '▶'} {NOTE_TYPE_LABELS[noteType] || noteType}
+                  </button>
+                  {expandedNotes.includes(noteType) && (
+                    <div className="mt-2 p-4 bg-blue-900/30 rounded-xl text-blue-100 text-sm">
+                      {getNotesByType(songId, noteType).map((note, i) => (
+                        <p key={i} className={i > 0 ? 'mt-2' : ''}>{note.note_content}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
+
+        {/* Mobile Bottom Button */}
+        <div className="p-4 bg-black/80 border-t border-white/10">
+          <button 
+            onClick={() => setShowLyrics(false)}
+            className="w-full py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500 text-white transition-colors"
+          >
+            Back to Display
+          </button>
+        </div>
       </div>
 
-      {/* Bottom Button */}
-      <div className="p-4 bg-black/80 border-t border-white/10">
-        <button 
-          onClick={() => setShowLyrics(false)}
-          className="w-full max-w-3xl mx-auto block py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500 text-white transition-colors"
-        >
-          Back to Queue
-        </button>
+      {/* Desktop/TV Layout (two-column with sidebar) */}
+      <div className="hidden lg:flex min-h-screen">
+        {/* Left Sidebar */}
+        <div className="w-72 shrink-0 p-6 flex flex-col border-r border-white/10 bg-black/20">
+          {/* Room Code */}
+          <div className="bg-white/10 p-4 rounded-xl border border-white/10 mb-4 overflow-hidden">
+            <div className="text-xs uppercase font-bold opacity-60 mb-1">Room Code</div>
+            <div className="text-3xl font-black truncate">{roomCode}</div>
+          </div>
+          
+          {/* Back Button */}
+          <button 
+            onClick={() => setShowLyrics(false)} 
+            className="bg-white/10 hover:bg-white/20 px-4 py-3 rounded-xl text-lg font-bold transition-colors mb-4"
+          >
+            ← Back to Display
+          </button>
+          
+          {/* Instruction Note Buttons */}
+          {instructionTypes.length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs uppercase font-bold opacity-40 mb-2">Instructions</div>
+              {instructionTypes.map(noteType => (
+                <button
+                  key={noteType}
+                  onClick={() => toggleNoteType(noteType)}
+                  className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors mb-2 ${
+                    expandedNotes.includes(noteType) 
+                      ? 'bg-yellow-600 text-white' 
+                      : 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/50'
+                  }`}
+                >
+                  {NOTE_TYPE_LABELS[noteType] || noteType}
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {/* Other Note Buttons */}
+          {otherTypes.length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs uppercase font-bold opacity-40 mb-2">More Info</div>
+              {otherTypes.map(noteType => (
+                <button
+                  key={noteType}
+                  onClick={() => toggleNoteType(noteType)}
+                  className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors mb-2 ${
+                    expandedNotes.includes(noteType) 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600/30 text-blue-200 hover:bg-blue-600/50'
+                  }`}
+                >
+                  {NOTE_TYPE_LABELS[noteType] || noteType}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Right Main Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="p-6 border-b border-white/10">
+            <h1 className="text-4xl font-black mb-1">{currentSong.title}</h1>
+            <div className="text-xl text-green-400">
+              Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}
+            </div>
+          </div>
+          
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {/* Expanded Instruction Notes (above lyrics) */}
+            {instructionTypes.filter(t => expandedNotes.includes(t)).map(noteType => (
+              <div key={noteType} className="mb-6 p-4 bg-yellow-900/30 rounded-xl border border-yellow-600/30">
+                <div className="text-sm font-bold text-yellow-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+                {getNotesByType(songId, noteType).map((note, i) => (
+                  <p key={i} className="text-yellow-100 text-lg">{note.note_content}</p>
+                ))}
+              </div>
+            ))}
+            
+            {/* Lyrics */}
+            <div className="text-center mb-8">
+              {currentSong.lyrics_text ? (
+                <div className="text-2xl tv:text-3xl leading-relaxed whitespace-pre-wrap">
+                  {currentSong.lyrics_text}
+                </div>
+              ) : (
+                <div className="text-gray-400 py-8">
+                  <div className="text-5xl mb-4">📄</div>
+                  <div>No lyrics available for this song</div>
+                </div>
+              )}
+              
+              {/* Year written */}
+              {yearWritten && (
+                <div className="mt-8 text-lg text-gray-400 italic">
+                  Written: {yearWritten}
+                </div>
+              )}
+            </div>
+            
+            {/* Expanded Other Notes (below lyrics) */}
+            {otherTypes.filter(t => expandedNotes.includes(t)).map(noteType => (
+              <div key={noteType} className="mb-6 p-4 bg-blue-900/30 rounded-xl border border-blue-600/30">
+                <div className="text-sm font-bold text-blue-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+                {getNotesByType(songId, noteType).map((note, i) => (
+                  <p key={i} className="text-blue-100 text-lg">{note.note_content}</p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -475,7 +717,59 @@ if (view === 'display' && showLyrics && currentSong) {
             </button>
           )}
           
-          {/* Future: Notes/History expand buttons will go here */}
+          {/* Note Buttons (when song is playing) */}
+          {currentSong && (() => {
+            const currentSongFull = getCurrentSongFull();
+            const songId = currentSongFull?.id;
+            if (!songId) return null;
+            const currentNotes = getNotesForSong(songId);
+            const availableNoteTypes = [...new Set(currentNotes.map(n => n.note_type))];
+            const instructionTypes = availableNoteTypes.filter(t => INSTRUCTION_TYPES.includes(t));
+            const otherTypes = availableNoteTypes.filter(t => !INSTRUCTION_TYPES.includes(t));
+            
+            if (availableNoteTypes.length === 0) return null;
+            
+            return (
+              <>
+                {instructionTypes.length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-[10px] tv:text-xs uppercase font-bold opacity-40 mb-2">Instructions</div>
+                    {instructionTypes.map(noteType => (
+                      <button
+                        key={noteType}
+                        onClick={() => toggleNoteType(noteType)}
+                        className={`w-full text-left px-3 py-2 tv:px-4 tv:py-3 rounded-xl text-sm tv:text-base font-bold transition-colors mb-2 ${
+                          expandedNotes.includes(noteType) 
+                            ? 'bg-yellow-600 text-white' 
+                            : 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/50'
+                        }`}
+                      >
+                        {NOTE_TYPE_LABELS[noteType] || noteType}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {otherTypes.length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-[10px] tv:text-xs uppercase font-bold opacity-40 mb-2">More Info</div>
+                    {otherTypes.map(noteType => (
+                      <button
+                        key={noteType}
+                        onClick={() => toggleNoteType(noteType)}
+                        className={`w-full text-left px-3 py-2 tv:px-4 tv:py-3 rounded-xl text-sm tv:text-base font-bold transition-colors mb-2 ${
+                          expandedNotes.includes(noteType) 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-blue-600/30 text-blue-200 hover:bg-blue-600/50'
+                        }`}
+                      >
+                        {NOTE_TYPE_LABELS[noteType] || noteType}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
         
         {/* Right Main Content - Now Singing & Queue */}
@@ -493,11 +787,71 @@ if (view === 'display' && showLyrics && currentSong) {
                   Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
                 </div>
 
+                {/* Show expanded instruction notes on TV */}
+                {(() => {
+                  const currentSongFull = getCurrentSongFull();
+                  const songId = currentSongFull?.id;
+                  if (!songId) return null;
+                  const instructionTypes = [...new Set(getNotesForSong(songId).map(n => n.note_type))].filter(t => INSTRUCTION_TYPES.includes(t));
+                  const expandedInstructions = instructionTypes.filter(t => expandedNotes.includes(t));
+                  if (expandedInstructions.length === 0) return null;
+                  
+                  return (
+                    <div className="mt-6 space-y-4">
+                      {expandedInstructions.map(noteType => (
+                        <div key={noteType} className="p-4 bg-yellow-900/30 rounded-xl border border-yellow-600/30 text-left">
+                          <div className="text-sm font-bold text-yellow-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+                          {getNotesByType(songId, noteType).map((note, i) => (
+                            <p key={i} className="text-yellow-100 text-xl tv:text-2xl">{note.note_content}</p>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
                 {showLyricsOnTV && currentSong.lyrics_text && (
-                  <div className="mt-8 text-xl tv:text-3xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap">
-                    {currentSong.lyrics_text}
-                  </div>
+                  <>
+                    <div className="mt-8 text-xl tv:text-3xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap">
+                      {currentSong.lyrics_text}
+                    </div>
+                    {/* Year written */}
+                    {(() => {
+                      const currentSongFull = getCurrentSongFull();
+                      if (currentSongFull?.year_written) {
+                        return (
+                          <div className="mt-6 text-lg tv:text-xl text-gray-400 italic">
+                            Written: {currentSongFull.year_written}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </>
                 )}
+
+                {/* Show expanded other notes on TV (below lyrics if showing, otherwise below title) */}
+                {(() => {
+                  const currentSongFull = getCurrentSongFull();
+                  const songId = currentSongFull?.id;
+                  if (!songId) return null;
+                  const otherTypes = [...new Set(getNotesForSong(songId).map(n => n.note_type))].filter(t => !INSTRUCTION_TYPES.includes(t));
+                  const expandedOther = otherTypes.filter(t => expandedNotes.includes(t));
+                  if (expandedOther.length === 0) return null;
+                  
+                  return (
+                    <div className="mt-6 space-y-4">
+                      {expandedOther.map(noteType => (
+                        <div key={noteType} className="p-4 bg-blue-900/30 rounded-xl border border-blue-600/30 text-left">
+                          <div className="text-sm font-bold text-blue-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+                          {getNotesByType(songId, noteType).map((note, i) => (
+                            <p key={i} className="text-blue-100 text-xl tv:text-2xl">{note.note_content}</p>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div className="text-3xl tv:text-5xl opacity-30 italic">Pick a song to begin...</div>
