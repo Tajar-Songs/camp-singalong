@@ -54,6 +54,7 @@ export default function Admin() {
   const [songbookEntries, setSongbookEntries] = useState([]);
   const [changeLog, setChangeLog] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sectionFilter, setSectionFilter] = useState('all');
   const [selectedSong, setSelectedSong] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [songEditTab, setSongEditTab] = useState('basic');
@@ -349,7 +350,12 @@ export default function Admin() {
     } catch (error) { showMessage('❌ Error removing member'); }
   };
 
-  const filteredSongs = allSongs.filter(song => { const search = searchTerm.toLowerCase(); if (!search) return true; return song.title?.toLowerCase().includes(search) || song.page?.toLowerCase().includes(search) || song.section?.toLowerCase().includes(search); });
+  const filteredSongs = allSongs.filter(song => { 
+    if (sectionFilter !== 'all' && song.section !== sectionFilter) return false;
+    const search = searchTerm.toLowerCase(); 
+    if (!search) return true; 
+    return song.title?.toLowerCase().includes(search) || song.page?.toLowerCase().includes(search) || song.section?.toLowerCase().includes(search); 
+  });
   const filteredGroups = songGroups.filter(group => { const search = searchTerm.toLowerCase(); if (!search) return true; return group.group_name?.toLowerCase().includes(search); });
   const filteredChangeLog = changeLog.filter(log => { if (logTableFilter !== 'all' && log.table_name !== logTableFilter) return false; if (logUserFilter && !log.changed_by?.toLowerCase().includes(logUserFilter.toLowerCase())) return false; return true; });
 
@@ -402,7 +408,13 @@ export default function Admin() {
         <div style={s.content}>
           <div style={s.panel}>
             <input type="text" placeholder="Search songs..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={s.searchInput} />
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}><button style={s.btn} onClick={startAddNewSong}>+ Add Song</button></div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ ...s.select, flex: 1 }}>
+                <option value="all">All Sections</option>
+                {Object.entries(SECTION_INFO).map(([k, n]) => <option key={k} value={k}>{k} - {n}</option>)}
+              </select>
+              <button style={s.btn} onClick={startAddNewSong}>+ Add Song</button>
+            </div>
             <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{filteredSongs.length} songs</div>
             <div style={s.songList}>
               {filteredSongs.map(song => (
