@@ -53,6 +53,7 @@ export default function Admin() {
   const [songGroupMembers, setSongGroupMembers] = useState([]);
   const [songbookEntries, setSongbookEntries] = useState([]);
   const [songbooks, setSongbooks] = useState([]);
+  const [songbookSections, setSongbookSections] = useState([]);
   const [changeLog, setChangeLog] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sectionFilter, setSectionFilter] = useState('all');
@@ -164,7 +165,7 @@ export default function Admin() {
   const loadAllData = async () => {
     try {
       const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` };
-      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
+      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
@@ -175,6 +176,7 @@ export default function Admin() {
         fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
@@ -190,6 +192,7 @@ export default function Admin() {
       setSongGroupMembers(await membersRes.json());
       setSongbookEntries(await entriesRes.json());
       setSongbooks(await songbooksRes.json());
+      setSongbookSections(await songbookSectionsRes.json());
       setSongMedia(await mediaRes.json());
       setSongFlags(await flagsRes.json());
       setPotentialDuplicates(await duplicatesRes.json());
@@ -222,6 +225,9 @@ export default function Admin() {
   
   // Get all songbook entries for a song
   const getSongSongbookEntries = (songId) => songbookEntries.filter(e => e.song_id === songId);
+  
+  // Get sections for a specific songbook
+  const getSongbookSections = (songbookId) => songbookSections.filter(s => s.songbook_id === songbookId).sort((a, b) => a.display_order - b.display_order);
   
   const getSongNotes = (songId) => songNotes.filter(n => n.song_id === songId);
   const getSongSections = (songId) => songSections.filter(s => s.song_id === songId);
@@ -1268,7 +1274,11 @@ export default function Admin() {
   };
 
   const filteredSongs = allSongs.filter(song => { 
-    if (sectionFilter !== 'all' && song.section !== sectionFilter) return false;
+    // Check section filter - include if primary OR any songbook entry has matching section
+    if (sectionFilter !== 'all') {
+      const entrySections = getSongSongbookEntries(song.id).map(e => e.section).filter(Boolean);
+      if (song.section !== sectionFilter && !entrySections.includes(sectionFilter)) return false;
+    }
     const search = searchTerm.toLowerCase(); 
     if (!search) return true;
     const pageInfo = getSongPage(song.id);
@@ -1338,7 +1348,7 @@ export default function Admin() {
               </select>
               <button style={s.btn} onClick={startAddNewSong}>+ Add Song</button>
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem' }}>📄 lyrics 📝 notes 🎵 media ⚠️ flags 🏷️ aliases 👥 groups 📑 versions</div>
+            <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem' }}>📄 lyrics 📝 notes 🎵 media ⚠️ flags 🏷️ aliases 👥 groups 📑 versions 📍 multi-section</div>
             <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{filteredSongs.length} songs</div>
             <div style={s.songList}>
               {filteredSongs.map(song => {
@@ -1351,12 +1361,24 @@ export default function Admin() {
                 const hasAliases = getSongAliases(song.id).length > 0;
                 const inGroups = getSongGroups(song.id).length > 0;
                 const multipleVersions = getSongVersions(song.id).length > 1;
+                // Check for multiple sections via songbook entries
+                const songbookEntrySections = getSongSongbookEntries(song.id).map(e => e.section).filter(Boolean);
+                const uniqueSections = [...new Set([song.section, ...songbookEntrySections])];
+                const hasMultipleSections = uniqueSections.length > 1;
+                // If filtering by a different section, find the matching entry
+                const matchedEntry = sectionFilter !== 'all' && song.section !== sectionFilter 
+                  ? getSongSongbookEntries(song.id).find(e => e.section === sectionFilter) 
+                  : null;
                 return (
                   <div key={song.id} style={s.songItem(selectedSong?.id === song.id)} onClick={() => selectSong(song)}>
                     <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{song.title}</div>
                     <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                      Section {song.section} • Page {displayPage}
-                      {hasLyrics && ' 📄'}{hasNotes && ' 📝'}{hasMedia && ' 🎵'}{hasFlags && ' ⚠️'}{hasAliases && ' 🏷️'}{inGroups && ' 👥'}{multipleVersions && ' 📑'}
+                      {matchedEntry ? (
+                        <>Section {matchedEntry.section} • Page {matchedEntry.page || 'N/A'} <span style={{ color: '#64748b' }}>(also {song.section})</span></>
+                      ) : (
+                        <>Section {song.section} • Page {displayPage}</>
+                      )}
+                      {hasLyrics && ' 📄'}{hasNotes && ' 📝'}{hasMedia && ' 🎵'}{hasFlags && ' ⚠️'}{hasAliases && ' 🏷️'}{inGroups && ' 👥'}{multipleVersions && ' 📑'}{hasMultipleSections && ' 📍'}
                     </div>
                   </div>
                 );
@@ -1380,7 +1402,6 @@ export default function Admin() {
                     <button style={s.editTab(songEditTab === 'flags')} onClick={() => setSongEditTab('flags')}>Flags ({getSongFlags(selectedSong.id).length})</button>
                     <button style={s.editTab(songEditTab === 'media')} onClick={() => setSongEditTab('media')}>Media ({getSongMedia(selectedSong.id).length})</button>
                     <button style={s.editTab(songEditTab === 'songbooks')} onClick={() => setSongEditTab('songbooks')}>Songbooks ({getSongSongbookEntries(selectedSong.id).length})</button>
-                    <button style={s.editTab(songEditTab === 'sections')} onClick={() => setSongEditTab('sections')}>Sections</button>
                     <button style={s.editTab(songEditTab === 'aliases')} onClick={() => setSongEditTab('aliases')}>Aliases ({getSongAliases(selectedSong.id).length})</button>
                     <button style={s.editTab(songEditTab === 'groups')} onClick={() => setSongEditTab('groups')}>Groups ({getSongGroups(selectedSong.id).length})</button>
                   </div>
@@ -1677,9 +1698,15 @@ export default function Admin() {
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div style={s.formGroup}>
                               <label style={s.label}>Section</label>
-                              <select value={entrySection} onChange={(e) => setEntrySection(e.target.value)} style={s.select}>
+                              <select value={entrySection} onChange={(e) => setEntrySection(e.target.value)} style={s.select} disabled={!entrySongbookId}>
                                 <option value="">No section</option>
-                                {Object.entries(SECTION_INFO).map(([k, n]) => <option key={k} value={k}>{k} - {n}</option>)}
+                                {entrySongbookId && getSongbookSections(entrySongbookId).map(sec => (
+                                  <option key={sec.id} value={sec.section_code}>{sec.section_code} - {sec.section_name}</option>
+                                ))}
+                                {/* Fallback to SECTION_INFO if no sections defined for this songbook */}
+                                {entrySongbookId && getSongbookSections(entrySongbookId).length === 0 && 
+                                  Object.entries(SECTION_INFO).map(([k, n]) => <option key={k} value={k}>{k} - {n}</option>)
+                                }
                               </select>
                             </div>
                             <div style={s.formGroup}>
@@ -1693,48 +1720,38 @@ export default function Admin() {
                           </div>
                         </div>
                       )}
-                      {getSongSongbookEntries(selectedSong.id).map(entry => {
-                        const sb = songbooks.find(s => s.id === entry.songbook_id);
+                      {/* Group entries by songbook */}
+                      {songbooks.map(sb => {
+                        const entries = getSongSongbookEntries(selectedSong.id).filter(e => e.songbook_id === sb.id);
+                        if (entries.length === 0) return null;
+                        const sbSections = getSongbookSections(sb.id);
                         return (
-                          <div key={entry.id} style={s.card}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div>
-                                <div style={{ fontWeight: 'bold', color: '#22c55e' }}>{sb?.name || 'Unknown Songbook'}</div>
-                                <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
-                                  {entry.section && `Section ${entry.section} • `}Page {entry.page || 'N/A'}
+                          <div key={sb.id} style={{ marginBottom: '1rem' }}>
+                            <div style={{ fontWeight: 'bold', color: '#22c55e', marginBottom: '0.5rem' }}>{sb.name}</div>
+                            {entries.map(entry => {
+                              const sectionInfo = sbSections.find(s => s.section_code === entry.section);
+                              const sectionDisplay = sectionInfo 
+                                ? `Section ${sectionInfo.section_code} (${sectionInfo.section_name})`
+                                : entry.section ? `Section ${entry.section}` : null;
+                              return (
+                                <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem' }}>
+                                  <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
+                                    {sectionDisplay && `${sectionDisplay} • `}Page {entry.page || 'N/A'}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                    <button style={s.btnSmall} onClick={() => startEditSongbookEntry(entry)}>Edit</button>
+                                    <button style={s.btnDanger} onClick={() => deleteSongbookEntry(entry)}>Delete</button>
+                                  </div>
                                 </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                <button style={s.btnSmall} onClick={() => startEditSongbookEntry(entry)}>Edit</button>
-                                <button style={s.btnDanger} onClick={() => deleteSongbookEntry(entry)}>Delete</button>
-                              </div>
-                            </div>
+                              );
+                            })}
+                            <button style={{ ...s.btnSmall, marginTop: '0.25rem' }} onClick={() => { setEntrySongbookId(sb.id); setEntrySection(''); setEntryPage(''); setEditingSongbookEntry({}); }}>+ Add another section</button>
                           </div>
                         );
                       })}
                       {getSongSongbookEntries(selectedSong.id).length === 0 && !editingSongbookEntry && (
                         <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>Not in any songbooks yet</div>
                       )}
-                    </>
-                  )}
-                  {songEditTab === 'sections' && !isAddingNew && (
-                    <>
-                      <div style={{ marginBottom: '1rem' }}><div style={{ fontSize: '0.875rem' }}><strong>Primary:</strong> Section {selectedSong.section} ({SECTION_INFO[selectedSong.section]}) - Page {selectedSong.page || 'N/A'}</div></div>
-                      <h4 style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Secondary Sections</h4>
-                      {getSongSections(selectedSong.id).filter(sec => !sec.is_primary).map(sec => (
-                        <div key={sec.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem' }}>
-                          <span>Section {sec.section} ({SECTION_INFO[sec.section]}) - Page {sec.page || 'N/A'}</span>
-                          <button style={s.btnDanger} onClick={() => deleteSecondarySection(sec)}>Remove</button>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                        <select value={newSecondarySection} onChange={(e) => setNewSecondarySection(e.target.value)} style={{ ...s.select, width: 'auto' }}>
-                          <option value="">Add section...</option>
-                          {Object.entries(SECTION_INFO).map(([k, n]) => <option key={k} value={k}>{k} - {n}</option>)}
-                        </select>
-                        <input type="text" value={newSecondaryPage} onChange={(e) => setNewSecondaryPage(e.target.value)} placeholder="Page" style={{ ...s.input, width: '100px' }} />
-                        <button style={s.btn} onClick={addSecondarySection} disabled={!newSecondarySection}>Add</button>
-                      </div>
                     </>
                   )}
                   {songEditTab === 'aliases' && !isAddingNew && (
