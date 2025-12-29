@@ -52,6 +52,7 @@ export default function Admin() {
   const [songGroups, setSongGroups] = useState([]);
   const [songGroupMembers, setSongGroupMembers] = useState([]);
   const [songbookEntries, setSongbookEntries] = useState([]);
+  const [songbooks, setSongbooks] = useState([]);
   const [changeLog, setChangeLog] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sectionFilter, setSectionFilter] = useState('all');
@@ -103,7 +104,7 @@ export default function Admin() {
   const loadAllData = async () => {
     try {
       const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` };
-      const [songsRes, versionsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, logRes] = await Promise.all([
+      const [songsRes, versionsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, logRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, { headers }),
@@ -112,6 +113,7 @@ export default function Admin() {
         fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
       ]);
       setAllSongs(await songsRes.json());
@@ -122,6 +124,7 @@ export default function Admin() {
       setSongGroups(await groupsRes.json());
       setSongGroupMembers(await membersRes.json());
       setSongbookEntries(await entriesRes.json());
+      setSongbooks(await songbooksRes.json());
       setChangeLog(await logRes.json());
     } catch (error) { console.error('Error loading data:', error); }
   };
@@ -139,6 +142,15 @@ export default function Admin() {
   };
 
   const getDefaultVersion = (songId) => songVersions.find(v => v.song_id === songId && v.is_default_singalong) || songVersions.find(v => v.song_id === songId);
+  
+  // Get page info for a song from songbook entries
+  const getSongPage = (songId) => {
+    const primarySongbook = songbooks.find(sb => sb.is_primary);
+    const primaryEntry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === primarySongbook?.id);
+    const oldSongbook = songbooks.find(sb => sb.display_order === 2);
+    const oldEntry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === oldSongbook?.id);
+    return { page: primaryEntry?.page || null, section: primaryEntry?.section || null, old_page: oldEntry?.page || null };
+  };
   const getSongNotes = (songId) => songNotes.filter(n => n.song_id === songId);
   const getSongSections = (songId) => songSections.filter(s => s.song_id === songId);
   const getSongAliases = (songId) => songAliases.filter(a => a.song_id === songId);
@@ -148,9 +160,14 @@ export default function Admin() {
 
   const selectSong = (song) => {
     setSelectedSong(song); setSelectedGroup(null); setIsAddingNew(false);
-    setFormTitle(song.title); setFormPage(song.page || ''); setFormOldPage(song.old_page || '');
-    setFormSection(song.section || 'A'); setFormYearWritten(song.year_written || '');
-    setFormLyrics(getDefaultVersion(song.id)?.lyrics_content || ''); setSongEditTab('basic');
+    const pageInfo = getSongPage(song.id);
+    setFormTitle(song.title); 
+    setFormPage(pageInfo.page || song.page || ''); 
+    setFormOldPage(pageInfo.old_page || song.old_page || '');
+    setFormSection(pageInfo.section || song.section || 'A'); 
+    setFormYearWritten(song.year_written || '');
+    setFormLyrics(getDefaultVersion(song.id)?.lyrics_content || ''); 
+    setSongEditTab('basic');
   };
 
   const startAddNewSong = () => {
@@ -166,17 +183,72 @@ export default function Admin() {
     setSaving(true);
     const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
     try {
-      const songData = { title: formTitle.trim(), page: formPage.trim() || null, old_page: formOldPage.trim() || null, section: formSection, year_written: formYearWritten ? parseInt(formYearWritten) : null };
+      // Song data (only title and year_written - page/section goes to songbook_entries)
+      const songData = { title: formTitle.trim(), year_written: formYearWritten ? parseInt(formYearWritten) : null };
+      
       if (isAddingNew) {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(songData) });
-        if (response.ok) { const created = await response.json(); await logChange('add', 'songs', created[0].id, created[0].title); showMessage('✅ Song added!'); setIsAddingNew(false); await loadAllData(); selectSong(created[0]); }
+        // Create the song first
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify({ ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null }) });
+        if (response.ok) { 
+          const created = await response.json(); 
+          const newSongId = created[0].id;
+          
+          // Create songbook entry for primary songbook (2025)
+          const primarySongbook = songbooks.find(sb => sb.is_primary);
+          if (primarySongbook && (formPage.trim() || formSection)) {
+            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: newSongId, songbook_id: primarySongbook.id, section: formSection, page: formPage.trim() || null }) });
+          }
+          
+          // Create songbook entry for old songbook if old_page provided
+          const oldSongbook = songbooks.find(sb => sb.display_order === 2);
+          if (oldSongbook && formOldPage.trim()) {
+            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: newSongId, songbook_id: oldSongbook.id, section: formSection, page: formOldPage.trim() }) });
+          }
+          
+          await logChange('add', 'songs', newSongId, created[0].title); 
+          showMessage('✅ Song added!'); 
+          setIsAddingNew(false); 
+          await loadAllData(); 
+          selectSong(created[0]); 
+        }
       } else {
+        // Log changes
         if (selectedSong.title !== songData.title) await logChange('edit', 'songs', selectedSong.id, songData.title, 'title', selectedSong.title, songData.title);
-        if (selectedSong.page !== songData.page) await logChange('edit', 'songs', selectedSong.id, songData.title, 'page', selectedSong.page, songData.page);
-        if (selectedSong.section !== songData.section) await logChange('edit', 'songs', selectedSong.id, songData.title, 'section', selectedSong.section, songData.section);
         if (selectedSong.year_written !== songData.year_written) await logChange('edit', 'songs', selectedSong.id, songData.title, 'year_written', selectedSong.year_written, songData.year_written);
-        await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(songData) });
-        showMessage('✅ Song updated!'); await loadAllData(); setSelectedSong({ ...selectedSong, ...songData });
+        
+        // Update songs table (also keep section/page for backward compatibility during transition)
+        await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null }) });
+        
+        // Update/create primary songbook entry
+        const primarySongbook = songbooks.find(sb => sb.is_primary);
+        if (primarySongbook) {
+          const existingPrimaryEntry = songbookEntries.find(e => e.song_id === selectedSong.id && e.songbook_id === primarySongbook.id);
+          if (existingPrimaryEntry) {
+            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingPrimaryEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ section: formSection, page: formPage.trim() || null }) });
+          } else if (formPage.trim() || formSection) {
+            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, songbook_id: primarySongbook.id, section: formSection, page: formPage.trim() || null }) });
+          }
+        }
+        
+        // Update/create old songbook entry
+        const oldSongbook = songbooks.find(sb => sb.display_order === 2);
+        if (oldSongbook) {
+          const existingOldEntry = songbookEntries.find(e => e.song_id === selectedSong.id && e.songbook_id === oldSongbook.id);
+          if (existingOldEntry) {
+            if (formOldPage.trim()) {
+              await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ page: formOldPage.trim() }) });
+            } else {
+              // Remove entry if old_page is cleared
+              await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'DELETE', headers });
+            }
+          } else if (formOldPage.trim()) {
+            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, songbook_id: oldSongbook.id, section: formSection, page: formOldPage.trim() }) });
+          }
+        }
+        
+        showMessage('✅ Song updated!'); 
+        await loadAllData(); 
+        setSelectedSong({ ...selectedSong, ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null });
       }
     } catch (error) { console.error(error); showMessage('❌ Error saving'); }
     setSaving(false);
@@ -353,8 +425,10 @@ export default function Admin() {
   const filteredSongs = allSongs.filter(song => { 
     if (sectionFilter !== 'all' && song.section !== sectionFilter) return false;
     const search = searchTerm.toLowerCase(); 
-    if (!search) return true; 
-    return song.title?.toLowerCase().includes(search) || song.page?.toLowerCase().includes(search) || song.section?.toLowerCase().includes(search); 
+    if (!search) return true;
+    const pageInfo = getSongPage(song.id);
+    const page = pageInfo.page || song.page;
+    return song.title?.toLowerCase().includes(search) || page?.toLowerCase().includes(search) || song.section?.toLowerCase().includes(search); 
   });
   const filteredGroups = songGroups.filter(group => { const search = searchTerm.toLowerCase(); if (!search) return true; return group.group_name?.toLowerCase().includes(search); });
   const filteredChangeLog = changeLog.filter(log => { if (logTableFilter !== 'all' && log.table_name !== logTableFilter) return false; if (logUserFilter && !log.changed_by?.toLowerCase().includes(logUserFilter.toLowerCase())) return false; return true; });
@@ -417,12 +491,16 @@ export default function Admin() {
             </div>
             <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{filteredSongs.length} songs</div>
             <div style={s.songList}>
-              {filteredSongs.map(song => (
-                <div key={song.id} style={s.songItem(selectedSong?.id === song.id)} onClick={() => selectSong(song)}>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{song.title}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Section {song.section} • Page {song.page || 'N/A'}{getDefaultVersion(song.id)?.lyrics_content && ' 📄'}</div>
-                </div>
-              ))}
+              {filteredSongs.map(song => {
+                const pageInfo = getSongPage(song.id);
+                const displayPage = pageInfo.page || song.page || 'N/A';
+                return (
+                  <div key={song.id} style={s.songItem(selectedSong?.id === song.id)} onClick={() => selectSong(song)}>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{song.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Section {song.section} • Page {displayPage}{getDefaultVersion(song.id)?.lyrics_content && ' 📄'}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
           <div style={s.panel}>
