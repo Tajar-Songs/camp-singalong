@@ -27,14 +27,6 @@ export default function TagManagement() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
 
-  // Session name for tracking who makes changes
-  const [sessionName, setSessionName] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('camp_admin_name') || '';
-    }
-    return '';
-  });
-
   // Data state
   const [tags, setTags] = useState([]);
   const [songs, setSongs] = useState([]);
@@ -232,10 +224,6 @@ export default function TagManagement() {
   };
 
   const saveTag = async () => {
-    if (!sessionName.trim()) {
-      showMessage('❌ Please enter your name first');
-      return;
-    }
     if (!tagName.trim()) {
       showMessage('❌ Tag name is required');
       return;
@@ -245,7 +233,7 @@ export default function TagManagement() {
       const tagData = {
         name: tagName.trim(),
         description: tagDescription.trim() || null,
-        created_by: sessionName
+        created_by: userProfile?.display_name || user?.email || 'Unknown'
       };
 
       if (isAddingTag) {
@@ -563,32 +551,6 @@ export default function TagManagement() {
             </a>
           </div>
         </header>
-
-        {/* Name Input */}
-        <section className={`sticky top-4 z-40 p-4 rounded-xl mb-8 border transition-all duration-300 shadow-2xl flex flex-col sm:flex-row items-center gap-4 ${
-          sessionName.trim() 
-            ? 'bg-slate-800/95 backdrop-blur border-slate-700' 
-            : 'bg-red-950/90 backdrop-blur border-red-500'
-        }`}>
-          <label className="font-bold flex items-center gap-2 whitespace-nowrap">
-            <span className="text-xl">👤</span> Your Name:
-          </label>
-          <input 
-            type="text" 
-            placeholder="Type your name to unlock editing..." 
-            value={sessionName} 
-            onChange={(e) => {
-              setSessionName(e.target.value);
-              localStorage.setItem('camp_admin_name', e.target.value);
-            }}
-            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder:text-slate-500 focus:border-green-500 outline-none transition-all" 
-          />
-          {!sessionName.trim() && (
-            <span className="text-red-400 font-bold text-sm animate-pulse whitespace-nowrap">
-              ⚠️ Required to save
-            </span>
-          )}
-        </section>
 
         {/* Status Message */}
         {message && (

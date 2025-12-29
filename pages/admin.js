@@ -170,12 +170,12 @@ export default function Admin() {
   const [duplicateStatusFilter, setDuplicateStatusFilter] = useState('pending');
   const [mergePrimarySongId, setMergePrimarySongId] = useState(null);
 
+  const [userProfile, setUserProfile] = useState(null);
+
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
   useEffect(() => { if (userProfile?.role === 'admin') loadAllData(); }, [userProfile]);
   useEffect(() => { if (sessionName) localStorage.setItem('camp_admin_name', sessionName); }, [sessionName]);
-
-  const [userProfile, setUserProfile] = useState(null);
 
   const checkAuthSession = async () => {
     try {
