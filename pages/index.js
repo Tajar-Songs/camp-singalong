@@ -53,6 +53,26 @@ export default function Home() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
   
+  // Auth state
+  const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login', 'signup', 'magic'
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authDisplayName, setAuthDisplayName] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  
+  // Session history
+  const [sessionHistory, setSessionHistory] = useState([]);
+  const [historyLookback, setHistoryLookback] = useState(3); // number of sessions;
+  const [copied, setCopied] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [showLyricsOnTV, setShowLyricsOnTV] = useState(false);
+  
   // Tag filtering state
   const [tags, setTags] = useState([]);
   const [songTags, setSongTags] = useState([]);
@@ -82,13 +102,171 @@ export default function Home() {
     return () => darkModeQuery.removeEventListener('change', handler);
   }, []);
 
+  // Check for existing auth session on load
+  useEffect(() => {
+    checkAuthSession();
+  }, []);
+
   useEffect(() => { loadSongs(); loadTags(); }, []);
+
+  // Load session history when user changes
+  useEffect(() => {
+    if (user) {
+      loadSessionHistory();
+    } else {
+      setSessionHistory([]);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!roomCode) return;
     const interval = setInterval(() => { loadRoomData(); }, 2000);
     return () => clearInterval(interval);
   }, [roomCode]);
+
+  // Auth functions
+  const checkAuthSession = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
+      });
+      if (res.ok) {
+        const userData = await res.json();
+        setUser(userData);
+        loadUserProfile(userData.id);
+      }
+    } catch (error) { console.log('No existing session'); }
+  };
+
+  const loadUserProfile = async (userId) => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
+      });
+      const data = await res.json();
+      if (data.length > 0) setUserProfile(data[0]);
+    } catch (error) { console.error('Error loading profile:', error); }
+  };
+
+  const loadSessionHistory = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/session_history?user_id=eq.${user.id}&order=sung_at.desc`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
+      });
+      const data = await res.json();
+      setSessionHistory(data);
+    } catch (error) { console.error('Error loading history:', error); }
+  };
+
+  const handleSignUp = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: authEmail, 
+          password: authPassword,
+          data: { display_name: authDisplayName || authEmail }
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || data.error_description);
+      setAuthMessage('Check your email to confirm your account!');
+      setAuthMode('login');
+    } catch (error) { setAuthError(error.message); }
+    setAuthLoading(false);
+  };
+
+  const handleLogin = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, password: authPassword })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || data.error_description);
+      localStorage.setItem('supabase_access_token', data.access_token);
+      localStorage.setItem('supabase_refresh_token', data.refresh_token);
+      setUser(data.user);
+      loadUserProfile(data.user.id);
+      setShowAuthModal(false);
+      resetAuthForm();
+    } catch (error) { setAuthError(error.message); }
+    setAuthLoading(false);
+  };
+
+  const handleMagicLink = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/magiclink`, {
+        method: 'POST',
+        headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || data.error_description);
+      setAuthMessage('Check your email for the magic link!');
+    } catch (error) { setAuthError(error.message); }
+    setAuthLoading(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('supabase_access_token');
+    localStorage.removeItem('supabase_refresh_token');
+    setUser(null);
+    setUserProfile(null);
+    setSessionHistory([]);
+  };
+
+  const resetAuthForm = () => {
+    setAuthEmail('');
+    setAuthPassword('');
+    setAuthDisplayName('');
+    setAuthError('');
+    setAuthMessage('');
+  };
+
+  const recordSongSung = async (songId) => {
+    if (!user) return;
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/session_history`, {
+        method: 'POST',
+        headers: { 
+          'apikey': SUPABASE_KEY, 
+          'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          song_id: songId,
+          room_id: roomCode
+        })
+      });
+      loadSessionHistory();
+    } catch (error) { console.error('Error recording song:', error); }
+  };
+
+  // Get unique session dates for history lookback
+  const getRecentSessionDates = () => {
+    const dates = [...new Set(sessionHistory.map(h => h.session_date))];
+    return dates.slice(0, historyLookback);
+  };
+
+  // Get song IDs sung in recent sessions
+  const getRecentlySungSongIds = () => {
+    const recentDates = getRecentSessionDates();
+    return sessionHistory
+      .filter(h => recentDates.includes(h.session_date))
+      .map(h => h.song_id);
+  };
 
   const loadSongs = async () => {
     try {
@@ -362,6 +540,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           room_id: roomCode,
+          song_id: song.id || null,
           song_title: song.title,
           song_page: pageInfo.page || song.page,
           song_section: pageInfo.section || song.section,
@@ -456,7 +635,32 @@ export default function Home() {
       return matchesSection || matchesIncludeTag;
     });
     if (availableSongs.length === 0) { alert('No songs available with current filters!'); return; }
-    const randomSong = availableSongs[Math.floor(Math.random() * availableSongs.length)];
+    
+    // Weight songs by history (if user is logged in)
+    const recentlySungIds = getRecentlySungSongIds();
+    let randomSong;
+    
+    if (user && recentlySungIds.length > 0) {
+      // Separate songs into "not recently sung" and "recently sung"
+      const notRecentlySung = availableSongs.filter(s => !recentlySungIds.includes(s.id));
+      const recentlySung = availableSongs.filter(s => recentlySungIds.includes(s.id));
+      
+      if (notRecentlySung.length > 0) {
+        // Prefer songs not recently sung (90% chance if available)
+        if (Math.random() < 0.9) {
+          randomSong = notRecentlySung[Math.floor(Math.random() * notRecentlySung.length)];
+        } else {
+          randomSong = availableSongs[Math.floor(Math.random() * availableSongs.length)];
+        }
+      } else {
+        // All songs have been sung recently - pick any
+        randomSong = availableSongs[Math.floor(Math.random() * availableSongs.length)];
+      }
+    } else {
+      // No user or no history - pure random
+      randomSong = availableSongs[Math.floor(Math.random() * availableSongs.length)];
+    }
+    
     // For random, skip the group prompt and add song directly
     addSongToQueue(randomSong, 'Random');
   };
@@ -474,6 +678,12 @@ export default function Home() {
       group_instructions: song.group_instructions || null
     };
     await updateRoom({ current_song: songObj, sung_songs: [...sungSongs, songObj] });
+    
+    // Record in user's session history
+    if (song.song_id) {
+      recordSongSung(song.song_id);
+    }
+    
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue?id=eq.${song.id}`, {
         method: 'DELETE',
@@ -579,6 +789,75 @@ export default function Home() {
   if (!roomCode) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 ${isDark ? 'bg-slate-950' : 'bg-green-50'}`}>
+        {/* Auth Modal */}
+        {showAuthModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className={`rounded-2xl p-6 w-full max-w-sm ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  {authMode === 'signup' ? 'Create Account' : authMode === 'magic' ? 'Magic Link' : 'Sign In'}
+                </h2>
+                <button onClick={() => { setShowAuthModal(false); resetAuthForm(); }} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+              </div>
+              
+              {authError && <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{authError}</div>}
+              {authMessage && <div className="bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
+              
+              <div className="space-y-3">
+                {authMode === 'signup' && (
+                  <input
+                    type="text"
+                    placeholder="Display Name"
+                    value={authDisplayName}
+                    onChange={(e) => setAuthDisplayName(e.target.value)}
+                    className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                  />
+                )}
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                />
+                {authMode !== 'magic' && (
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                  />
+                )}
+                <button
+                  onClick={authMode === 'signup' ? handleSignUp : authMode === 'magic' ? handleMagicLink : handleLogin}
+                  disabled={authLoading || !authEmail || (authMode !== 'magic' && !authPassword)}
+                  className="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-lg font-bold transition-all disabled:opacity-50"
+                >
+                  {authLoading ? 'Loading...' : authMode === 'signup' ? 'Create Account' : authMode === 'magic' ? 'Send Magic Link' : 'Sign In'}
+                </button>
+              </div>
+              
+              <div className={`mt-4 pt-4 border-t ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
+                <div className="flex flex-col gap-2 text-sm text-center">
+                  {authMode === 'login' && (
+                    <>
+                      <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-green-600 hover:underline">Need an account? Sign up</button>
+                      <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-blue-600 hover:underline">Use magic link instead</button>
+                    </>
+                  )}
+                  {authMode === 'signup' && (
+                    <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-green-600 hover:underline">Already have an account? Sign in</button>
+                  )}
+                  {authMode === 'magic' && (
+                    <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-green-600 hover:underline">Use password instead</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className={`shadow-2xl rounded-3xl p-6 sm:p-8 w-full max-w-md border animate-in fade-in zoom-in duration-500 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-green-100'}`}>
           <div className="text-center mb-8">
             <div className="text-6xl mb-4 drop-shadow-lg">🎵</div>
@@ -586,6 +865,24 @@ export default function Home() {
               Camp <span className="text-green-600">Singalong</span>
             </h1>
           </div>
+          
+          {/* User status */}
+          <div className={`mb-6 p-3 rounded-xl text-center ${isDark ? 'bg-slate-800' : 'bg-green-50'}`}>
+            {user ? (
+              <div className="flex items-center justify-between">
+                <span className={`text-sm ${isDark ? 'text-slate-300' : 'text-green-700'}`}>
+                  👋 {userProfile?.display_name || user.email}
+                </span>
+                <button onClick={handleLogout} className="text-xs text-red-500 hover:underline">Sign out</button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className={`text-sm ${isDark ? 'text-slate-400' : 'text-green-600'}`}>Guest mode</span>
+                <button onClick={() => setShowAuthModal(true)} className="text-sm text-green-600 hover:underline font-semibold">Sign in</button>
+              </div>
+            )}
+          </div>
+          
           <div className="space-y-6">
             <button
               onClick={createRoom}
