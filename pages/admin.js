@@ -943,7 +943,7 @@ export default function Admin() {
     const primarySong = allSongs.find(s => s.id === mergePrimarySongId);
     const secondarySong = allSongs.find(s => s.id === secondarySongId);
     
-    if (!confirm(`Merge "${secondarySong?.title}" into "${primarySong?.title}"?\n\nThis will:\n• Create "${secondarySong?.title}" as an alias of "${primarySong?.title}"\n• Move all versions, notes, media, and flags to the primary song\n• Delete the secondary song\n\nThis cannot be undone.`)) return;
+    if (!confirm(`Merge "${secondarySong?.title}" into "${primarySong?.title}"?\n\nThis will:\n• Create "${secondarySong?.title}" as an alias of "${primarySong?.title}"\n• Move all versions, notes, media, flags, and group memberships to the primary song\n• Delete the secondary song\n\nThis cannot be undone.`)) return;
     
     setSaving(true);
     const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
@@ -991,19 +991,52 @@ export default function Admin() {
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
       
-      // 7. Move songbook entries from secondary to primary
+      // 7. Move secondary sections from secondary to primary (skip duplicates)
+      const secondarySections = songSections.filter(s => s.song_id === secondarySongId);
+      const primarySectionCodes = songSections.filter(s => s.song_id === mergePrimarySongId).map(s => s.section);
+      for (const section of secondarySections) {
+        if (!primarySectionCodes.includes(section.section)) {
+          await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
+            method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
+            body: JSON.stringify({ song_id: mergePrimarySongId }) 
+          });
+        } else {
+          await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
+            method: 'DELETE', headers 
+          });
+        }
+      }
+      
+      // 8. Move songbook entries from secondary to primary
       await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
       
-      // 8. Update duplicate record to merged
+      // 9. Move group memberships from secondary to primary (skip if already in same group)
+      const secondaryMemberships = songGroupMembers.filter(m => m.song_id === secondarySongId);
+      const primaryGroupIds = songGroupMembers.filter(m => m.song_id === mergePrimarySongId).map(m => m.group_id);
+      for (const membership of secondaryMemberships) {
+        if (!primaryGroupIds.includes(membership.group_id)) {
+          await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${membership.id}`, { 
+            method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
+            body: JSON.stringify({ song_id: mergePrimarySongId }) 
+          });
+        } else {
+          // Delete duplicate membership
+          await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${membership.id}`, { 
+            method: 'DELETE', headers 
+          });
+        }
+      }
+      
+      // 10. Update duplicate record to merged
       await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?id=eq.${selectedDuplicate.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ status: 'merged', resolved_at: new Date().toISOString(), resolved_by: sessionName }) 
       });
       
-      // 9. Delete the secondary song
+      // 11. Delete the secondary song
       await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${secondarySongId}`, { 
         method: 'DELETE', headers 
       });
@@ -1845,6 +1878,8 @@ export default function Admin() {
               const songBNotes = songB ? getSongNotes(selectedDuplicate.song_id_b) : [];
               const songAMedia = getSongMedia(selectedDuplicate.song_id_a);
               const songBMedia = songB ? getSongMedia(selectedDuplicate.song_id_b) : [];
+              const songAGroups = getSongGroups(selectedDuplicate.song_id_a);
+              const songBGroups = songB ? getSongGroups(selectedDuplicate.song_id_b) : [];
               
               return (
                 <>
@@ -1891,7 +1926,12 @@ export default function Admin() {
                       {songA?.author && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Author: {songA.author}</div>}
                       {songA?.year_written && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Year: {songA.year_written}</div>}
                       <div style={{ marginTop: '0.75rem', fontSize: '0.75rem' }}>
-                        <div style={{ color: '#64748b' }}>📄 {songAVersions.length} version(s) • 📝 {songANotes.length} note(s) • 🎵 {songAMedia.length} media</div>
+                        <div style={{ color: '#64748b' }}>📄 {songAVersions.length} version(s) • 📝 {songANotes.length} note(s) • 🎵 {songAMedia.length} media • 👥 {songAGroups.length} group(s)</div>
+                        {songAGroups.length > 0 && (
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                            Groups: {songAGroups.map(g => g.group_name).join(', ')}
+                          </div>
+                        )}
                       </div>
                       {songAVersions.length > 0 && (
                         <div style={{ marginTop: '0.5rem', background: '#1e293b', padding: '0.5rem', borderRadius: '0.25rem', fontSize: '0.7rem', maxHeight: '100px', overflow: 'auto' }}>
@@ -1911,7 +1951,12 @@ export default function Admin() {
                         {songB?.author && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Author: {songB.author}</div>}
                         {songB?.year_written && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Year: {songB.year_written}</div>}
                         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem' }}>
-                          <div style={{ color: '#64748b' }}>📄 {songBVersions.length} version(s) • 📝 {songBNotes.length} note(s) • 🎵 {songBMedia.length} media</div>
+                          <div style={{ color: '#64748b' }}>📄 {songBVersions.length} version(s) • 📝 {songBNotes.length} note(s) • 🎵 {songBMedia.length} media • 👥 {songBGroups.length} group(s)</div>
+                          {songBGroups.length > 0 && (
+                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                              Groups: {songBGroups.map(g => g.group_name).join(', ')}
+                            </div>
+                          )}
                         </div>
                         {songBVersions.length > 0 && (
                           <div style={{ marginTop: '0.5rem', background: '#1e293b', padding: '0.5rem', borderRadius: '0.25rem', fontSize: '0.7rem', maxHeight: '100px', overflow: 'auto' }}>
