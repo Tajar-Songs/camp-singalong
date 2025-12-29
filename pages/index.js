@@ -58,6 +58,7 @@ export default function Home() {
   const [songTags, setSongTags] = useState([]);
   const [songVersions, setSongVersions] = useState([]);
   const [songNotes, setSongNotes] = useState([]);
+  const [songAliases, setSongAliases] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]); // "Also include" tags
   const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
   
@@ -91,7 +92,7 @@ export default function Home() {
 
   const loadSongs = async () => {
     try {
-      const [songsRes, versionsRes, notesRes, groupsRes, membersRes, entriesRes, songbooksRes] = await Promise.all([
+      const [songsRes, versionsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
@@ -99,6 +100,9 @@ export default function Home() {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*`, {
@@ -117,6 +121,7 @@ export default function Home() {
       setAllSongs(await songsRes.json());
       setSongVersions(await versionsRes.json());
       setSongNotes(await notesRes.json());
+      setSongAliases(await aliasesRes.json());
       setSongGroups(await groupsRes.json());
       setSongGroupMembers(await membersRes.json());
       setSongbookEntries(await entriesRes.json());
@@ -134,6 +139,12 @@ export default function Home() {
   const songHasLyrics = (songId) => {
     return songVersions.some(v => v.song_id === songId && v.lyrics_content);
   };
+
+  // Get aliases for a song
+  const getSongAliases = (songId) => songAliases.filter(a => a.song_id === songId);
+
+  // Get all versions for a song
+  const getSongVersions = (songId) => songVersions.filter(v => v.song_id === songId);
 
   // Get groups that a song belongs to
   const getGroupsForSong = (songId) => {
@@ -552,7 +563,16 @@ export default function Home() {
     const sectionName = SECTION_INFO[song.section] || "";
     const matchesSectionSearch = song.section?.toLowerCase() === searchLower || 
                            sectionName.toLowerCase().includes(searchLower);
-    return matchesTitle || matchesPage || matchesSectionSearch;
+    
+    // Search in aliases
+    const aliases = getSongAliases(song.id).map(a => a.alias_title?.toLowerCase() || '').join(' ');
+    const matchesAlias = aliases.includes(searchLower);
+    
+    // Search in lyrics
+    const lyrics = getSongVersions(song.id).map(v => v.lyrics_content?.toLowerCase() || '').join(' ');
+    const matchesLyrics = lyrics.includes(searchLower);
+    
+    return matchesTitle || matchesPage || matchesSectionSearch || matchesAlias || matchesLyrics;
   });
 
   // Landing Page
@@ -1368,7 +1388,7 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
           <h2 className="font-black text-lg mb-4">Add a Song</h2>
           <input 
-            type="text" placeholder="Search by title, page, or section..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
             className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
           />
           <div className="max-h-80 overflow-y-auto space-y-2 mb-6">
