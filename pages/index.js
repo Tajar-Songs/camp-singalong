@@ -100,6 +100,9 @@ export default function Home() {
   // Expanded lyrics in search
   const [expandedLyrics, setExpandedLyrics] = useState([]); // array of song IDs
   
+  // Expanded flag details
+  const [expandedFlags, setExpandedFlags] = useState([]); // array of flag IDs
+  
   // Song flags
   const [songFlags, setSongFlags] = useState([]);
 
@@ -1615,17 +1618,69 @@ if (view === 'display' && showLyrics && currentSong) {
           )}
         </div>
 
-        {/* Randomizer with Expanded Filters */}
+        {/* Queue */}
         <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="font-black text-lg">🎲 Random Song</h2>
-            <button onClick={() => setShowSectionFilter(!showSectionFilter)} className="text-xs font-bold text-blue-500 uppercase tracking-wider">
-              {showSectionFilter ? 'Hide Filters' : 'Show Filters'}
-            </button>
-          </div>
+          <button 
+            onClick={() => setShowQueue(!showQueue)}
+            className="w-full flex justify-between items-center"
+          >
+            <h2 className="font-black text-lg">👥 Up Next ({queue.length})</h2>
+            <span className="text-xl opacity-50">{showQueue ? '▼' : '▶'}</span>
+          </button>
+          {showQueue && (
+            <div className="space-y-3 mt-4">
+              {queue.map(song => (
+                <div key={song.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => moveInQueue(song, -1)} className="opacity-40 hover:opacity-100">▲</button>
+                    <button onClick={() => moveInQueue(song, 1)} className="opacity-40 hover:opacity-100">▼</button>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold truncate text-sm flex items-center gap-1">
+                      {song.song_title} {song.has_lyrics && '📄'}
+                    </div>
+                    <div className="text-[10px] opacity-60 uppercase font-black tracking-wide">P.{song.song_page} • {song.requester}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => playSong(song)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
+                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-red-500 transition-all">🗑️</button>
+                  </div>
+                </div>
+              ))}
+              {queue.length === 0 && <div className="text-center py-6 opacity-30 text-sm italic">The queue is currently empty</div>}
+            </div>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
+          <button 
+            onClick={() => setShowSectionFilter(!showSectionFilter)}
+            className="w-full flex justify-between items-center"
+          >
+            <h2 className="font-black text-lg">🎯 Filters</h2>
+            <div className="flex items-center gap-3">
+              {!showSectionFilter && (
+                <span className="text-xs opacity-50">
+                  {selectedSections.length === Object.keys(SECTION_INFO).length 
+                    ? 'All sections' 
+                    : `${selectedSections.length} sections`}
+                  {includeTagIds.length > 0 && ` • +${includeTagIds.length} tags`}
+                  {excludeTagIds.length > 0 && ` • -${excludeTagIds.length} excluded`}
+                </span>
+              )}
+              <span className="text-xl opacity-50">{showSectionFilter ? '▼' : '▶'}</span>
+            </div>
+          </button>
+          
+          {!showSectionFilter && (
+            <p className="text-xs opacity-40 mt-2">Filters apply to random song generation and song search</p>
+          )}
           
           {showSectionFilter && (
-            <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300 space-y-6">
+            <div className="mt-6 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+              <p className="text-xs opacity-50 -mt-2">These filters apply to both random song generation and song search below</p>
+              
               {/* Section Filters */}
               <div>
                 <div className="flex gap-2 mb-4">
@@ -1728,41 +1783,16 @@ if (view === 'display' && showLyrics && currentSong) {
               )}
             </div>
           )}
-          <button onClick={generateRandomSong} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all">Pick Random Song</button>
         </div>
 
-        {/* Queue */}
+        {/* Random Song */}
         <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
           <button 
-            onClick={() => setShowQueue(!showQueue)}
-            className="w-full flex justify-between items-center"
+            onClick={generateRandomSong} 
+            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all"
           >
-            <h2 className="font-black text-lg">👥 Up Next ({queue.length})</h2>
-            <span className="text-xl opacity-50">{showQueue ? '▼' : '▶'}</span>
+            🎲 Pick Random Song
           </button>
-          {showQueue && (
-            <div className="space-y-3 mt-4">
-              {queue.map(song => (
-                <div key={song.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                  <div className="flex flex-col gap-1">
-                    <button onClick={() => moveInQueue(song, -1)} className="opacity-40 hover:opacity-100">▲</button>
-                    <button onClick={() => moveInQueue(song, 1)} className="opacity-40 hover:opacity-100">▼</button>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate text-sm flex items-center gap-1">
-                      {song.song_title} {song.has_lyrics && '📄'}
-                    </div>
-                    <div className="text-[10px] opacity-60 uppercase font-black tracking-wide">P.{song.song_page} • {song.requester}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => playSong(song)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
-                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-red-500 transition-all">🗑️</button>
-                  </div>
-                </div>
-              ))}
-              {queue.length === 0 && <div className="text-center py-6 opacity-30 text-sm italic">The queue is currently empty</div>}
-            </div>
-          )}
         </div>
 
         {/* History (Sung Songs) */}
@@ -1810,16 +1840,33 @@ if (view === 'display' && showLyrics && currentSong) {
                           <div className="font-bold text-sm flex items-center gap-1 flex-wrap">
                             {song.title}
                             {hasLyrics && '📄'}
-                            {flags.length > 0 && <span title={flags.map(f => f.flag_type).join(', ')}>⚠️</span>}
                             {inQueue && <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded">in queue</span>}
                             {alreadySung && <span className="text-[10px] bg-gray-500 text-white px-1.5 py-0.5 rounded">sung</span>}
                           </div>
                           <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {song.section} • Page {displayPage}</div>
                           {flags.length > 0 && (
-                            <div className="text-[10px] text-amber-500 mt-1">
-                              {flags.map(f => f.explanation || f.flag_type).join('; ')}
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {flags.map(flag => {
+                                const isExpanded = expandedFlags.includes(flag.id);
+                                return (
+                                  <button
+                                    key={flag.id}
+                                    onClick={() => setExpandedFlags(prev => isExpanded ? prev.filter(id => id !== flag.id) : [...prev, flag.id])}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all ${
+                                      isDark ? 'bg-amber-900/50 text-amber-400 hover:bg-amber-900' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                    }`}
+                                  >
+                                    ⚠️ {flag.flag_type} {isExpanded ? '▲' : '▼'}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
+                          {flags.filter(f => expandedFlags.includes(f.id)).map(flag => (
+                            <div key={`detail-${flag.id}`} className={`text-[10px] mt-1 p-2 rounded ${isDark ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-50 text-amber-800'}`}>
+                              {flag.explanation || 'No additional details'}
+                            </div>
+                          ))}
                         </div>
                         <div className="flex items-center gap-2">
                           {hasLyrics && (
