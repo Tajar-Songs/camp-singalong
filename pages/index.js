@@ -103,6 +103,9 @@ export default function Home() {
   // Expanded flag details
   const [expandedFlags, setExpandedFlags] = useState([]); // array of flag IDs
   
+  // Admin menu dropdown
+  const [showAdminMenu, setShowAdminMenu] = useState(false);
+  
   // Song flags
   const [songFlags, setSongFlags] = useState([]);
 
@@ -1593,7 +1596,38 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className={`rounded-3xl shadow-xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-green-100'}`}>
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-xl font-black tracking-tight">🎵 Camp Singalong</h1>
-            <button onClick={() => setView('display')} className="bg-green-600 px-4 py-2 rounded-xl text-white font-bold text-sm">📺 Display View</button>
+            <div className="flex items-center gap-2">
+              {userProfile?.role === 'admin' && (
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowAdminMenu(!showAdminMenu)}
+                    className={`px-3 py-2 rounded-xl font-bold text-sm ${isDark ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`}
+                  >
+                    ⚙️ Admin
+                  </button>
+                  {showAdminMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowAdminMenu(false)} />
+                      <div className={`absolute right-0 top-full mt-2 w-48 rounded-xl shadow-lg z-50 overflow-hidden ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'}`}>
+                        <a href="/admin" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                          📝 Song Management
+                        </a>
+                        <a href="/admin/tags" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                          🏷️ Tags
+                        </a>
+                        <a href="/admin/users" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                          👥 Users
+                        </a>
+                        <a href="/admin/reports" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                          📊 Insights
+                        </a>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <button onClick={() => setView('display')} className="bg-green-600 px-4 py-2 rounded-xl text-white font-bold text-sm">📺 Display View</button>
+            </div>
           </div>
           <div className={`p-4 rounded-2xl mb-4 border-2 ${isDark ? 'bg-green-950/20 border-green-900/50' : 'bg-green-50 border-green-100'}`}>
              <div className="text-[10px] font-black uppercase opacity-60 mb-1">Room Code</div>

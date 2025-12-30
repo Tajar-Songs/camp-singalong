@@ -1574,8 +1574,14 @@ export default function Admin() {
   return (
     <div style={s.container}>
       <div style={s.header}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>🎵 Song Admin</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <a href="/" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: '0.875rem' }}>← Singalong</a>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>🎵 Song Admin</h1>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <a href="/admin/tags" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: '0.75rem' }}>Tags</a>
+          <a href="/admin/users" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: '0.75rem' }}>Users</a>
+          <a href="/admin/reports" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: '0.75rem' }}>Insights</a>
           <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>👋 {currentUserName}</span>
           <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem' }}>Sign out</button>
         </div>

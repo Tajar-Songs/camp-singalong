@@ -572,14 +572,14 @@ export default function TagManagement() {
               {tags.length} tags • {songs.length} songs
             </p>
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-3 items-center flex-wrap">
+            <a href="/" className="text-slate-400 hover:text-slate-300 text-sm">← Singalong</a>
+            <a href="/admin" className="text-slate-400 hover:text-slate-300 text-sm">Songs</a>
+            <a href="/admin/users" className="text-slate-400 hover:text-slate-300 text-sm">Users</a>
+            <a href="/admin/reports" className="text-slate-400 hover:text-slate-300 text-sm">Insights</a>
+            <span className="text-slate-500">|</span>
+            <span className="text-slate-400 text-sm">👋 {userProfile?.display_name}</span>
             <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-sm">Sign out</button>
-            <a href="/admin" className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-6 py-2.5 rounded-lg font-bold border border-slate-700 transition-all text-center">
-              ← Song Admin
-            </a>
-            <a href="/" className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-6 py-2.5 rounded-lg font-bold border border-slate-700 transition-all text-center">
-              ← Back
-            </a>
           </div>
         </header>
 
