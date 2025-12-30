@@ -29,6 +29,26 @@ export default function Reports() {
   const [endDate, setEndDate] = useState('');
   const [rowLimit, setRowLimit] = useState(100);
   
+  // Field/column visibility filters
+  const [actionFilter, setActionFilter] = useState(['add', 'edit', 'delete']); // which actions to show
+  const [tableFilter, setTableFilter] = useState([]); // empty = all tables
+  const [showFieldFilters, setShowFieldFilters] = useState(false);
+  
+  const ALL_TABLES = [
+    { value: 'songs', label: 'Songs' },
+    { value: 'song_versions', label: 'Versions' },
+    { value: 'song_notes', label: 'Notes' },
+    { value: 'song_aliases', label: 'Aliases' },
+    { value: 'song_sections', label: 'Sections' },
+    { value: 'song_songbook_entries', label: 'Songbook Entries' },
+    { value: 'song_media', label: 'Media' },
+    { value: 'song_flags', label: 'Flags' },
+    { value: 'song_groups', label: 'Groups' },
+    { value: 'song_group_members', label: 'Group Members' },
+    { value: 'songbooks', label: 'Songbooks' },
+    { value: 'potential_duplicates', label: 'Duplicates' }
+  ];
+  
   const [lastViewDate, setLastViewDate] = useState(null);
   const [showSinceLastView, setShowSinceLastView] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -142,9 +162,15 @@ export default function Reports() {
 
   // Note: filteredLog is now handled mostly by the server, 
   // but we keep the search filter for song titles here for "instant" feel.
-  const displayLog = changeLog.filter(entry => 
-    entry.song_title?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const displayLog = changeLog.filter(entry => {
+    // Search filter
+    if (!entry.song_title?.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    // Action filter
+    if (!actionFilter.includes(entry.action)) return false;
+    // Table filter (empty = all)
+    if (tableFilter.length > 0 && !tableFilter.includes(entry.table_name)) return false;
+    return true;
+  });
 
   const exportSongsCSV = () => {
     const headers = ['Title', 'Section', 'Page', 'Old Page'];
@@ -159,10 +185,11 @@ export default function Reports() {
   };
 
   const exportLogCSV = () => {
-    const headers = ['Date', 'Action', 'Song Title', 'Field Changed', 'Old Value', 'New Value', 'Changed By'];
+    const headers = ['Date', 'Action', 'Category', 'Song Title', 'Field Changed', 'Old Value', 'New Value', 'Changed By'];
     const rows = displayLog.map(entry => [
       new Date(entry.created_at).toLocaleString(),
       entry.action,
+      formatTableName(entry.table_name),
       `"${(entry.song_title || '').replace(/"/g, '""')}"`,
       entry.field_changed || '',
       `"${(entry.old_value || '').replace(/"/g, '""')}"`,
@@ -187,6 +214,24 @@ export default function Reports() {
     return new Date(dateString).toLocaleString();
   };
 
+  const formatTableName = (tableName) => {
+    const mapping = {
+      'songs': 'Songs',
+      'song_versions': 'Versions',
+      'song_notes': 'Notes',
+      'song_aliases': 'Aliases',
+      'song_sections': 'Sections',
+      'song_songbook_entries': 'Songbook',
+      'song_media': 'Media',
+      'song_flags': 'Flags',
+      'song_groups': 'Groups',
+      'song_group_members': 'Group Members',
+      'songbooks': 'Songbooks',
+      'potential_duplicates': 'Duplicates'
+    };
+    return mapping[tableName] || tableName || '-';
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, padding: '2rem' }}>
       <div style={{ maxWidth: '80rem', margin: '0 auto' }}>
@@ -194,12 +239,14 @@ export default function Reports() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>📊 Reports</h1>
+            <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>📊 Insights</h1>
             <p style={{ color: theme.textSecondary }}>{allSongs.length} songs • {changeLog.length} changes showing</p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <a href="/admin" style={{ background: theme.bgSecondary, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.5rem', border: `1px solid ${theme.border}`, textDecoration: 'none' }}>← Admin</a>
-            <a href="/" style={{ background: theme.bgSecondary, color: theme.text, padding: '0.5rem 1rem', borderRadius: '0.5rem', border: `1px solid ${theme.border}`, textDecoration: 'none' }}>← Back to App</a>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <a href="/" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>← Singalong</a>
+            <a href="/admin" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>Songs</a>
+            <a href="/admin/tags" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>Tags</a>
+            <a href="/admin/users" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>Users</a>
           </div>
         </div>
 
@@ -231,22 +278,85 @@ export default function Reports() {
 
         {/* Change Log Advanced Filters (Only visible on Change Log tab) */}
         {activeTab === 'changelog' && (
-          <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}`, display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Start Date</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
+          <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}` }}>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Start Date</label>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>End Date</label>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Changed By</label>
+                <input type="text" placeholder="Admin name..." value={userFilter} onChange={(e) => setUserFilter(e.target.value)} style={inputStyle} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
+                <button onClick={() => setShowFieldFilters(!showFieldFilters)} style={{ ...inputStyle, cursor: 'pointer', background: showFieldFilters ? theme.primary : theme.bg, color: showFieldFilters ? 'white' : theme.text }}>
+                  {showFieldFilters ? '▼ Field Filters' : '▶ Field Filters'}
+                </button>
+                <button onClick={() => { setStartDate(''); setEndDate(''); setUserFilter(''); setShowSinceLastView(false); setActionFilter(['add', 'edit', 'delete']); setTableFilter([]); }} style={{ ...inputStyle, cursor: 'pointer' }}>Reset All</button>
+              </div>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>End Date</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Changed By</label>
-              <input type="text" placeholder="Admin name..." value={userFilter} onChange={(e) => setUserFilter(e.target.value)} style={inputStyle} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-               <button onClick={() => { setStartDate(''); setEndDate(''); setUserFilter(''); setShowSinceLastView(false); }} style={{ ...inputStyle, cursor: 'pointer' }}>Reset Filters</button>
-            </div>
+            
+            {showFieldFilters && (
+              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Action Type Filter */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.5rem' }}>Action Types</label>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {['add', 'edit', 'delete'].map(action => (
+                      <button
+                        key={action}
+                        onClick={() => setActionFilter(prev => prev.includes(action) ? prev.filter(a => a !== action) : [...prev, action])}
+                        style={{
+                          padding: '0.25rem 0.75rem',
+                          borderRadius: '1rem',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          background: actionFilter.includes(action) 
+                            ? (action === 'add' ? '#166534' : action === 'edit' ? '#1e40af' : '#991b1b')
+                            : theme.bg,
+                          color: actionFilter.includes(action) ? 'white' : theme.textSecondary
+                        }}
+                      >
+                        {action.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Table/Category Filter */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: theme.textSecondary }}>Categories (empty = all)</label>
+                    <button onClick={() => setTableFilter([])} style={{ fontSize: '0.7rem', color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {ALL_TABLES.map(table => (
+                      <button
+                        key={table.value}
+                        onClick={() => setTableFilter(prev => prev.includes(table.value) ? prev.filter(t => t !== table.value) : [...prev, table.value])}
+                        style={{
+                          padding: '0.25rem 0.75rem',
+                          borderRadius: '1rem',
+                          border: `1px solid ${tableFilter.includes(table.value) ? theme.primary : theme.border}`,
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          background: tableFilter.includes(table.value) ? theme.primary : theme.bg,
+                          color: tableFilter.includes(table.value) ? 'white' : theme.text
+                        }}
+                      >
+                        {table.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -293,12 +403,13 @@ export default function Reports() {
             </div>
           ) : (
             /* Change Log Table Code - Using displayLog */
-            <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', border: `1px solid ${theme.border}`, overflow: 'auto' }}>
+               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
                   <thead>
                     <tr style={{ background: theme.bg }}>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Date</th>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Action</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Category</th>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Song</th>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Field</th>
                       <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Old Value</th>
@@ -308,7 +419,7 @@ export default function Reports() {
                   </thead>
                   <tbody>
                     {displayLog.length === 0 ? (
-                      <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: theme.textSecondary }}>No changes found matching these filters</td></tr>
+                      <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: theme.textSecondary }}>No changes found matching these filters</td></tr>
                     ) : (
                       displayLog.map(entry => (
                         <tr key={entry.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -316,10 +427,11 @@ export default function Reports() {
                           <td style={{ padding: '0.75rem' }}>
                             <span style={{ padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', background: entry.action === 'add' ? '#166534' : entry.action === 'edit' ? '#1e40af' : '#991b1b', color: 'white' }}>{entry.action.toUpperCase()}</span>
                           </td>
+                          <td style={{ padding: '0.75rem', fontSize: '0.8rem', color: theme.textSecondary }}>{formatTableName(entry.table_name)}</td>
                           <td style={{ padding: '0.75rem' }}>{entry.song_title}</td>
                           <td style={{ padding: '0.75rem' }}>{entry.field_changed || '-'}</td>
-                          <td style={{ padding: '0.75rem' }}>{entry.old_value || '-'}</td>
-                          <td style={{ padding: '0.75rem' }}>{entry.new_value || '-'}</td>
+                          <td style={{ padding: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.old_value}>{entry.old_value || '-'}</td>
+                          <td style={{ padding: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.new_value}>{entry.new_value || '-'}</td>
                           <td style={{ padding: '0.75rem' }}>{entry.changed_by}</td>
                         </tr>
                       ))
