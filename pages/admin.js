@@ -219,14 +219,28 @@ export default function Admin() {
     setAuthChecked(true);
   };
 
-  const loadUserProfile = async (userId) => {
+  const loadUserProfile = async (userId, manualToken = null) => {
     try {
+      // Use the manualToken if we just logged in, otherwise use the saved one
+      const token = manualToken || localStorage.getItem('supabase_access_token');
+      
       const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
+        headers: { 
+          'apikey': SUPABASE_KEY, 
+          'Authorization': `Bearer ${token}` 
+        }
       });
       const data = await res.json();
-      if (data.length > 0) setUserProfile(data[0]);
-    } catch (error) { console.error('Error loading profile:', error); }
+      
+      // Check if data exists and isn't empty
+      if (data && data.length > 0) {
+        setUserProfile(data[0]);
+      } else {
+        console.warn('Profile fetch returned no results for UID:', userId);
+      }
+    } catch (error) { 
+      console.error('Error loading profile:', error); 
+    }
   };
 
   const handleLogin = async () => {
@@ -239,14 +253,26 @@ export default function Admin() {
         body: JSON.stringify({ email: authEmail, password: authPassword })
       });
       const data = await res.json();
+      
       if (data.error) throw new Error(data.error.message || data.error_description);
+      
+      // 1. Save the tokens so future database calls are authorized
       localStorage.setItem('supabase_access_token', data.access_token);
       localStorage.setItem('supabase_refresh_token', data.refresh_token);
+      
+      // 2. Set the user state
       setUser(data.user);
+      
+      // 3. FETCH THE PROFILE (This is the missing piece!)
+      // We pass the new access token directly to ensure the fetch happens immediately
+      await loadUserProfile(data.user.id, data.access_token);
+
       setShowAuthModal(false);
       setAuthEmail('');
       setAuthPassword('');
-    } catch (error) { setAuthError(error.message); }
+    } catch (error) { 
+      setAuthError(error.message); 
+    }
     setAuthLoading(false);
   };
 
@@ -1513,7 +1539,19 @@ export default function Admin() {
     );
   }
 
-  // Admin role check
+// 1. NEW WAITING ROOM: If we have a user but no profile yet, show this first.
+  if (user && !userProfile) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⌛</div>
+          <p style={{ color: '#94a3b8' }}>Verifying admin permissions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. YOUR ORIGINAL CHECK: Now we only show this if the profile is loaded and isn't 'admin'.
   if (userProfile?.role !== 'admin') {
     return (
       <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
@@ -1529,6 +1567,8 @@ export default function Admin() {
       </div>
     );
   }
+
+
 
   return (
     <div style={s.container}>
