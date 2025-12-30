@@ -90,6 +90,25 @@ export default function Home() {
   // Group prompt modal
   const [groupPrompt, setGroupPrompt] = useState(null); // { song, groups } when showing prompt
 
+  // Toast notification
+  const [toast, setToast] = useState(null); // { message, type }
+  
+  // Collapsible sections
+  const [showQueue, setShowQueue] = useState(true);
+  const [showAddSong, setShowAddSong] = useState(true);
+  
+  // Expanded lyrics in search
+  const [expandedLyrics, setExpandedLyrics] = useState([]); // array of song IDs
+  
+  // Song flags
+  const [songFlags, setSongFlags] = useState([]);
+
+  // Show toast helper
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDark(darkModeQuery.matches);
@@ -302,7 +321,7 @@ export default function Home() {
 
   const loadSongs = async () => {
     try {
-      const [songsRes, versionsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes] = await Promise.all([
+      const [songsRes, versionsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, flagsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         }),
@@ -326,6 +345,9 @@ export default function Home() {
         }),
         fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         })
       ]);
       setAllSongs(await songsRes.json());
@@ -336,8 +358,12 @@ export default function Home() {
       setSongGroupMembers(await membersRes.json());
       setSongbookEntries(await entriesRes.json());
       setSongbooks(await songbooksRes.json());
+      setSongFlags(await flagsRes.json());
     } catch (error) { console.error('Error loading songs:', error); }
   };
+
+  // Get flags for a song
+  const getSongFlags = (songId) => songFlags.filter(f => f.song_id === songId);
 
   // Get the default singalong version for a song
   const getDefaultVersion = (songId) => {
@@ -558,8 +584,26 @@ export default function Home() {
   };
 
   // Add a single song to queue (internal)
-  const addSongToQueue = async (song, requester = 'Someone') => {
-    if (queue.some(s => s.song_title === song.title)) return;
+  const addSongToQueue = async (song, requester = 'Someone', skipWarning = false) => {
+    // Check if already in queue
+    const inQueue = queue.some(s => s.song_title === song.title);
+    // Check if already sung
+    const alreadySung = sungSongs.some(s => s.title === song.title);
+    // Check if currently playing
+    const nowPlaying = currentSong?.title === song.title;
+    
+    // Show warning if duplicate (unless skipping warning)
+    if (!skipWarning && (inQueue || alreadySung || nowPlaying)) {
+      const reasons = [];
+      if (nowPlaying) reasons.push('currently playing');
+      if (inQueue) reasons.push('already in queue');
+      if (alreadySung) reasons.push('already sung');
+      
+      if (!confirm(`"${song.title}" is ${reasons.join(' and ')}. Add anyway?`)) {
+        return;
+      }
+    }
+    
     const maxPosition = queue.length > 0 ? Math.max(...queue.map(s => s.position)) : -1;
     const version = getDefaultVersion(song.id);
     const pageInfo = getSongPage(song.id);
@@ -585,6 +629,7 @@ export default function Home() {
           group_id: null
         })
       });
+      showToast(`✓ "${song.title}" added to queue`);
     } catch (error) { console.error('Error adding to queue:', error); }
     await loadRoomData();
   };
@@ -592,7 +637,20 @@ export default function Home() {
   // Add a group to queue
   const addGroupToQueue = async (group, requester = 'Someone') => {
     // Check if group already in queue
-    if (queue.some(s => s.group_id === group.id)) return;
+    const inQueue = queue.some(s => s.group_id === group.id);
+    const alreadySung = sungSongs.some(s => s.group_id === group.id);
+    const nowPlaying = currentSong?.group_id === group.id;
+    
+    if (inQueue || alreadySung || nowPlaying) {
+      const reasons = [];
+      if (nowPlaying) reasons.push('currently playing');
+      if (inQueue) reasons.push('already in queue');
+      if (alreadySung) reasons.push('already sung');
+      
+      if (!confirm(`"${group.group_name}" is ${reasons.join(' and ')}. Add anyway?`)) {
+        return;
+      }
+    }
     
     const maxPosition = queue.length > 0 ? Math.max(...queue.map(s => s.position)) : -1;
     const pageInfo = getGroupPage(group.id);
@@ -628,6 +686,7 @@ export default function Home() {
           group_instructions: group.instructions
         })
       });
+      showToast(`✓ "${group.group_name}" added to queue`);
     } catch (error) { console.error('Error adding group to queue:', error); }
     setGroupPrompt(null);
     await loadRoomData();
@@ -780,10 +839,13 @@ export default function Home() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Helper to normalize search terms (remove leading articles)
+  const normalizeForSearch = (text) => {
+    if (!text) return '';
+    return text.toLowerCase().trim().replace(/^(the|a|an)\s+/i, '');
+  };
+
   const filteredSongs = allSongs.filter(song => {
-    // Hide songs already in queue
-    if (queue.some(s => s.song_title === song.title)) return false;
-    
     // First apply section/tag filters (same as random generator)
     if (songHasAnyTag(song.id, excludeTagIds)) return false;
     const matchesSection = selectedSections.includes(song.section);
@@ -791,9 +853,11 @@ export default function Home() {
     if (!matchesSection && !matchesIncludeTag) return false;
     
     // Then apply search filter
-    const searchLower = searchTerm.toLowerCase().trim();
+    const searchLower = normalizeForSearch(searchTerm);
     if (!searchLower) return true;
-    const matchesTitle = song.title.toLowerCase().includes(searchLower);
+    
+    const titleNormalized = normalizeForSearch(song.title);
+    const matchesTitle = titleNormalized.includes(searchLower) || song.title.toLowerCase().includes(searchTerm.toLowerCase().trim());
     
     // Get page info from songbook entries (or fall back to song table)
     const pageInfo = getSongPage(song.id);
@@ -807,8 +871,8 @@ export default function Home() {
                            sectionName.toLowerCase().includes(searchLower);
     
     // Search in aliases
-    const aliases = getSongAliases(song.id).map(a => a.alias_title?.toLowerCase() || '').join(' ');
-    const matchesAlias = aliases.includes(searchLower);
+    const aliases = getSongAliases(song.id);
+    const matchesAlias = aliases.some(a => normalizeForSearch(a.alias_title).includes(searchLower));
     
     // Search in lyrics
     const lyrics = getSongVersions(song.id).map(v => v.lyrics_content?.toLowerCase() || '').join(' ');
@@ -1677,28 +1741,36 @@ if (view === 'display' && showLyrics && currentSong) {
 
         {/* Queue */}
         <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
-          <h2 className="font-black text-lg mb-4">👥 Up Next ({queue.length})</h2>
-          <div className="space-y-3">
-            {queue.map(song => (
-              <div key={song.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                <div className="flex flex-col gap-1">
-                  <button onClick={() => moveInQueue(song, -1)} className="opacity-40 hover:opacity-100">▲</button>
-                  <button onClick={() => moveInQueue(song, 1)} className="opacity-40 hover:opacity-100">▼</button>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold truncate text-sm flex items-center gap-1">
-                    {song.song_title} {song.has_lyrics && '📄'}
+          <button 
+            onClick={() => setShowQueue(!showQueue)}
+            className="w-full flex justify-between items-center"
+          >
+            <h2 className="font-black text-lg">👥 Up Next ({queue.length})</h2>
+            <span className="text-xl opacity-50">{showQueue ? '▼' : '▶'}</span>
+          </button>
+          {showQueue && (
+            <div className="space-y-3 mt-4">
+              {queue.map(song => (
+                <div key={song.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => moveInQueue(song, -1)} className="opacity-40 hover:opacity-100">▲</button>
+                    <button onClick={() => moveInQueue(song, 1)} className="opacity-40 hover:opacity-100">▼</button>
                   </div>
-                  <div className="text-[10px] opacity-60 uppercase font-black tracking-wide">P.{song.song_page} • {song.requester}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold truncate text-sm flex items-center gap-1">
+                      {song.song_title} {song.has_lyrics && '📄'}
+                    </div>
+                    <div className="text-[10px] opacity-60 uppercase font-black tracking-wide">P.{song.song_page} • {song.requester}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => playSong(song)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
+                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-red-500 transition-all">🗑️</button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => playSong(song)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
-                  <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-red-500 transition-all">🗑️</button>
-                </div>
-              </div>
-            ))}
-            {queue.length === 0 && <div className="text-center py-6 opacity-30 text-sm italic">The queue is currently empty</div>}
-          </div>
+              ))}
+              {queue.length === 0 && <div className="text-center py-6 opacity-30 text-sm italic">The queue is currently empty</div>}
+            </div>
+          )}
         </div>
 
         {/* History (Sung Songs) */}
@@ -1715,35 +1787,89 @@ if (view === 'display' && showLyrics && currentSong) {
 
         {/* Search & Add */}
         <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
-          <h2 className="font-black text-lg mb-4">Add a Song</h2>
-          <input 
-            type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-            className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-          />
-          <div className="max-h-80 overflow-y-auto space-y-2 mb-6">
-            {filteredSongs.map(song => {
-              const pageInfo = getSongPage(song.id);
-              const displayPage = pageInfo.page || song.page || 'N/A';
-              return (
-                <div key={song.id} className="flex justify-between items-center p-3 rounded-xl border border-black/5 bg-black/5">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-sm truncate">{song.title} {songHasLyrics(song.id) && '📄'}</div>
-                    <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {song.section} • Page {displayPage}</div>
-                  </div>
-                  <button onClick={() => addToQueue(song)} className="ml-3 bg-green-600 text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
+          <button 
+            onClick={() => setShowAddSong(!showAddSong)}
+            className="w-full flex justify-between items-center"
+          >
+            <h2 className="font-black text-lg">🔍 Add a Song</h2>
+            <span className="text-xl opacity-50">{showAddSong ? '▼' : '▶'}</span>
+          </button>
+          {showAddSong && (
+            <div className="mt-4">
+              <input 
+                type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+              />
+              <div className="max-h-80 overflow-y-auto space-y-2 mb-6">
+                {filteredSongs.map(song => {
+                  const pageInfo = getSongPage(song.id);
+                  const displayPage = pageInfo.page || song.page || 'N/A';
+                  const flags = getSongFlags(song.id);
+                  const hasLyrics = songHasLyrics(song.id);
+                  const isExpanded = expandedLyrics.includes(song.id);
+                  const version = getDefaultVersion(song.id);
+                  const inQueue = queue.some(s => s.song_title === song.title);
+                  const alreadySung = sungSongs.some(s => s.title === song.title);
+                  
+                  return (
+                    <div key={song.id} className={`p-3 rounded-xl border ${inQueue || alreadySung ? 'opacity-50' : ''} ${isDark ? 'border-slate-700 bg-slate-800/50' : 'border-black/5 bg-black/5'}`}>
+                      <div className="flex justify-between items-start">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-sm flex items-center gap-1 flex-wrap">
+                            {song.title}
+                            {hasLyrics && '📄'}
+                            {flags.length > 0 && <span title={flags.map(f => f.flag_type).join(', ')}>⚠️</span>}
+                            {inQueue && <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded">in queue</span>}
+                            {alreadySung && <span className="text-[10px] bg-gray-500 text-white px-1.5 py-0.5 rounded">sung</span>}
+                          </div>
+                          <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {song.section} • Page {displayPage}</div>
+                          {flags.length > 0 && (
+                            <div className="text-[10px] text-amber-500 mt-1">
+                              {flags.map(f => f.explanation || f.flag_type).join('; ')}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {hasLyrics && (
+                            <button 
+                              onClick={() => setExpandedLyrics(prev => isExpanded ? prev.filter(id => id !== song.id) : [...prev, song.id])}
+                              className="text-xs opacity-50 hover:opacity-100"
+                            >
+                              {isExpanded ? '▲' : '▼'}
+                            </button>
+                          )}
+                          <button onClick={() => addToQueue(song)} className="bg-green-600 text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
+                        </div>
+                      </div>
+                      {isExpanded && version?.lyrics_content && (
+                        <div className={`mt-3 p-3 rounded-lg text-xs whitespace-pre-wrap max-h-40 overflow-y-auto ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
+                          {version.lyrics_content}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="border-t pt-4">
+                <p className="text-[10px] font-black uppercase opacity-40 mb-2">Unlisted Song</p>
+                <div className="flex gap-2">
+                  <input type="text" value={customSongInput} onChange={(e) => setCustomSongInput(e.target.value)} placeholder="Enter song title..." className={`flex-1 p-3 rounded-xl border text-sm ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`} />
+                  <button onClick={addCustomSong} className="bg-blue-600 text-white px-5 rounded-xl font-bold text-sm">Add</button>
                 </div>
-              );
-            })}
-          </div>
-          <div className="border-t pt-4">
-            <p className="text-[10px] font-black uppercase opacity-40 mb-2">Unlisted Song</p>
-            <div className="flex gap-2">
-              <input type="text" value={customSongInput} onChange={(e) => setCustomSongInput(e.target.value)} placeholder="Enter song title..." className={`flex-1 p-3 rounded-xl border text-sm ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`} />
-              <button onClick={addCustomSong} className="bg-blue-600 text-white px-5 rounded-xl font-bold text-sm">Add</button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg font-bold text-sm z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }
