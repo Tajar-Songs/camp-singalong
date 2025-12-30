@@ -564,14 +564,6 @@ export default function Home() {
 
   // Try to add a song - checks for groups first
   const tryAddToQueue = (song, requester = 'Someone') => {
-    // Check if already in queue
-    if (queue.some(s => s.song_title === song.title)) return;
-    
-    // Check if already sung - prompt for confirmation
-    if (sungSongs.some(s => s.title === song.title)) {
-      if (!confirm(`"${song.title}" has already been sung tonight. Add it again?`)) return;
-    }
-    
     // Check if song is in any groups
     const groups = getGroupsForSong(song.id);
     if (groups.length > 0) {
