@@ -370,14 +370,14 @@ export default function Admin() {
   // Get page info for a song from songbook entries
   const getSongPage = (songId) => {
     const primarySongbook = songbooks.find(sb => sb.is_primary);
-    const primaryEntry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === primarySongbook?.id);
+    const primaryEntry = songbookEntries.find(e => String(e.song_id) === String(songId) && String(e.songbook_id) === String(primarySongbook?.id));
     const oldSongbook = songbooks.find(sb => sb.display_order === 2);
-    const oldEntry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === oldSongbook?.id);
+    const oldEntry = songbookEntries.find(e => String(e.song_id) === String(songId) && String(e.songbook_id) === String(oldSongbook?.id));
     return { page: primaryEntry?.page || null, section: primaryEntry?.section || null, old_page: oldEntry?.page || null };
   };
   
-  // Get all songbook entries for a song
-  const getSongSongbookEntries = (songId) => songbookEntries.filter(e => e.song_id === songId);
+  // Get all songbook entries for a song (use == for type coercion since song_id can be number or string)
+  const getSongSongbookEntries = (songId) => songbookEntries.filter(e => String(e.song_id) === String(songId));
   
   // Get sections for a specific songbook
   const getSongbookSections = (songbookId) => songbookSections.filter(s => s.songbook_id === songbookId).sort((a, b) => a.display_order - b.display_order);
@@ -472,7 +472,7 @@ export default function Admin() {
         // Update/create primary songbook entry
         const primarySongbook = songbooks.find(sb => sb.is_primary);
         if (primarySongbook) {
-          const existingPrimaryEntry = songbookEntries.find(e => e.song_id === selectedSong.id && e.songbook_id === primarySongbook.id);
+          const existingPrimaryEntry = songbookEntries.find(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(primarySongbook.id));
           if (existingPrimaryEntry) {
             await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingPrimaryEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ section: formSection, page: formPage.trim() || null }) });
           } else if (formPage.trim() || formSection) {
@@ -483,7 +483,7 @@ export default function Admin() {
         // Update/create old songbook entry
         const oldSongbook = songbooks.find(sb => sb.display_order === 2);
         if (oldSongbook) {
-          const existingOldEntry = songbookEntries.find(e => e.song_id === selectedSong.id && e.songbook_id === oldSongbook.id);
+          const existingOldEntry = songbookEntries.find(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(oldSongbook.id));
           if (existingOldEntry) {
             if (formOldPage.trim()) {
               await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ page: formOldPage.trim() }) });
@@ -615,7 +615,7 @@ export default function Admin() {
       const entryData = { song_id: selectedSong.id, songbook_id: entrySongbookId, section: entrySection || null, page: entryPage.trim() };
       if (editingSongbookEntry.isNew) {
         // Check for duplicate
-        if (songbookEntries.some(e => e.song_id === selectedSong.id && e.songbook_id === entrySongbookId)) {
+        if (songbookEntries.some(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(entrySongbookId))) {
           showMessage('❌ Entry already exists for this songbook'); setSaving(false); return;
         }
         const response = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(entryData) });
@@ -2056,7 +2056,7 @@ export default function Admin() {
                       )}
                       {/* Group entries by songbook */}
                       {songbooks.map(sb => {
-                        const entries = getSongSongbookEntries(selectedSong.id).filter(e => e.songbook_id === sb.id);
+                        const entries = getSongSongbookEntries(selectedSong.id).filter(e => String(e.songbook_id) === String(sb.id));
                         if (entries.length === 0) return null;
                         const sbSections = getSongbookSections(sb.id);
                         return (
@@ -2217,7 +2217,7 @@ export default function Admin() {
                 <div key={sb.id} style={s.songItem(selectedSongbook?.id === sb.id)} onClick={() => selectSongbook(sb)}>
                   <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{sb.name} {sb.is_primary && <span style={{ color: '#22c55e', fontSize: '0.75rem' }}>★ Primary</span>}</div>
                   <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                    {sb.short_name} • {songbookEntries.filter(e => e.songbook_id === sb.id).length} songs
+                    {sb.short_name} • {songbookEntries.filter(e => String(e.songbook_id) === String(sb.id)).length} songs
                     {sb.has_sections && ' • Has sections'}
                   </div>
                 </div>
@@ -2270,11 +2270,11 @@ export default function Admin() {
                   {!isAddingNewSongbook && (
                     <>
                       <hr style={{ margin: '2rem 0', borderColor: '#334155' }} />
-                      <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem' }}>Songs in this Songbook ({songbookEntries.filter(e => e.songbook_id === selectedSongbook.id).length})</h3>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem' }}>Songs in this Songbook ({songbookEntries.filter(e => String(e.songbook_id) === String(selectedSongbook.id)).length})</h3>
                       <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                        {songbookEntries.filter(e => e.songbook_id === selectedSongbook.id).map(entry => {
-                          const song = allSongs.find(s => s.id === entry.song_id);
-                          const group = songGroups.find(g => g.id === entry.song_group_id);
+                        {songbookEntries.filter(e => String(e.songbook_id) === String(selectedSongbook.id)).map(entry => {
+                          const song = allSongs.find(s => String(s.id) === String(entry.song_id));
+                          const group = songGroups.find(g => String(g.id) === String(entry.song_group_id));
                           return (
                             <div key={entry.id} style={{ padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
                               <span>{song?.title || group?.group_name || 'Unknown'}</span>
@@ -2282,7 +2282,7 @@ export default function Admin() {
                             </div>
                           );
                         })}
-                        {songbookEntries.filter(e => e.songbook_id === selectedSongbook.id).length === 0 && (
+                        {songbookEntries.filter(e => String(e.songbook_id) === String(selectedSongbook.id)).length === 0 && (
                           <div style={{ color: '#64748b', textAlign: 'center', padding: '1rem' }}>No songs in this songbook yet</div>
                         )}
                       </div>
