@@ -37,6 +37,7 @@ export default function Reports() {
   const ALL_TABLES = [
     { value: 'songs', label: 'Songs' },
     { value: 'song_versions', label: 'Versions' },
+    { value: 'song_version_attributes', label: 'Version Attributes' },
     { value: 'song_notes', label: 'Notes' },
     { value: 'song_aliases', label: 'Aliases' },
     { value: 'song_sections', label: 'Sections' },
@@ -218,6 +219,7 @@ export default function Reports() {
     const mapping = {
       'songs': 'Songs',
       'song_versions': 'Versions',
+      'song_version_attributes': 'Version Attrs',
       'song_notes': 'Notes',
       'song_aliases': 'Aliases',
       'song_sections': 'Sections',
