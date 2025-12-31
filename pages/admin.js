@@ -893,6 +893,9 @@ export default function Admin() {
       }
 
       // Update attributes - delete existing and re-add
+      const oldAttributes = getVersionAttributes(versionId).map(a => a.attribute_type).sort();
+      const newAttributes = [...versionSelectedAttributes].sort();
+      
       await fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?song_version_id=eq.${versionId}`, { 
         method: 'DELETE', headers 
       });
@@ -901,6 +904,14 @@ export default function Admin() {
           method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify({ song_version_id: versionId, attribute_type: attrType }) 
         });
+      }
+      
+      // Log attribute changes if different
+      if (oldAttributes.join(',') !== newAttributes.join(',')) {
+        await logChange('edit', 'song_version_attributes', selectedSong.id, selectedSong.title, 'attributes', 
+          oldAttributes.length > 0 ? oldAttributes.join(', ') : '[none]', 
+          newAttributes.length > 0 ? newAttributes.join(', ') : '[none]'
+        );
       }
 
       // Update song's has_lyrics flag
@@ -937,6 +948,9 @@ export default function Admin() {
     const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
     const field = type === 'singalong' ? 'is_default_singalong' : 'is_default_explore';
     try {
+      // Find current default
+      const currentDefault = songVersions.find(v => v.song_id === selectedSong.id && v[field]);
+      
       // Unset others
       await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&${field}=eq.true`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
@@ -947,6 +961,14 @@ export default function Admin() {
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ [field]: true }) 
       });
+      
+      // Log the change
+      await logChange('edit', 'song_versions', selectedSong.id, selectedSong.title, 
+        `default_${type}`, 
+        currentDefault?.label || '[none]', 
+        version.label || 'version'
+      );
+      
       showMessage(`✅ Set as default for ${type}`); 
       await loadAllData();
     } catch (error) { showMessage('❌ Error setting default'); }
@@ -1222,6 +1244,15 @@ export default function Admin() {
       .trim();
   };
 
+  const normalizeLyrics = (lyrics) => {
+    if (!lyrics) return '';
+    return lyrics.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '') // remove punctuation
+      .replace(/\s+/g, ' ')        // normalize spaces
+      .trim()
+      .substring(0, 150);          // first 150 chars for comparison
+  };
+
   const findPotentialDuplicates = () => {
     const suggestions = [];
     const checked = new Set();
@@ -1231,9 +1262,23 @@ export default function Admin() {
       [d.song_id_a, d.song_id_b].sort().join('-')
     ));
     
+    // Build a map of normalized lyrics for faster lookup
+    const lyricsMap = new Map();
+    allSongs.forEach(song => {
+      const version = songVersions.find(v => v.song_id === song.id && v.is_default_singalong) 
+        || songVersions.find(v => v.song_id === song.id);
+      if (version?.lyrics_content) {
+        const normLyrics = normalizeLyrics(version.lyrics_content);
+        if (normLyrics.length > 30) { // Only compare if there's enough content
+          lyricsMap.set(song.id, normLyrics);
+        }
+      }
+    });
+    
     for (let i = 0; i < allSongs.length; i++) {
       const songA = allSongs[i];
       const normA = normalizeTitle(songA.title);
+      const lyricsA = lyricsMap.get(songA.id);
       
       for (let j = i + 1; j < allSongs.length; j++) {
         const songB = allSongs[j];
@@ -1243,6 +1288,7 @@ export default function Admin() {
         if (existingPairs.has(pairKey)) continue;
         
         const normB = normalizeTitle(songB.title);
+        const lyricsB = lyricsMap.get(songB.id);
         
         // Check for matches
         let reason = null;
@@ -1262,6 +1308,21 @@ export default function Admin() {
         const aliasesB = getSongAliases(songB.id).map(a => normalizeTitle(a.alias_title));
         if (aliasesA.includes(normB) || aliasesB.includes(normA)) {
           reason = 'Title matches an alias';
+        }
+        
+        // Check for similar lyrics (only if titles don't already match)
+        if (!reason && lyricsA && lyricsB && lyricsA.length > 50 && lyricsB.length > 50) {
+          // Check if first ~150 chars are very similar
+          if (lyricsA === lyricsB) {
+            reason = 'Identical lyrics opening';
+          } else {
+            // Check for substantial overlap (one contains most of the other's opening)
+            const shorterLyrics = lyricsA.length < lyricsB.length ? lyricsA : lyricsB;
+            const longerLyrics = lyricsA.length < lyricsB.length ? lyricsB : lyricsA;
+            if (longerLyrics.includes(shorterLyrics.substring(0, 80))) {
+              reason = 'Similar lyrics opening';
+            }
+          }
         }
         
         if (reason) {
@@ -2005,7 +2066,7 @@ export default function Admin() {
                                 </div>
                               );
                             })}
-                            <button style={{ ...s.btnSmall, marginTop: '0.25rem' }} onClick={() => { setEntrySongbookId(sb.id); setEntrySection(''); setEntryPage(''); setEditingSongbookEntry({}); }}>+ Add another section</button>
+                            <button style={{ ...s.btnSmall, marginTop: '0.25rem' }} onClick={() => { setEntrySongbookId(sb.id); setEntrySection(''); setEntryPage(''); setEditingSongbookEntry({ isNew: true }); }}>+ Add another section</button>
                           </div>
                         );
                       })}
