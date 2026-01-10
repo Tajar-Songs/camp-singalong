@@ -1069,8 +1069,8 @@ if (view === 'display' && showLyrics && currentSong) {
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-slate-900' : 'bg-green-900'} text-white`}>
-      {/* Mobile Layout (column) */}
-      <div className="lg:hidden flex flex-col min-h-screen">
+      {/* Mobile Layout (column) - show on screens smaller than xl (1280px) */}
+      <div className="xl:hidden flex flex-col min-h-screen">
         {/* Mobile Header */}
         <div className="sticky top-0 bg-black/80 backdrop-blur p-4 z-10 border-b border-white/10">
           <div className="flex items-center justify-between">
@@ -1199,8 +1199,8 @@ if (view === 'display' && showLyrics && currentSong) {
         </div>
       </div>
 
-      {/* Desktop/TV Layout (two-column with sidebar) */}
-      <div className="hidden lg:flex min-h-screen">
+      {/* Desktop/TV Layout (two-column with sidebar) - show on xl screens (1280px+) */}
+      <div className="hidden xl:flex min-h-screen">
         {/* Left Sidebar */}
         <div className="w-72 shrink-0 p-6 flex flex-col border-r border-white/10 bg-black/20">
           {/* Room Code */}
