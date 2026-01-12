@@ -547,6 +547,7 @@ export default function Home() {
       if (roomData && roomData.length > 0) {
         setCurrentSong(roomData[0].current_song);
         setSungSongs(roomData[0].sung_songs || []);
+        setShowLyricsOnTV(roomData[0].show_lyrics_on_tv || false);
       }
       const queueResponse = await fetch(`${SUPABASE_URL}/rest/v1/queue?room_id=eq.${roomCode}&select=*&order=position.asc`, {
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -1763,7 +1764,11 @@ if (view === 'display' && showLyrics && currentSong) {
               <div className="text-xl font-bold mb-2">{currentSong.title} {currentSong.has_lyrics && '📄'}</div>
               {currentSong.has_lyrics && (
                 <button 
-                  onClick={() => setShowLyricsOnTV(!showLyricsOnTV)}
+                  onClick={async () => {
+                    const newValue = !showLyricsOnTV;
+                    setShowLyricsOnTV(newValue);
+                    await updateRoom({ show_lyrics_on_tv: newValue });
+                  }}
                   className={`w-full py-2 rounded-xl font-bold text-sm transition-colors border ${showLyricsOnTV ? 'bg-blue-600 text-white border-blue-600' : 'bg-transparent border-slate-400 opacity-60'}`}
                 >
                   {showLyricsOnTV ? '📄 Lyrics on TV: ON' : '📄 Lyrics on TV: OFF'}
