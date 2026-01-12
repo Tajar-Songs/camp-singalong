@@ -392,6 +392,7 @@ export default function Admin() {
 
   const selectSong = (song) => {
     setSelectedSong(song); setSelectedGroup(null); setIsAddingNew(false);
+    setEditingVersion(null); // Reset version editing when switching songs
     const pageInfo = getSongPage(song.id);
     setFormTitle(song.title); 
     setFormPage(pageInfo.page || song.page || ''); 
@@ -1857,8 +1858,8 @@ export default function Admin() {
                                 <button style={s.btnDanger} onClick={() => deleteVersion(version)}>Delete</button>
                               </div>
                             </div>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', maxHeight: '100px', overflow: 'hidden', background: '#0f172a', padding: '0.5rem', borderRadius: '0.25rem' }}>
-                              {version.lyrics_content?.substring(0, 300)}{version.lyrics_content?.length > 300 && '...'}
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto', background: '#0f172a', padding: '0.5rem', borderRadius: '0.25rem' }}>
+                              {version.lyrics_content}
                             </div>
                           </div>
                         );
