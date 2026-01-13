@@ -128,6 +128,7 @@ export default function TagManagement() {
       localStorage.setItem('supabase_access_token', data.access_token);
       localStorage.setItem('supabase_refresh_token', data.refresh_token);
       setUser(data.user);
+      await loadUserProfile(data.user.id);
       setAuthEmail('');
       setAuthPassword('');
     } catch (error) { setAuthError(error.message); }
