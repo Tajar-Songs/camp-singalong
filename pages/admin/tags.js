@@ -456,15 +456,7 @@ export default function TagManagement() {
 
   // ============ RENDER ============
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
-    );
-  }
-
-  // Loading state
+  // Auth check must come first - loading state only matters after auth is confirmed
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center">
@@ -537,7 +529,19 @@ export default function TagManagement() {
     );
   }
 
-  // Admin role check
+  // Admin role check - with waiting room for profile to load
+  if (user && !userProfile) {
+    // User is logged in but profile hasn't loaded yet - wait
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">🏷️</div>
+          <div>Loading profile...</div>
+        </div>
+      </div>
+    );
+  }
+
   if (userProfile?.role !== 'admin') {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
@@ -554,6 +558,15 @@ export default function TagManagement() {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Data loading state (after auth is confirmed)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
+        <div className="text-xl">Loading...</div>
       </div>
     );
   }
@@ -968,4 +981,3 @@ export default function TagManagement() {
     </div>
   );
 }
-
