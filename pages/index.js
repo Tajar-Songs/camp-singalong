@@ -1464,11 +1464,11 @@ if (view === 'display' && showLyrics && currentSong) {
         {/* Desktop/TV Layout - two columns with sidebar */}
         <div className="hidden xl:flex min-h-screen">
           {/* Left Sidebar - Controls & Options */}
-          <div className="w-56 tv:w-72 shrink-0 p-4 tv:p-6 flex flex-col border-r border-white/10">
+          <div className="w-72 tv:w-80 shrink-0 p-4 tv:p-6 flex flex-col border-r border-white/10">
             {/* Room Code */}
-            <div className="bg-white/10 p-4 tv:p-6 rounded-xl border border-white/10 mb-4 overflow-hidden">
+            <div className="bg-white/10 p-4 tv:p-6 rounded-xl border border-white/10 mb-4">
               <div className="text-xs tv:text-sm uppercase font-bold opacity-60 mb-1">Room Code</div>
-              <div className="text-2xl tv:text-4xl font-black truncate">{roomCode}</div>
+              <div className="text-2xl tv:text-4xl font-black">{roomCode}</div>
             </div>
             
             {/* Control Button */}
@@ -1545,19 +1545,21 @@ if (view === 'display' && showLyrics && currentSong) {
           </div>
           
           {/* Right Main Content - Now Singing & Queue */}
-          <div className="flex-1 flex flex-col p-6 tv:p-12 overflow-hidden">
+          <div className="flex-1 flex flex-col justify-center items-center p-6 tv:p-12 overflow-hidden">
             
-            {/* Now Singing Section */}
-            <div className="flex-1 flex flex-col justify-center">
-              <h1 className="text-3xl tv:text-5xl font-black mb-2 opacity-40 uppercase tracking-widest">Now Singing</h1>
-              {currentSong ? (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="text-5xl tv:text-8xl font-black mb-2 leading-tight">
-                    {currentSong.title} {currentSong.has_lyrics && '📄'}
-                  </div>
-                  <div className="text-3xl tv:text-6xl text-green-400 font-bold">
-                    Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
-                  </div>
+            {/* Centered content group */}
+            <div className="w-full max-w-4xl">
+              {/* Now Singing Section */}
+              <div className="mb-8">
+                <h1 className="text-3xl tv:text-5xl font-black mb-2 opacity-40 uppercase tracking-widest">Now Singing</h1>
+                {currentSong ? (
+                  <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="text-5xl tv:text-8xl font-black mb-2 leading-tight">
+                      {currentSong.title} {currentSong.has_lyrics && '📄'}
+                    </div>
+                    <div className="text-3xl tv:text-6xl text-green-400 font-bold">
+                      Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
+                    </div>
 
                   {/* Show expanded instruction notes on TV */}
                   {(() => {
@@ -1632,7 +1634,7 @@ if (view === 'display' && showLyrics && currentSong) {
 
             {/* Up Next Queue */}
             {queue.length > 0 && (
-              <div className="mt-auto pt-6 border-t border-white/10">
+              <div className="pt-6 border-t border-white/10 w-full">
                 <h2 className="text-2xl tv:text-4xl font-bold mb-4 opacity-40">Up Next</h2>
                 <div className="space-y-3">
                   {queue.slice(0, 5).map((song, i) => (
@@ -1650,6 +1652,7 @@ if (view === 'display' && showLyrics && currentSong) {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>
