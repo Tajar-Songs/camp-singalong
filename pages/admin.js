@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XU';
+const SUPABASE_KEY = 'ssb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
 const SECTION_INFO = {
   A: "Graces", B: "Girl Scout Standards", C: "Camp Arrowhead Songs", D: "Patriotic Songs",
