@@ -311,44 +311,74 @@ export default function Admin() {
     setUser(null);
     setUserProfile(null);
   };
-
-  const loadAllData = async () => {
-    try {
-      const headers = getAuthHeaders(false);
-      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
-      ]);
-      setAllSongs(await songsRes.json());
-      setSongVersions(await versionsRes.json());
-      setVersionAttributes(await versionAttrsRes.json());
-      setSongNotes(await notesRes.json());
-      setSongSections(await sectionsRes.json());
-      setSongAliases(await aliasesRes.json());
-      setSongGroups(await groupsRes.json());
-      setSongGroupMembers(await membersRes.json());
-      setSongbookEntries(await entriesRes.json());
-      setSongbooks(await songbooksRes.json());
-      setSongbookSections(await songbookSectionsRes.json());
-      setSongMedia(await mediaRes.json());
-      setSongFlags(await flagsRes.json());
-      setPotentialDuplicates(await duplicatesRes.json());
-      setChangeLog(await logRes.json());
-    } catch (error) { console.error('Error loading data:', error); }
-  };
+const loadAllData = async () => {
+  const ROW_LIMIT = 10000;
+  try {
+    const headers = getAuthHeaders(false);
+    const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*&limit=${ROW_LIMIT}`, { headers }),
+      fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
+    ]);
+    
+    const songs = await songsRes.json();
+    const versions = await versionsRes.json();
+    const versionAttrs = await versionAttrsRes.json();
+    const notes = await notesRes.json();
+    const sections = await sectionsRes.json();
+    const aliases = await aliasesRes.json();
+    const groups = await groupsRes.json();
+    const members = await membersRes.json();
+    const entries = await entriesRes.json();
+    const songbooksData = await songbooksRes.json();
+    const songbookSectionsData = await songbookSectionsRes.json();
+    const media = await mediaRes.json();
+    const flags = await flagsRes.json();
+    const duplicates = await duplicatesRes.json();
+    const log = await logRes.json();
+    
+    // Check for limit warnings
+    const warnings = [];
+    if (songs.length >= ROW_LIMIT) warnings.push('songs');
+    if (versions.length >= ROW_LIMIT) warnings.push('versions');
+    if (entries.length >= ROW_LIMIT) warnings.push('songbook entries');
+    if (aliases.length >= ROW_LIMIT) warnings.push('aliases');
+    if (notes.length >= ROW_LIMIT) warnings.push('notes');
+    if (media.length >= ROW_LIMIT) warnings.push('media');
+    
+    if (warnings.length > 0) {
+      alert(`⚠️ Data limit reached for: ${warnings.join(', ')}. Some records may not be loaded. Contact support to increase limits.`);
+    }
+    
+    setAllSongs(songs);
+    setSongVersions(versions);
+    setVersionAttributes(versionAttrs);
+    setSongNotes(notes);
+    setSongSections(sections);
+    setSongAliases(aliases);
+    setSongGroups(groups);
+    setSongGroupMembers(members);
+    setSongbookEntries(entries);
+    setSongbooks(songbooksData);
+    setSongbookSections(songbookSectionsData);
+    setSongMedia(media);
+    setSongFlags(flags);
+    setPotentialDuplicates(duplicates);
+    setChangeLog(log);
+  } catch (error) { console.error('Error loading data:', error); }
+};
 
   const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
   
