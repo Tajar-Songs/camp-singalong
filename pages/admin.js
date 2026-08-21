@@ -122,6 +122,19 @@ export default function Admin() {
   const [formSongbookIsPrimary, setFormSongbookIsPrimary] = useState(false);
   const [formSongbookDisplayOrder, setFormSongbookDisplayOrder] = useState(10);
 
+  // Adding songs from songbook page
+  const [addingSongToSongbook, setAddingSongToSongbook] = useState(false);
+  const [songbookAddSongId, setSongbookAddSongId] = useState('');
+  const [songbookAddSection, setSongbookAddSection] = useState('');
+  const [songbookAddPage, setSongbookAddPage] = useState('');
+  const [songbookSongSearch, setSongbookSongSearch] = useState('');
+
+  // Songbook section editing
+  const [editingSongbookSection, setEditingSongbookSection] = useState(null);
+  const [sectionCode, setSectionCode] = useState('');
+  const [sectionName, setSectionName] = useState('');
+  const [sectionOrder, setSectionOrder] = useState(1);
+
   // Additional song metadata
   const [formAuthor, setFormAuthor] = useState('');
   const [formComposer, setFormComposer] = useState('');
@@ -311,74 +324,44 @@ export default function Admin() {
     setUser(null);
     setUserProfile(null);
   };
-const loadAllData = async () => {
-  const ROW_LIMIT = 10000;
-  try {
-    const headers = getAuthHeaders(false);
-    const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*&limit=${ROW_LIMIT}`, { headers }),
-      fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
-    ]);
-    
-    const songs = await songsRes.json();
-    const versions = await versionsRes.json();
-    const versionAttrs = await versionAttrsRes.json();
-    const notes = await notesRes.json();
-    const sections = await sectionsRes.json();
-    const aliases = await aliasesRes.json();
-    const groups = await groupsRes.json();
-    const members = await membersRes.json();
-    const entries = await entriesRes.json();
-    const songbooksData = await songbooksRes.json();
-    const songbookSectionsData = await songbookSectionsRes.json();
-    const media = await mediaRes.json();
-    const flags = await flagsRes.json();
-    const duplicates = await duplicatesRes.json();
-    const log = await logRes.json();
-    
-    // Check for limit warnings
-    const warnings = [];
-    if (songs.length >= ROW_LIMIT) warnings.push('songs');
-    if (versions.length >= ROW_LIMIT) warnings.push('versions');
-    if (entries.length >= ROW_LIMIT) warnings.push('songbook entries');
-    if (aliases.length >= ROW_LIMIT) warnings.push('aliases');
-    if (notes.length >= ROW_LIMIT) warnings.push('notes');
-    if (media.length >= ROW_LIMIT) warnings.push('media');
-    
-    if (warnings.length > 0) {
-      alert(`⚠️ Data limit reached for: ${warnings.join(', ')}. Some records may not be loaded. Contact support to increase limits.`);
-    }
-    
-    setAllSongs(songs);
-    setSongVersions(versions);
-    setVersionAttributes(versionAttrs);
-    setSongNotes(notes);
-    setSongSections(sections);
-    setSongAliases(aliases);
-    setSongGroups(groups);
-    setSongGroupMembers(members);
-    setSongbookEntries(entries);
-    setSongbooks(songbooksData);
-    setSongbookSections(songbookSectionsData);
-    setSongMedia(media);
-    setSongFlags(flags);
-    setPotentialDuplicates(duplicates);
-    setChangeLog(log);
-  } catch (error) { console.error('Error loading data:', error); }
-};
+
+  const loadAllData = async () => {
+    try {
+      const headers = getAuthHeaders(false);
+      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
+      ]);
+      setAllSongs(await songsRes.json());
+      setSongVersions(await versionsRes.json());
+      setVersionAttributes(await versionAttrsRes.json());
+      setSongNotes(await notesRes.json());
+      setSongSections(await sectionsRes.json());
+      setSongAliases(await aliasesRes.json());
+      setSongGroups(await groupsRes.json());
+      setSongGroupMembers(await membersRes.json());
+      setSongbookEntries(await entriesRes.json());
+      setSongbooks(await songbooksRes.json());
+      setSongbookSections(await songbookSectionsRes.json());
+      setSongMedia(await mediaRes.json());
+      setSongFlags(await flagsRes.json());
+      setPotentialDuplicates(await duplicatesRes.json());
+      setChangeLog(await logRes.json());
+    } catch (error) { console.error('Error loading data:', error); }
+  };
 
   const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
   
@@ -761,6 +744,129 @@ const loadAllData = async () => {
       setSelectedSongbook(null);
       await loadAllData();
     } catch (error) { showMessage('❌ Error deleting songbook'); }
+  };
+
+  // Songbook section management
+  const startAddSongbookSection = () => {
+    const existingSections = getSongbookSections(selectedSongbook.id);
+    setEditingSongbookSection({ isNew: true });
+    setSectionCode('');
+    setSectionName('');
+    setSectionOrder(existingSections.length + 1);
+  };
+
+  const startEditSongbookSection = (section) => {
+    setEditingSongbookSection(section);
+    setSectionCode(section.section_code);
+    setSectionName(section.section_name);
+    setSectionOrder(section.display_order);
+  };
+
+  const cancelSongbookSectionEdit = () => setEditingSongbookSection(null);
+
+  const saveSongbookSection = async () => {
+    if (!sectionCode.trim()) { showMessage('❌ Section code is required'); return; }
+    if (!sectionName.trim()) { showMessage('❌ Section name is required'); return; }
+    setSaving(true);
+    const headers = getAuthHeaders();
+    try {
+      const sectionData = {
+        songbook_id: selectedSongbook.id,
+        section_code: sectionCode.trim().toUpperCase(),
+        section_name: sectionName.trim(),
+        display_order: parseInt(sectionOrder) || 1
+      };
+      if (editingSongbookSection.isNew) {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/songbook_sections`, { 
+          method: 'POST', 
+          headers: { ...headers, 'Prefer': 'return=minimal' }, 
+          body: JSON.stringify(sectionData) 
+        });
+        if (response.ok) {
+          showMessage('✅ Section added!');
+        } else {
+          const error = await response.text();
+          console.error('Section save failed:', error);
+          showMessage('❌ Error adding section');
+        }
+      } else {
+        await fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?id=eq.${editingSongbookSection.id}`, { 
+          method: 'PATCH', 
+          headers: { ...headers, 'Prefer': 'return=minimal' }, 
+          body: JSON.stringify(sectionData) 
+        });
+        showMessage('✅ Section updated!');
+      }
+      setEditingSongbookSection(null);
+      await loadAllData();
+    } catch (error) { console.error(error); showMessage('❌ Error saving section'); }
+    setSaving(false);
+  };
+
+  const deleteSongbookSection = async (section) => {
+    if (!confirm(`Delete section "${section.section_code} - ${section.section_name}"?`)) return;
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      showMessage('✅ Section deleted');
+      await loadAllData();
+    } catch (error) { showMessage('❌ Error deleting section'); }
+  };
+
+  // Add song from songbook page
+  const startAddSongToSongbook = () => {
+    setAddingSongToSongbook(true);
+    setSongbookAddSongId('');
+    setSongbookAddSection('');
+    setSongbookAddPage('');
+    setSongbookSongSearch('');
+  };
+
+  const cancelAddSongToSongbook = () => {
+    setAddingSongToSongbook(false);
+    setSongbookSongSearch('');
+  };
+
+  const saveAddSongToSongbook = async () => {
+    if (!songbookAddSongId) { showMessage('❌ Please select a song'); return; }
+    if (!songbookAddPage.trim()) { showMessage('❌ Page is required'); return; }
+    
+    // Check for duplicate
+    if (songbookEntries.some(e => String(e.song_id) === String(songbookAddSongId) && String(e.songbook_id) === String(selectedSongbook.id))) {
+      showMessage('❌ This song is already in this songbook');
+      return;
+    }
+    
+    setSaving(true);
+    const headers = getAuthHeaders();
+    try {
+      const entryData = {
+        song_id: parseInt(songbookAddSongId),
+        songbook_id: selectedSongbook.id,
+        section: songbookAddSection || null,
+        page: songbookAddPage.trim()
+      };
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, {
+        method: 'POST',
+        headers: { ...headers, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(entryData)
+      });
+      if (response.ok) {
+        const song = allSongs.find(s => String(s.id) === String(songbookAddSongId));
+        await logChange('add', 'song_songbook_entries', parseInt(songbookAddSongId), song?.title, 'songbook_entry', null, `${selectedSongbook.short_name}: ${songbookAddPage.trim()}`);
+        showMessage('✅ Song added to songbook!');
+        setAddingSongToSongbook(false);
+        setSongbookSongSearch('');
+        await loadAllData();
+      } else {
+        const error = await response.text();
+        console.error('Error adding song to songbook:', error);
+        showMessage('❌ Error adding song');
+      }
+    } catch (error) {
+      console.error(error);
+      showMessage('❌ Error adding song');
+    }
+    setSaving(false);
   };
 
   // Media management
@@ -2081,10 +2187,9 @@ const loadAllData = async () => {
                                 {entrySongbookId && getSongbookSections(entrySongbookId).map(sec => (
                                   <option key={sec.id} value={sec.section_code}>{sec.section_code} - {sec.section_name}</option>
                                 ))}
-                                {/* Fallback to SECTION_INFO if no sections defined for this songbook */}
-                                {entrySongbookId && getSongbookSections(entrySongbookId).length === 0 && 
-                                  Object.entries(SECTION_INFO).map(([k, n]) => <option key={k} value={k}>{k} - {n}</option>)
-                                }
+                                {entrySongbookId && getSongbookSections(entrySongbookId).length === 0 && (
+                                  <option value="" disabled>— No sections defined for this songbook —</option>
+                                )}
                               </select>
                             </div>
                             <div style={s.formGroup}>
@@ -2314,15 +2419,122 @@ const loadAllData = async () => {
                   {!isAddingNewSongbook && (
                     <>
                       <hr style={{ margin: '2rem 0', borderColor: '#334155' }} />
+                      
+                      {/* Section Management */}
+                      <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem' }}>Sections for this Songbook</h3>
+                      <div style={{ marginBottom: '1rem' }}>
+                        {getSongbookSections(selectedSongbook.id).map(sec => (
+                          <div key={sec.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem' }}>
+                            <span style={{ fontWeight: 'bold', width: '2rem' }}>{sec.section_code}</span>
+                            <span style={{ flex: 1 }}>{sec.section_name}</span>
+                            <span style={{ color: '#64748b', fontSize: '0.75rem' }}>Order: {sec.display_order}</span>
+                            <button style={s.btnSmall} onClick={() => startEditSongbookSection(sec)}>Edit</button>
+                            <button style={s.btnDanger} onClick={() => deleteSongbookSection(sec)}>×</button>
+                          </div>
+                        ))}
+                        {getSongbookSections(selectedSongbook.id).length === 0 && (
+                          <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.5rem' }}>No sections defined. Songs will use the default section list.</div>
+                        )}
+                        {!editingSongbookSection ? (
+                          <button style={{ ...s.btnSmall, marginTop: '0.5rem' }} onClick={startAddSongbookSection}>+ Add Section</button>
+                        ) : (
+                          <div style={{ ...s.card, border: '1px solid #22c55e', marginTop: '0.5rem', padding: '0.75rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                              <div>
+                                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Code *</label>
+                                <input type="text" value={sectionCode} onChange={(e) => setSectionCode(e.target.value.toUpperCase())} style={s.input} placeholder="A" maxLength={3} />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Name *</label>
+                                <input type="text" value={sectionName} onChange={(e) => setSectionName(e.target.value)} style={s.input} placeholder="Graces" />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Order</label>
+                                <input type="number" value={sectionOrder} onChange={(e) => setSectionOrder(e.target.value)} style={s.input} />
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button style={s.btn} onClick={saveSongbookSection} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                              <button style={s.btnSec} onClick={cancelSongbookSectionEdit}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <hr style={{ margin: '2rem 0', borderColor: '#334155' }} />
                       <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem' }}>Songs in this Songbook ({songbookEntries.filter(e => String(e.songbook_id) === String(selectedSongbook.id)).length})</h3>
+                      
+                      {/* Add Song Form */}
+                      {!addingSongToSongbook ? (
+                        <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddSongToSongbook}>+ Add Song to Songbook</button>
+                      ) : (
+                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem', padding: '1rem' }}>
+                          <div style={s.formGroup}>
+                            <label style={s.label}>Search & Select Song *</label>
+                            <input 
+                              type="text" 
+                              value={songbookSongSearch} 
+                              onChange={(e) => setSongbookSongSearch(e.target.value)} 
+                              style={s.input} 
+                              placeholder="Type to search songs..." 
+                            />
+                            {songbookSongSearch && (
+                              <div style={{ maxHeight: '150px', overflowY: 'auto', background: '#0f172a', borderRadius: '0.25rem', marginTop: '0.25rem' }}>
+                                {allSongs
+                                  .filter(s => s.title.toLowerCase().includes(songbookSongSearch.toLowerCase()))
+                                  .filter(s => !songbookEntries.some(e => String(e.song_id) === String(s.id) && String(e.songbook_id) === String(selectedSongbook.id)))
+                                  .slice(0, 20)
+                                  .map(s => (
+                                    <div 
+                                      key={s.id} 
+                                      style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid #1e293b', background: String(songbookAddSongId) === String(s.id) ? '#22c55e22' : 'transparent' }}
+                                      onClick={() => { setSongbookAddSongId(s.id); setSongbookSongSearch(s.title); }}
+                                    >
+                                      {s.title}
+                                    </div>
+                                  ))
+                                }
+                              </div>
+                            )}
+                            {songbookAddSongId && (
+                              <div style={{ marginTop: '0.5rem', color: '#22c55e', fontSize: '0.875rem' }}>
+                                Selected: {allSongs.find(s => String(s.id) === String(songbookAddSongId))?.title}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div style={s.formGroup}>
+                              <label style={s.label}>Section</label>
+                              <select value={songbookAddSection} onChange={(e) => setSongbookAddSection(e.target.value)} style={s.select}>
+                                <option value="">No section</option>
+                                {getSongbookSections(selectedSongbook.id).map(sec => (
+                                  <option key={sec.id} value={sec.section_code}>{sec.section_code} - {sec.section_name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div style={s.formGroup}>
+                              <label style={s.label}>Page *</label>
+                              <input type="text" value={songbookAddPage} onChange={(e) => setSongbookAddPage(e.target.value)} style={s.input} placeholder="e.g. A-1, 42" />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button style={s.btn} onClick={saveAddSongToSongbook} disabled={saving}>{saving ? 'Saving...' : 'Add Song'}</button>
+                            <button style={s.btnSec} onClick={cancelAddSongToSongbook}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                         {songbookEntries.filter(e => String(e.songbook_id) === String(selectedSongbook.id)).map(entry => {
                           const song = allSongs.find(s => String(s.id) === String(entry.song_id));
                           const group = songGroups.find(g => String(g.id) === String(entry.song_group_id));
                           return (
-                            <div key={entry.id} style={{ padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
+                            <div key={entry.id} style={{ padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span>{song?.title || group?.group_name || 'Unknown'}</span>
-                              <span style={{ color: '#94a3b8' }}>{entry.section && `${entry.section}-`}{entry.page}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ color: '#94a3b8' }}>{entry.section && `${entry.section}-`}{entry.page}</span>
+                                <button style={s.btnDanger} onClick={() => deleteSongbookEntry(entry)}>×</button>
+                              </div>
                             </div>
                           );
                         })}
@@ -2610,7 +2822,3 @@ const loadAllData = async () => {
     </div>
   );
 }
-
-
-
-
