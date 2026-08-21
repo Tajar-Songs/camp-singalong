@@ -115,6 +115,19 @@ export default function Home() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Helper function to get auth headers (uses user token if available, otherwise anon key)
+  const getAuthHeaders = (includeContentType = true) => {
+    const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
+    const headers = {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${token}`
+    };
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
+  };
+
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDark(darkModeQuery.matches);
@@ -329,31 +342,31 @@ export default function Home() {
     try {
       const [songsRes, versionsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, flagsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         })
       ]);
       setAllSongs(await songsRes.json());
@@ -483,10 +496,10 @@ export default function Home() {
     try {
       const [tagsRes, songTagsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         })
       ]);
       setTags(await tagsRes.json());
@@ -511,10 +524,7 @@ export default function Home() {
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/rooms`, {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({ id: code, current_song: null, sung_songs: [] })
       });
       if (response.ok) setRoomCode(code);
@@ -528,7 +538,7 @@ export default function Home() {
     setLoading(true);
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${code}&select=*`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
       const data = await response.json();
       if (data && data.length > 0) { setRoomCode(code); await loadRoomData(); }
@@ -541,7 +551,7 @@ export default function Home() {
     if (!roomCode) return;
     try {
       const roomResponse = await fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${roomCode}&select=*`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
       const roomData = await roomResponse.json();
       if (roomData && roomData.length > 0) {
@@ -550,7 +560,7 @@ export default function Home() {
         setShowLyricsOnTV(roomData[0].show_lyrics_on_tv || false);
       }
       const queueResponse = await fetch(`${SUPABASE_URL}/rest/v1/queue?room_id=eq.${roomCode}&select=*&order=position.asc`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
       setQueue((await queueResponse.json()) || []);
     } catch (error) { console.error('Error loading room data:', error); }
@@ -560,10 +570,7 @@ export default function Home() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/rooms?id=eq.${roomCode}`, {
         method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify(updates)
       });
     } catch (error) { console.error('Error updating room:', error); }
@@ -609,10 +616,7 @@ export default function Home() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue`, {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({
           room_id: roomCode,
           song_id: song.id || null,
@@ -666,10 +670,7 @@ export default function Home() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue`, {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({
           room_id: roomCode,
           song_title: group.group_name,
@@ -777,7 +778,7 @@ export default function Home() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue?id=eq.${song.id}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
     } catch (error) { console.error('Error removing from queue:', error); }
     await loadRoomData();
@@ -791,18 +792,12 @@ export default function Home() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue?id=eq.${song.id}`, {
         method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({ position: otherSong.position })
       });
       await fetch(`${SUPABASE_URL}/rest/v1/queue?id=eq.${otherSong.id}`, {
         method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json', 'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({ position: song.position })
       });
       await loadRoomData();
@@ -813,7 +808,7 @@ export default function Home() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/queue?id=eq.${id}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
       await loadRoomData();
     } catch (error) { console.error('Error removing from queue:', error); }

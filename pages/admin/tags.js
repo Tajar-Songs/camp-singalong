@@ -53,6 +53,19 @@ export default function TagManagement() {
   const [selectedSongs, setSelectedSongs] = useState([]); // Array of song IDs
   const [applyTagId, setApplyTagId] = useState(''); // Tag to apply to selected songs
 
+  // Helper function to get auth headers with user's token
+  const getAuthHeaders = (includeContentType = true) => {
+    const token = localStorage.getItem('supabase_access_token');
+    const headers = {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${token}`
+    };
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
+  };
+
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
   useEffect(() => { if (userProfile?.role === 'admin') loadData(); }, [userProfile]);
@@ -162,16 +175,16 @@ export default function TagManagement() {
     try {
       const [tagsRes, songsRes, songTagsRes, versionsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         })
       ]);
       setTags(await tagsRes.json());
@@ -224,7 +237,7 @@ export default function TagManagement() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${songId}&tag_id=eq.${tagId}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
       showMessage('✅ Song removed from tag');
       await loadData();
@@ -271,12 +284,7 @@ export default function TagManagement() {
       if (isAddingTag) {
         const response = await fetch(`${SUPABASE_URL}/rest/v1/tags`, {
           method: 'POST',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          },
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
           body: JSON.stringify(tagData)
         });
         if (response.ok) {
@@ -290,12 +298,7 @@ export default function TagManagement() {
       } else {
         const response = await fetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${editingTag.id}`, {
           method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
-          },
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
           body: JSON.stringify(tagData)
         });
         if (response.ok) {
@@ -316,7 +319,7 @@ export default function TagManagement() {
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${tag.id}`, {
         method: 'DELETE',
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        headers: getAuthHeaders(false)
       });
       if (response.ok) {
         showMessage('✅ Tag deleted');
@@ -399,12 +402,7 @@ export default function TagManagement() {
 
       const response = await fetch(`${SUPABASE_URL}/rest/v1/song_tags`, {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify(inserts)
       });
 
@@ -442,7 +440,7 @@ export default function TagManagement() {
       for (const songId of songsWithTag) {
         await fetch(`${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${songId}&tag_id=eq.${applyTagId}`, {
           method: 'DELETE',
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         });
       }
 

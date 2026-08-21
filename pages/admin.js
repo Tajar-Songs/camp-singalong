@@ -168,6 +168,19 @@ export default function Admin() {
 
   const [userProfile, setUserProfile] = useState(null);
 
+  // Helper function to get auth headers with user's token
+  const getAuthHeaders = (includeContentType = true) => {
+    const token = localStorage.getItem('supabase_access_token');
+    const headers = {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${token}`
+    };
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
+  };
+
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
   useEffect(() => { if (userProfile?.role === 'admin') loadAllData(); }, [userProfile]);
@@ -301,7 +314,7 @@ export default function Admin() {
 
   const loadAllData = async () => {
     try {
-      const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` };
+      const headers = getAuthHeaders(false);
       const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
@@ -344,7 +357,7 @@ export default function Admin() {
 
   const logChange = async (action, tableName, recordId, recordTitle, fieldChanged = null, oldValue = null, newValue = null) => {
     try {
-      const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+      const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
       // For song-related tables, recordId is the song_id
       // For non-song tables (songbooks, song_groups), recordId may be null
       const songId = recordId && typeof recordId === 'number' ? recordId : null;
@@ -422,7 +435,7 @@ export default function Admin() {
     
     if (!formTitle.trim()) { showMessage('❌ Title is required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       // Song data (title, year, and metadata - page/section goes to songbook_entries)
       const songData = { 
@@ -508,7 +521,7 @@ export default function Admin() {
   const saveSongLyrics = async () => {
     
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const existingVersion = getDefaultVersion(selectedSong.id);
       if (existingVersion) {
@@ -530,7 +543,7 @@ export default function Admin() {
   const saveNote = async () => {
     if (!noteContent.trim()) { showMessage('❌ Note content is required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+    const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
       if (editingNote.isNew) {
         await fetch(`${SUPABASE_URL}/rest/v1/song_notes`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, note_type: noteType, note_content: noteContent.trim(), created_by: currentUserName }) });
@@ -547,7 +560,7 @@ export default function Admin() {
   const deleteNote = async (note) => {
     if (!confirm('Delete this note?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_notes?id=eq.${note.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_notes?id=eq.${note.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_notes', selectedSong.id, selectedSong.title, note.note_type, note.note_content, null);
       showMessage('✅ Note deleted'); await loadAllData();
     } catch (error) { showMessage('❌ Error deleting'); }
@@ -555,7 +568,7 @@ export default function Admin() {
 
   const addAlias = async () => {
     if (!newAlias.trim()) return;
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+    const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_aliases`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, alias_title: newAlias.trim() }) });
       await logChange('add', 'song_aliases', selectedSong.id, selectedSong.title, 'alias', null, newAlias.trim());
@@ -565,7 +578,7 @@ export default function Admin() {
 
   const deleteAlias = async (alias) => {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_aliases', selectedSong.id, selectedSong.title, 'alias', alias.alias_title, null);
       showMessage('✅ Alias removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing alias'); }
@@ -573,7 +586,7 @@ export default function Admin() {
 
   const addSecondarySection = async () => {
     if (!newSecondarySection) return;
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+    const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_sections`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, section: newSecondarySection, is_primary: false, page: newSecondaryPage.trim() || null }) });
       await logChange('add', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', null, newSecondarySection);
@@ -584,7 +597,7 @@ export default function Admin() {
   const deleteSecondarySection = async (section) => {
     if (section.is_primary) { showMessage('❌ Cannot delete primary section'); return; }
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', section.section, null);
       showMessage('✅ Section removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing section'); }
@@ -611,7 +624,7 @@ export default function Admin() {
     if (!entrySongbookId) { showMessage('❌ Please select a songbook'); return; }
     if (!entryPage.trim()) { showMessage('❌ Page is required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const entryData = { song_id: selectedSong.id, songbook_id: entrySongbookId, section: entrySection || null, page: entryPage.trim() };
       if (editingSongbookEntry.isNew) {
@@ -646,7 +659,7 @@ export default function Admin() {
   const deleteSongbookEntry = async (entry) => {
     if (!confirm('Delete this songbook entry?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${entry.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${entry.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       const sb = songbooks.find(s => s.id === entry.songbook_id);
       await logChange('delete', 'song_songbook_entries', selectedSong.id, selectedSong.title, 'songbook_entry', `${sb?.short_name}: ${entry.page}`, null);
       showMessage('✅ Entry deleted'); await loadAllData();
@@ -678,7 +691,7 @@ export default function Admin() {
     if (!formSongbookName.trim()) { showMessage('❌ Name is required'); return; }
     if (!formSongbookShortName.trim()) { showMessage('❌ Short name is required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const data = { 
         name: formSongbookName.trim(), 
@@ -712,7 +725,7 @@ export default function Admin() {
   const deleteSongbook = async () => {
     if (!confirm(`Delete "${selectedSongbook.name}"? This will also delete all song entries for this songbook.`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/songbooks?id=eq.${selectedSongbook.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/songbooks?id=eq.${selectedSongbook.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'songbooks', null, selectedSongbook.name);
       showMessage('✅ Songbook deleted'); 
       setSelectedSongbook(null);
@@ -762,7 +775,7 @@ export default function Admin() {
   const saveMedia = async () => {
     if (!mediaUrl.trim()) { showMessage('❌ URL is required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const mediaData = { 
         song_id: selectedSong.id, 
@@ -791,7 +804,7 @@ export default function Admin() {
   const deleteMedia = async (media) => {
     if (!confirm('Delete this media link?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_media?id=eq.${media.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_media?id=eq.${media.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_media', selectedSong.id, selectedSong.title, 'media', `${media.media_type}: ${media.url}`, null);
       showMessage('✅ Media deleted'); await loadAllData();
     } catch (error) { showMessage('❌ Error deleting media'); }
@@ -848,7 +861,7 @@ export default function Admin() {
   const saveVersion = async () => {
     if (!versionLyrics.trim()) { showMessage('❌ Lyrics are required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const versionData = {
         song_id: selectedSong.id,
@@ -943,12 +956,12 @@ export default function Admin() {
   const deleteVersion = async (version) => {
     if (!confirm('Delete this version?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${version.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${version.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_versions', selectedSong.id, selectedSong.title, 'version', version.label || 'version', null);
       // Update has_lyrics if no versions left
       const remainingVersions = songVersions.filter(v => v.song_id === selectedSong.id && v.id !== version.id);
       if (remainingVersions.length === 0) {
-        const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+        const headers = getAuthHeaders();
         await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
           method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify({ has_lyrics: false }) 
@@ -959,7 +972,7 @@ export default function Admin() {
   };
 
   const setAsDefault = async (version, type) => {
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     const field = type === 'singalong' ? 'is_default_singalong' : 'is_default_explore';
     try {
       // Find current default
@@ -1016,7 +1029,7 @@ export default function Admin() {
   const saveFlag = async () => {
     if (!flagExplanation.trim()) { showMessage('❌ Please provide an explanation'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const flagData = {
         song_id: selectedSong.id,
@@ -1056,7 +1069,7 @@ export default function Admin() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${flag.id}`, { 
         method: 'DELETE', 
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } 
+        headers: getAuthHeaders(false) 
       });
       await logChange('delete', 'song_flags', selectedSong.id, selectedSong.title, 'flag', flag.flag_type, null);
       showMessage('✅ Flag deleted'); 
@@ -1083,7 +1096,7 @@ export default function Admin() {
 
   const saveDuplicateFlag = async () => {
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const data = {
         song_id_a: selectedSong.id,
@@ -1106,7 +1119,7 @@ export default function Admin() {
   };
 
   const dismissDuplicate = async (dup) => {
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?id=eq.${dup.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
@@ -1138,7 +1151,7 @@ export default function Admin() {
     if (!confirm(`Merge "${secondarySong?.title}" into "${primarySong?.title}"?\n\nThis will:\n• Create "${secondarySong?.title}" as an alias of "${primarySong?.title}"\n• Move all versions, notes, media, flags, and group memberships to the primary song\n• Delete the secondary song\n\nThis cannot be undone.`)) return;
     
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     
     try {
       // 1. Create alias from secondary song title
@@ -1350,7 +1363,7 @@ export default function Admin() {
   const autoDetectedDuplicates = findPotentialDuplicates();
 
   const saveAutoDetectedDuplicate = async (songA, songB, reason) => {
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
         method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
@@ -1370,7 +1383,7 @@ export default function Admin() {
 
   const dismissAutoDetected = (songA, songB) => {
     // For now just add to the DB as not_duplicate so it won't show again
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
       method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
       body: JSON.stringify({
@@ -1389,7 +1402,7 @@ export default function Admin() {
   // Alias swap (promote alias to title)
   const swapAliasWithTitle = async (alias) => {
     if (!confirm(`Swap "${alias.alias_title}" with the current title "${selectedSong.title}"? The current title will become an alias.`)) return;
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const oldTitle = selectedSong.title;
       const newTitle = alias.alias_title;
@@ -1436,7 +1449,7 @@ export default function Admin() {
     
     if (!formGroupName.trim()) { showMessage('❌ Group name is required'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = getAuthHeaders();
     try {
       const groupData = { group_name: formGroupName.trim(), group_type: formGroupType, instructions: formGroupInstructions.trim() || null, is_requestable: formGroupRequestable };
       if (isAddingNewGroup) {
@@ -1472,7 +1485,7 @@ export default function Admin() {
   const saveMember = async () => {
     if (!memberSongId) { showMessage('❌ Please select a song'); return; }
     setSaving(true);
-    const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+    const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
       const memberData = { group_id: selectedGroup.id, song_id: parseInt(memberSongId), position_in_group: memberPosition, member_role: memberRole, fragment_lyrics: memberFragmentLyrics.trim() || null, specific_instructions: memberInstructions.trim() || null };
       const song = allSongs.find(s => s.id === parseInt(memberSongId));
@@ -1492,7 +1505,7 @@ export default function Admin() {
     const song = allSongs.find(s => s.id === member.song_id);
     if (!confirm(`Remove "${song?.title}" from this group?`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${member.id}`, { method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${member.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_group_members', null, `${selectedGroup.group_name} - ${song?.title}`, 'member', song?.title, null);
       showMessage('✅ Member removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing member'); }

@@ -14,6 +14,19 @@ const SECTION_INFO = {
 };
 
 export default function Reports() {
+  // Helper function to get auth headers (uses user token if available, otherwise anon key)
+  const getAuthHeaders = (includeContentType = true) => {
+    const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
+    const headers = {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${token}`
+    };
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
+  };
+
   const [activeTab, setActiveTab] = useState('songs');
   const [allSongs, setAllSongs] = useState([]);
   const [changeLog, setChangeLog] = useState([]);
@@ -112,13 +125,13 @@ export default function Reports() {
 
       const [songsRes, logRes, viewsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/change_log?${logParams}`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         }),
         fetch(`${SUPABASE_URL}/rest/v1/report_views?select=*&order=created_at.desc`, {
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+          headers: getAuthHeaders(false)
         })
       ]);
       
@@ -136,12 +149,7 @@ export default function Reports() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/report_views`, {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({ viewer_name: viewerName.trim() })
       });
       await loadData();
