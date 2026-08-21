@@ -674,7 +674,10 @@ export default function Admin() {
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${entry.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       const sb = songbooks.find(s => s.id === entry.songbook_id);
-      await logChange('delete', 'song_songbook_entries', selectedSong.id, selectedSong.title, 'songbook_entry', `${sb?.short_name}: ${entry.page}`, null);
+      const song = allSongs.find(s => String(s.id) === String(entry.song_id));
+      const songId = entry.song_id || selectedSong?.id;
+      const songTitle = song?.title || selectedSong?.title || 'Unknown';
+      await logChange('delete', 'song_songbook_entries', songId, songTitle, 'songbook_entry', `${sb?.short_name}: ${entry.page}`, null);
       showMessage('✅ Entry deleted'); await loadAllData();
     } catch (error) { showMessage('❌ Error deleting entry'); }
   };
