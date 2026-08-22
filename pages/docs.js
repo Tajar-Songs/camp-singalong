@@ -185,10 +185,13 @@ export default function Docs() {
             {isAdmin && (
               <Link href="/admin" style={{ 
                 fontSize: '0.75rem', 
-                color: '#94a3b8',
-                textDecoration: 'none'
+                color: '#22c55e',
+                textDecoration: 'none',
+                background: '#22c55e22',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '0.25rem'
               }}>
-                Edit Docs →
+                ✏️ Edit in Admin
               </Link>
             )}
           </div>

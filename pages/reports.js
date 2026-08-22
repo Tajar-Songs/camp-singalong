@@ -258,12 +258,6 @@ export default function Reports() {
             <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>📊 Insights</h1>
             <p style={{ color: theme.textSecondary }}>{allSongs.length} songs • {changeLog.length} changes showing</p>
           </div>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <a href="/" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>← Singalong</a>
-            <a href="/admin" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>Songs</a>
-            <a href="/admin/tags" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>Tags</a>
-            <a href="/admin/users" style={{ color: theme.textSecondary, textDecoration: 'none', fontSize: '0.875rem' }}>Users</a>
-          </div>
         </div>
 
         {/* Global Search & Limit Filter Bar */}
