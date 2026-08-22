@@ -528,6 +528,7 @@ export default function Docs() {
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}>✏️ Edit</button>}
+                    {isAdmin && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
                     <button style={s.btnSec} onClick={() => setSelectedDoc(null)}>×</button>
                   </div>
                 </div>
