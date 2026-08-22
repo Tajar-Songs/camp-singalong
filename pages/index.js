@@ -369,15 +369,28 @@ export default function Home() {
           headers: getAuthHeaders(false)
         })
       ]);
-      setAllSongs(await songsRes.json());
-      setSongVersions(await versionsRes.json());
-      setSongNotes(await notesRes.json());
-      setSongAliases(await aliasesRes.json());
-      setSongGroups(await groupsRes.json());
-      setSongGroupMembers(await membersRes.json());
-      setSongbookEntries(await entriesRes.json());
-      setSongbooks(await songbooksRes.json());
-      setSongFlags(await flagsRes.json());
+      
+      // Parse responses and ensure they're arrays
+      const songs = await songsRes.json();
+      const versions = await versionsRes.json();
+      const notes = await notesRes.json();
+      const aliases = await aliasesRes.json();
+      const groups = await groupsRes.json();
+      const members = await membersRes.json();
+      const entries = await entriesRes.json();
+      const books = await songbooksRes.json();
+      const flags = await flagsRes.json();
+      
+      // Only set state if we got arrays (not error objects)
+      if (Array.isArray(songs)) setAllSongs(songs);
+      if (Array.isArray(versions)) setSongVersions(versions);
+      if (Array.isArray(notes)) setSongNotes(notes);
+      if (Array.isArray(aliases)) setSongAliases(aliases);
+      if (Array.isArray(groups)) setSongGroups(groups);
+      if (Array.isArray(members)) setSongGroupMembers(members);
+      if (Array.isArray(entries)) setSongbookEntries(entries);
+      if (Array.isArray(books)) setSongbooks(books);
+      if (Array.isArray(flags)) setSongFlags(flags);
     } catch (error) { console.error('Error loading songs:', error); }
   };
 
