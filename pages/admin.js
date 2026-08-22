@@ -345,21 +345,54 @@ export default function Admin() {
         fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
       ]);
-      setAllSongs(await songsRes.json());
-      setSongVersions(await versionsRes.json());
-      setVersionAttributes(await versionAttrsRes.json());
-      setSongNotes(await notesRes.json());
-      setSongSections(await sectionsRes.json());
-      setSongAliases(await aliasesRes.json());
-      setSongGroups(await groupsRes.json());
-      setSongGroupMembers(await membersRes.json());
-      setSongbookEntries(await entriesRes.json());
-      setSongbooks(await songbooksRes.json());
-      setSongbookSections(await songbookSectionsRes.json());
-      setSongMedia(await mediaRes.json());
-      setSongFlags(await flagsRes.json());
-      setPotentialDuplicates(await duplicatesRes.json());
-      setChangeLog(await logRes.json());
+      
+      // Parse responses
+      const songs = await songsRes.json();
+      const versions = await versionsRes.json();
+      const versionAttrs = await versionAttrsRes.json();
+      const notes = await notesRes.json();
+      const sections = await sectionsRes.json();
+      const aliases = await aliasesRes.json();
+      const groups = await groupsRes.json();
+      const members = await membersRes.json();
+      const entries = await entriesRes.json();
+      const books = await songbooksRes.json();
+      const bookSections = await songbookSectionsRes.json();
+      const media = await mediaRes.json();
+      const flags = await flagsRes.json();
+      const duplicates = await duplicatesRes.json();
+      const log = await logRes.json();
+      
+      // Only set state if we got arrays (not error objects)
+      if (Array.isArray(songs)) setAllSongs(songs);
+      if (Array.isArray(versions)) setSongVersions(versions);
+      if (Array.isArray(versionAttrs)) setVersionAttributes(versionAttrs);
+      if (Array.isArray(notes)) setSongNotes(notes);
+      if (Array.isArray(sections)) setSongSections(sections);
+      if (Array.isArray(aliases)) setSongAliases(aliases);
+      if (Array.isArray(groups)) setSongGroups(groups);
+      if (Array.isArray(members)) setSongGroupMembers(members);
+      if (Array.isArray(entries)) setSongbookEntries(entries);
+      if (Array.isArray(books)) setSongbooks(books);
+      if (Array.isArray(bookSections)) setSongbookSections(bookSections);
+      if (Array.isArray(media)) setSongMedia(media);
+      if (Array.isArray(flags)) setSongFlags(flags);
+      if (Array.isArray(duplicates)) setPotentialDuplicates(duplicates);
+      if (Array.isArray(log)) setChangeLog(log);
+      
+      // Check for limit warnings
+      const ROW_LIMIT = 10000;
+      const warnings = [];
+      if (Array.isArray(songs) && songs.length >= ROW_LIMIT) warnings.push('songs');
+      if (Array.isArray(versions) && versions.length >= ROW_LIMIT) warnings.push('versions');
+      if (Array.isArray(entries) && entries.length >= ROW_LIMIT) warnings.push('songbook entries');
+      if (Array.isArray(aliases) && aliases.length >= ROW_LIMIT) warnings.push('aliases');
+      if (Array.isArray(notes) && notes.length >= ROW_LIMIT) warnings.push('notes');
+      if (Array.isArray(media) && media.length >= ROW_LIMIT) warnings.push('media');
+      
+      if (warnings.length > 0) {
+        alert(`⚠️ Data limit reached for: ${warnings.join(', ')}. Some records may not be loaded.`);
+      }
     } catch (error) { console.error('Error loading data:', error); }
   };
 
@@ -2825,3 +2858,7 @@ export default function Admin() {
     </div>
   );
 }
+
+
+
+
