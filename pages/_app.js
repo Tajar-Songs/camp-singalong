@@ -1,13 +1,18 @@
 import '../styles/globals.css'
 import Head from 'next/head'
+import Link from 'next/link'
+import { useRouter } from 'next/router'
 import { useState, useEffect } from 'react'
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
 export default function App({ Component, pageProps }) {
+  const router = useRouter();
   const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [checking, setChecking] = useState(true);
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -15,10 +20,15 @@ export default function App({ Component, pageProps }) {
     // Refresh token every 30 minutes to prevent session expiry
     const refreshInterval = setInterval(() => {
       refreshAccessToken();
-    }, 30 * 60 * 1000); // 30 minutes
+    }, 30 * 60 * 1000);
     
     return () => clearInterval(refreshInterval);
   }, []);
+
+  // Close nav when route changes
+  useEffect(() => {
+    setNavOpen(false);
+  }, [router.pathname]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -52,7 +62,6 @@ export default function App({ Component, pageProps }) {
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` }
       });
       
-      // If token expired, try to refresh
       if (res.status === 401) {
         const refreshed = await refreshAccessToken();
         if (refreshed) {
@@ -65,6 +74,7 @@ export default function App({ Component, pageProps }) {
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
+        await loadUserProfile(userData.id);
       }
     } catch (error) {
       console.log('Auth check failed');
@@ -72,12 +82,42 @@ export default function App({ Component, pageProps }) {
     setChecking(false);
   };
 
+  const loadUserProfile = async (userId) => {
+    try {
+      const token = localStorage.getItem('supabase_access_token');
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        setUserProfile(data[0]);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('supabase_access_token');
     localStorage.removeItem('supabase_refresh_token');
     setUser(null);
+    setUserProfile(null);
     window.location.href = '/';
   };
+
+  const isAdmin = userProfile?.role === 'admin';
+  const currentPath = router.pathname;
+
+  // Navigation items
+  const navItems = [
+    { href: '/', label: 'Singalong', show: true },
+    { href: '/admin', label: 'Admin', show: isAdmin },
+    { href: '/tags', label: 'Tags', show: isAdmin },
+    { href: '/reports', label: 'Reports', show: isAdmin },
+    { href: '/users', label: 'Users', show: isAdmin },
+  ];
+
+  const visibleNavItems = navItems.filter(item => item.show);
 
   return (
     <>
@@ -85,43 +125,143 @@ export default function App({ Component, pageProps }) {
         <meta name="robots" content="noindex, nofollow" />
       </Head>
       
-      {/* Global logout button - shows when logged in */}
+      {/* Navigation bar */}
       {user && !checking && (
-        <div style={{
+        <nav style={{
           position: 'fixed',
-          top: '0.5rem',
-          right: '0.5rem',
+          top: 0,
+          left: 0,
+          right: 0,
           zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          background: 'rgba(15, 23, 42, 0.9)',
-          padding: '0.5rem 0.75rem',
-          borderRadius: '0.5rem',
-          backdropFilter: 'blur(4px)',
-          border: '1px solid #334155'
+          background: 'rgba(15, 23, 42, 0.95)',
+          borderBottom: '1px solid #334155',
+          backdropFilter: 'blur(8px)',
         }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-            {user.email}
-          </span>
-          <button
-            onClick={handleLogout}
-            style={{
-              background: '#dc2626',
-              color: 'white',
-              border: 'none',
-              padding: '0.25rem 0.75rem',
-              borderRadius: '0.25rem',
-              fontSize: '0.75rem',
-              cursor: 'pointer'
-            }}
-          >
-            Logout
-          </button>
-        </div>
+          <div style={{
+            maxWidth: '1400px',
+            margin: '0 auto',
+            padding: '0.5rem 1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            {/* Left: Logo/Brand */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+              <span style={{ fontWeight: 'bold', color: '#22c55e', fontSize: '1.1rem' }}>
+                🎵 Camp Singalong
+              </span>
+              
+              {/* Desktop nav links */}
+              <div style={{ display: 'flex', gap: '0.25rem' }} className="nav-desktop">
+                {visibleNavItems.map(item => (
+                  <Link 
+                    key={item.href} 
+                    href={item.href}
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.875rem',
+                      color: currentPath === item.href ? '#22c55e' : '#94a3b8',
+                      background: currentPath === item.href ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                      textDecoration: 'none',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            
+            {/* Right: User info + Logout */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }} className="nav-email">
+                {userProfile?.display_name || user.email}
+              </span>
+              <button
+                onClick={handleLogout}
+                style={{
+                  background: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                }}
+              >
+                Logout
+              </button>
+              
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setNavOpen(!navOpen)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #334155',
+                  color: '#94a3b8',
+                  padding: '0.375rem 0.5rem',
+                  borderRadius: '0.375rem',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                }}
+                className="nav-mobile-btn"
+              >
+                ☰
+              </button>
+            </div>
+          </div>
+          
+          {/* Mobile dropdown */}
+          {navOpen && (
+            <div style={{
+              borderTop: '1px solid #334155',
+              padding: '0.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.25rem',
+            }} className="nav-mobile-menu">
+              {visibleNavItems.map(item => (
+                <Link 
+                  key={item.href} 
+                  href={item.href}
+                  style={{
+                    padding: '0.75rem 1rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.875rem',
+                    color: currentPath === item.href ? '#22c55e' : '#94a3b8',
+                    background: currentPath === item.href ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </nav>
       )}
       
-      <Component {...pageProps} />
+      {/* Add padding to body when nav is visible */}
+      <div style={{ paddingTop: user && !checking ? '3rem' : 0 }}>
+        <Component {...pageProps} />
+      </div>
+      
+      {/* CSS for responsive nav */}
+      <style jsx global>{`
+        .nav-desktop { display: flex; }
+        .nav-mobile-btn { display: none; }
+        .nav-mobile-menu { display: none; }
+        .nav-email { display: block; }
+        
+        @media (max-width: 768px) {
+          .nav-desktop { display: none !important; }
+          .nav-mobile-btn { display: block !important; }
+          .nav-mobile-menu { display: flex !important; }
+          .nav-email { display: none !important; }
+        }
+      `}</style>
     </>
   )
 }
