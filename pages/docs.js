@@ -443,7 +443,7 @@ export default function Docs() {
         )}
       </div>
 
-      <style jsx global>{\`
+      <style jsx global>{`
         .doc-content h1 { font-size: 1.75rem; font-weight: bold; margin: 1.5rem 0 0.75rem 0; color: #fff; }
         .doc-content h2 { font-size: 1.5rem; font-weight: bold; margin: 1.5rem 0 0.75rem 0; color: #fff; }
         .doc-content h3 { font-size: 1.25rem; font-weight: bold; margin: 1.25rem 0 0.5rem 0; color: #fff; }
@@ -455,7 +455,7 @@ export default function Docs() {
         .doc-content strong, .doc-content b { font-weight: bold; }
         .doc-content em, .doc-content i { font-style: italic; }
         .doc-content code { background: #334155; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-family: monospace; }
-      \`}</style>
+      `}</style>
     </div>
   );
 }
