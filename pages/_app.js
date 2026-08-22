@@ -130,6 +130,7 @@ export default function App({ Component, pageProps }) {
   // Navigation items - only compute when we have data
   const navItems = [
     { href: '/', label: 'Singalong', show: true },
+    { href: '/songs', label: 'Songs', show: true },
     { href: '/docs', label: 'Docs', show: true },
     { href: '/admin', label: 'Admin', show: isAdmin },
     { href: '/tags', label: 'Tags', show: isAdmin },
