@@ -266,6 +266,8 @@ export default function Home() {
       loadUserProfile(data.user.id);
       setShowAuthModal(false);
       resetAuthForm();
+      // Notify _app.js to update nav
+      window.dispatchEvent(new Event('auth-changed'));
     } catch (error) { setAuthError(error.message); }
     setAuthLoading(false);
   };
@@ -1766,7 +1768,10 @@ if (view === 'display' && showLyrics && currentSong) {
              <div className="text-[10px] font-black uppercase opacity-60 mb-1">Room Code</div>
              <div className="flex justify-between items-center">
                <span className="text-3xl font-black tracking-tighter">{roomCode}</span>
-               <button onClick={copyRoomCode} className="text-xs font-bold opacity-70 hover:opacity-100">{copied ? 'Copied!' : 'Copy Code'}</button>
+               <div className="flex gap-2">
+                 <button onClick={copyRoomCode} className="text-xs font-bold opacity-70 hover:opacity-100">{copied ? 'Copied!' : 'Copy'}</button>
+                 <button onClick={() => setRoomCode('')} className="text-xs font-bold text-red-500 opacity-70 hover:opacity-100">Exit</button>
+               </div>
              </div>
           </div>
           {currentSong && (
