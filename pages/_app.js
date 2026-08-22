@@ -17,7 +17,7 @@ export default function App({ Component, pageProps }) {
   useEffect(() => {
     checkAuth();
     
-    // Refresh token every 30 minutes to prevent session expiry
+    // Refresh token every 30 minutes
     const refreshInterval = setInterval(() => {
       refreshAccessToken();
     }, 30 * 60 * 1000);
@@ -46,7 +46,9 @@ export default function App({ Component, pageProps }) {
         if (data.user) setUser(data.user);
         return true;
       }
-    } catch (error) { console.log('Token refresh failed'); }
+    } catch (error) { 
+      console.log('Token refresh failed:', error); 
+    }
     return false;
   };
 
@@ -73,11 +75,13 @@ export default function App({ Component, pageProps }) {
       
       if (res.ok) {
         const userData = await res.json();
-        setUser(userData);
-        await loadUserProfile(userData.id);
+        if (userData && userData.id) {
+          setUser(userData);
+          await loadUserProfile(userData.id);
+        }
       }
     } catch (error) {
-      console.log('Auth check failed');
+      console.log('Auth check failed:', error);
     }
     setChecking(false);
   };
@@ -85,12 +89,18 @@ export default function App({ Component, pageProps }) {
   const loadUserProfile = async (userId) => {
     try {
       const token = localStorage.getItem('supabase_access_token');
+      if (!token) return;
+      
       const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` }
       });
-      const data = await res.json();
-      if (data && data.length > 0) {
-        setUserProfile(data[0]);
+      
+      if (res.ok) {
+        const data = await res.json();
+        // Make sure data is an array before accessing
+        if (Array.isArray(data) && data.length > 0) {
+          setUserProfile(data[0]);
+        }
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -108,7 +118,7 @@ export default function App({ Component, pageProps }) {
   const isAdmin = userProfile?.role === 'admin';
   const currentPath = router.pathname;
 
-  // Navigation items
+  // Navigation items - only compute when we have data
   const navItems = [
     { href: '/', label: 'Singalong', show: true },
     { href: '/admin', label: 'Admin', show: isAdmin },
@@ -119,32 +129,46 @@ export default function App({ Component, pageProps }) {
 
   const visibleNavItems = navItems.filter(item => item.show);
 
+  // Styles
+  const navStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    background: 'rgba(15, 23, 42, 0.95)',
+    borderBottom: '1px solid #334155',
+    backdropFilter: 'blur(8px)',
+  };
+
+  const navContainerStyle = {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    padding: '0.5rem 1rem',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  };
+
+  const linkStyle = (isActive) => ({
+    padding: '0.5rem 0.75rem',
+    borderRadius: '0.375rem',
+    fontSize: '0.875rem',
+    color: isActive ? '#22c55e' : '#94a3b8',
+    background: isActive ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+    textDecoration: 'none',
+  });
+
   return (
     <>
       <Head>
         <meta name="robots" content="noindex, nofollow" />
       </Head>
       
-      {/* Navigation bar */}
+      {/* Navigation bar - only show when logged in and done checking */}
       {user && !checking && (
-        <nav style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 9999,
-          background: 'rgba(15, 23, 42, 0.95)',
-          borderBottom: '1px solid #334155',
-          backdropFilter: 'blur(8px)',
-        }}>
-          <div style={{
-            maxWidth: '1400px',
-            margin: '0 auto',
-            padding: '0.5rem 1rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}>
+        <nav style={navStyle}>
+          <div style={navContainerStyle}>
             {/* Left: Logo/Brand */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
               <span style={{ fontWeight: 'bold', color: '#22c55e', fontSize: '1.1rem' }}>
@@ -152,21 +176,9 @@ export default function App({ Component, pageProps }) {
               </span>
               
               {/* Desktop nav links */}
-              <div style={{ display: 'flex', gap: '0.25rem' }} className="nav-desktop">
+              <div className="nav-desktop" style={{ display: 'flex', gap: '0.25rem' }}>
                 {visibleNavItems.map(item => (
-                  <Link 
-                    key={item.href} 
-                    href={item.href}
-                    style={{
-                      padding: '0.5rem 0.75rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.875rem',
-                      color: currentPath === item.href ? '#22c55e' : '#94a3b8',
-                      background: currentPath === item.href ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
-                      textDecoration: 'none',
-                      transition: 'all 0.15s',
-                    }}
-                  >
+                  <Link key={item.href} href={item.href} style={linkStyle(currentPath === item.href)}>
                     {item.label}
                   </Link>
                 ))}
@@ -175,8 +187,8 @@ export default function App({ Component, pageProps }) {
             
             {/* Right: User info + Logout */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b' }} className="nav-email">
-                {userProfile?.display_name || user.email}
+              <span className="nav-email" style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                {userProfile?.display_name || user?.email || ''}
               </span>
               <button
                 onClick={handleLogout}
@@ -196,8 +208,10 @@ export default function App({ Component, pageProps }) {
               
               {/* Mobile menu button */}
               <button
+                className="nav-mobile-btn"
                 onClick={() => setNavOpen(!navOpen)}
                 style={{
+                  display: 'none',
                   background: 'transparent',
                   border: '1px solid #334155',
                   color: '#94a3b8',
@@ -206,7 +220,6 @@ export default function App({ Component, pageProps }) {
                   cursor: 'pointer',
                   fontSize: '1rem',
                 }}
-                className="nav-mobile-btn"
               >
                 ☰
               </button>
@@ -215,26 +228,18 @@ export default function App({ Component, pageProps }) {
           
           {/* Mobile dropdown */}
           {navOpen && (
-            <div style={{
+            <div className="nav-mobile-menu" style={{
+              display: 'none',
               borderTop: '1px solid #334155',
               padding: '0.5rem',
-              display: 'flex',
               flexDirection: 'column',
               gap: '0.25rem',
-            }} className="nav-mobile-menu">
+            }}>
               {visibleNavItems.map(item => (
-                <Link 
-                  key={item.href} 
-                  href={item.href}
-                  style={{
-                    padding: '0.75rem 1rem',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.875rem',
-                    color: currentPath === item.href ? '#22c55e' : '#94a3b8',
-                    background: currentPath === item.href ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
-                    textDecoration: 'none',
-                  }}
-                >
+                <Link key={item.href} href={item.href} style={{
+                  ...linkStyle(currentPath === item.href),
+                  padding: '0.75rem 1rem',
+                }}>
                   {item.label}
                 </Link>
               ))}
@@ -248,13 +253,7 @@ export default function App({ Component, pageProps }) {
         <Component {...pageProps} />
       </div>
       
-      {/* CSS for responsive nav */}
       <style jsx global>{`
-        .nav-desktop { display: flex; }
-        .nav-mobile-btn { display: none; }
-        .nav-mobile-menu { display: none; }
-        .nav-email { display: block; }
-        
         @media (max-width: 768px) {
           .nav-desktop { display: none !important; }
           .nav-mobile-btn { display: block !important; }
@@ -263,5 +262,5 @@ export default function App({ Component, pageProps }) {
         }
       `}</style>
     </>
-  )
+  );
 }
