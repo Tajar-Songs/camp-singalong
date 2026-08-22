@@ -22,7 +22,16 @@ export default function App({ Component, pageProps }) {
       refreshAccessToken();
     }, 30 * 60 * 1000);
     
-    return () => clearInterval(refreshInterval);
+    // Listen for login events from other components
+    const handleAuthChange = () => {
+      checkAuth();
+    };
+    window.addEventListener('auth-changed', handleAuthChange);
+    
+    return () => {
+      clearInterval(refreshInterval);
+      window.removeEventListener('auth-changed', handleAuthChange);
+    };
   }, []);
 
   // Close nav when route changes
