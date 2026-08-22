@@ -12,21 +12,31 @@ export default async function handler(req, res) {
   try {
     // Fetch songs
     const songsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/songs?select=id,title,attribution,aka,is_medley,is_round,notes,created_at,updated_at&order=title.asc`,
+      `${SUPABASE_URL}/rest/v1/songs?select=id,title,attribution,aka,is_medley,is_round,notes,created_at,updated_at&order=title.asc&limit=1000`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
+    
+    if (!songsRes.ok) {
+      const errorText = await songsRes.text();
+      return res.status(500).json({ error: 'Supabase songs fetch failed', status: songsRes.status, details: errorText });
+    }
+    
     const songs = await songsRes.json();
+    
+    if (!Array.isArray(songs)) {
+      return res.status(500).json({ error: 'Songs response not an array', received: typeof songs, data: songs });
+    }
 
     // Fetch songbook entries
     const entriesRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/song_songbook_entries?select=song_id,songbook_id,section,page`,
+      `${SUPABASE_URL}/rest/v1/song_songbook_entries?select=song_id,songbook_id,section,page&limit=10000`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const entries = await entriesRes.json();
 
     // Fetch song tags
     const tagsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/song_tags?select=song_id,tag`,
+      `${SUPABASE_URL}/rest/v1/song_tags?select=song_id,tag&limit=10000`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const tags = await tagsRes.json();
@@ -43,7 +53,7 @@ export default async function handler(req, res) {
     }
 
     // Build enriched song list
-    const enrichedSongs = (Array.isArray(songs) ? songs : []).map(song => {
+    const enrichedSongs = songs.map(song => {
       const songEntries = (Array.isArray(entries) ? entries : []).filter(e => e.song_id === song.id);
       const songTags = (Array.isArray(tags) ? tags : []).filter(t => t.song_id === song.id).map(t => t.tag);
       
@@ -78,6 +88,6 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Error fetching songs:', error);
-    res.status(500).json({ error: 'Failed to fetch songs' });
+    res.status(500).json({ error: 'Failed to fetch songs', message: error.message });
   }
 }
