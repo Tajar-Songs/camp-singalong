@@ -187,10 +187,18 @@ export default function TagManagement() {
           headers: getAuthHeaders(false)
         })
       ]);
-      setTags(await tagsRes.json());
-      setSongs(await songsRes.json());
-      setSongTags(await songTagsRes.json());
-      setSongVersions(await versionsRes.json());
+      
+      // Parse responses
+      const tagsData = await tagsRes.json();
+      const songsData = await songsRes.json();
+      const songTagsData = await songTagsRes.json();
+      const versionsData = await versionsRes.json();
+      
+      // Only set state if we got arrays (not error objects)
+      if (Array.isArray(tagsData)) setTags(tagsData);
+      if (Array.isArray(songsData)) setSongs(songsData);
+      if (Array.isArray(songTagsData)) setSongTags(songTagsData);
+      if (Array.isArray(versionsData)) setSongVersions(versionsData);
     } catch (error) {
       console.error('Error loading data:', error);
     }
