@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   try {
     // Fetch songs
     const songsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/songs?select=id,title,attribution,aka,is_medley,is_round,notes,created_at,updated_at&order=title.asc&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/songs?select=id,title,aka,is_medley,is_round,notes,created_at,updated_at&order=title.asc&limit=1000`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     
@@ -60,7 +60,6 @@ export default async function handler(req, res) {
       return {
         id: song.id,
         title: song.title,
-        attribution: song.attribution,
         aka: song.aka,
         is_medley: song.is_medley,
         is_round: song.is_round,
