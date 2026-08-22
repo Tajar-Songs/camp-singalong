@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   try {
     // Fetch songs
     const songsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/songs?select=id,title,aka,is_medley,is_round,notes,created_at,updated_at&order=title.asc&limit=1000`,
+      `${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc&limit=1000`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     
@@ -58,11 +58,7 @@ export default async function handler(req, res) {
       const songTags = (Array.isArray(tags) ? tags : []).filter(t => t.song_id === song.id).map(t => t.tag);
       
       return {
-        id: song.id,
-        title: song.title,
-        aka: song.aka,
-        is_medley: song.is_medley,
-        is_round: song.is_round,
+        ...song,
         tags: songTags,
         songbooks: songEntries.map(e => ({
           songbook: songbookMap[e.songbook_id] || e.songbook_id,
