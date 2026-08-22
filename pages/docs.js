@@ -183,7 +183,7 @@ export default function Docs() {
           }}>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>📚 Documentation</h1>
             {isAdmin && (
-              <Link href="/admin" style={{ 
+              <Link href="/admin?tab=docs" style={{ 
                 fontSize: '0.75rem', 
                 color: '#22c55e',
                 textDecoration: 'none',
@@ -191,7 +191,7 @@ export default function Docs() {
                 padding: '0.25rem 0.5rem',
                 borderRadius: '0.25rem'
               }}>
-                ✏️ Edit in Admin
+                ✏️ Edit Docs
               </Link>
             )}
           </div>
