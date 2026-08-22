@@ -135,9 +135,15 @@ export default function Reports() {
         })
       ]);
       
-      setAllSongs(await songsRes.json());
-      setChangeLog(await logRes.json());
-      setReportViews(await viewsRes.json());
+      // Parse responses
+      const songsData = await songsRes.json();
+      const logData = await logRes.json();
+      const viewsData = await viewsRes.json();
+      
+      // Only set state if we got arrays (not error objects)
+      if (Array.isArray(songsData)) setAllSongs(songsData);
+      if (Array.isArray(logData)) setChangeLog(logData);
+      if (Array.isArray(viewsData)) setReportViews(viewsData);
     } catch (error) {
       console.error('Error loading data:', error);
     }
