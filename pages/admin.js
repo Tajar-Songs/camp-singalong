@@ -129,6 +129,19 @@ export default function Admin() {
   const [songbookAddPage, setSongbookAddPage] = useState('');
   const [songbookSongSearch, setSongbookSongSearch] = useState('');
 
+  // Documentation management
+  const [docs, setDocs] = useState([]);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [isAddingNewDoc, setIsAddingNewDoc] = useState(false);
+  const [docTitle, setDocTitle] = useState('');
+  const [docSlug, setDocSlug] = useState('');
+  const [docContent, setDocContent] = useState('');
+  const [docVisibility, setDocVisibility] = useState('admin');
+  const [docFolder, setDocFolder] = useState('');
+  const [docTags, setDocTags] = useState('');
+  const [docSearch, setDocSearch] = useState('');
+  const [docFolderFilter, setDocFolderFilter] = useState('');
+
   // Songbook section editing
   const [editingSongbookSection, setEditingSongbookSection] = useState(null);
   const [sectionCode, setSectionCode] = useState('');
@@ -328,7 +341,7 @@ export default function Admin() {
   const loadAllData = async () => {
     try {
       const headers = getAuthHeaders(false);
-      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes] = await Promise.all([
+      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
@@ -343,7 +356,8 @@ export default function Admin() {
         fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers })
+        fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers })
       ]);
       
       // Parse responses
@@ -362,6 +376,7 @@ export default function Admin() {
       const flags = await flagsRes.json();
       const duplicates = await duplicatesRes.json();
       const log = await logRes.json();
+      const docsData = await docsRes.json();
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(songs)) setAllSongs(songs);
@@ -379,6 +394,7 @@ export default function Admin() {
       if (Array.isArray(flags)) setSongFlags(flags);
       if (Array.isArray(duplicates)) setPotentialDuplicates(duplicates);
       if (Array.isArray(log)) setChangeLog(log);
+      if (Array.isArray(docsData)) setDocs(docsData);
       
       // Check for limit warnings
       const ROW_LIMIT = 10000;
@@ -904,6 +920,126 @@ export default function Admin() {
     }
     setSaving(false);
   };
+
+  // Documentation management
+  const selectDoc = (doc) => {
+    setSelectedDoc(doc);
+    setIsAddingNewDoc(false);
+    setDocTitle(doc.title || '');
+    setDocSlug(doc.slug || '');
+    setDocContent(doc.content || '');
+    setDocVisibility(doc.visibility || 'admin');
+    setDocFolder(doc.folder || '');
+    setDocTags(doc.tags?.join(', ') || '');
+  };
+
+  const startAddDoc = () => {
+    setSelectedDoc(null);
+    setIsAddingNewDoc(true);
+    setDocTitle('');
+    setDocSlug('');
+    setDocContent('');
+    setDocVisibility('admin');
+    setDocFolder('');
+    setDocTags('');
+  };
+
+  const cancelDocEdit = () => {
+    setSelectedDoc(null);
+    setIsAddingNewDoc(false);
+  };
+
+  const generateSlug = (title) => {
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  };
+
+  const saveDoc = async () => {
+    if (!docTitle.trim()) { showMessage('❌ Title is required'); return; }
+    if (!docSlug.trim()) { showMessage('❌ Slug is required'); return; }
+    
+    setSaving(true);
+    const headers = getAuthHeaders();
+    const tagsArray = docTags.split(',').map(t => t.trim()).filter(t => t);
+    
+    try {
+      const docData = {
+        title: docTitle.trim(),
+        slug: docSlug.trim(),
+        content: docContent,
+        visibility: docVisibility,
+        folder: docFolder.trim() || null,
+        tags: tagsArray,
+        updated_at: new Date().toISOString(),
+        updated_by: userProfile?.display_name || user?.email || 'unknown'
+      };
+      
+      if (isAddingNewDoc) {
+        docData.created_by = userProfile?.display_name || user?.email || 'unknown';
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/docs`, {
+          method: 'POST',
+          headers: { ...headers, 'Prefer': 'return=representation' },
+          body: JSON.stringify(docData)
+        });
+        if (response.ok) {
+          const created = await response.json();
+          showMessage('✅ Document created!');
+          setIsAddingNewDoc(false);
+          await loadAllData();
+          if (created[0]) selectDoc(created[0]);
+        } else {
+          const error = await response.json();
+          showMessage(`❌ Error: ${error.message || 'Could not create document'}`);
+        }
+      } else {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
+          method: 'PATCH',
+          headers: { ...headers, 'Prefer': 'return=minimal' },
+          body: JSON.stringify(docData)
+        });
+        if (response.ok) {
+          showMessage('✅ Document updated!');
+          await loadAllData();
+          setSelectedDoc({ ...selectedDoc, ...docData });
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      showMessage('❌ Error saving document');
+    }
+    setSaving(false);
+  };
+
+  const deleteDoc = async () => {
+    if (!confirm(`Delete "${selectedDoc.title}"?`)) return;
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(false)
+      });
+      showMessage('✅ Document deleted');
+      setSelectedDoc(null);
+      await loadAllData();
+    } catch (error) {
+      showMessage('❌ Error deleting document');
+    }
+  };
+
+  const getDocFolders = () => {
+    const folders = [...new Set(docs.map(d => d.folder).filter(f => f))];
+    return folders.sort();
+  };
+
+  const filteredDocs = docs.filter(doc => {
+    if (docFolderFilter && doc.folder !== docFolderFilter) return false;
+    if (docSearch) {
+      const search = docSearch.toLowerCase();
+      const matchTitle = doc.title?.toLowerCase().includes(search);
+      const matchContent = doc.content?.toLowerCase().includes(search);
+      const matchTags = doc.tags?.some(t => t.toLowerCase().includes(search));
+      if (!matchTitle && !matchContent && !matchTags) return false;
+    }
+    return true;
+  });
 
   // Media management
   const MEDIA_TYPES = [
@@ -1853,6 +1989,7 @@ export default function Admin() {
         <button style={s.mainTab(mainTab === 'songs')} onClick={() => setMainTab('songs')}>Songs</button>
         <button style={s.mainTab(mainTab === 'groups')} onClick={() => setMainTab('groups')}>Groups</button>
         <button style={s.mainTab(mainTab === 'songbooks')} onClick={() => setMainTab('songbooks')}>Songbooks</button>
+        <button style={s.mainTab(mainTab === 'docs')} onClick={() => setMainTab('docs')}>Docs</button>
         <button style={s.mainTab(mainTab === 'duplicates')} onClick={() => setMainTab('duplicates')}>Duplicates {(potentialDuplicates.filter(d => d.status === 'pending').length + autoDetectedDuplicates.length) > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: '9999px', padding: '0 0.4rem', fontSize: '0.7rem', marginLeft: '0.25rem' }}>{potentialDuplicates.filter(d => d.status === 'pending').length + autoDetectedDuplicates.length}</span>}</button>
         <button style={s.mainTab(mainTab === 'changelog')} onClick={() => setMainTab('changelog')}>Change Log</button>
       </div>
@@ -2768,6 +2905,235 @@ export default function Admin() {
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {mainTab === 'docs' && (
+        <div style={s.content}>
+          {/* Docs List Panel */}
+          <div style={s.panel}>
+            <input 
+              type="text" 
+              placeholder="Search docs..." 
+              value={docSearch} 
+              onChange={(e) => setDocSearch(e.target.value)} 
+              style={s.searchInput} 
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <select 
+                value={docFolderFilter} 
+                onChange={(e) => setDocFolderFilter(e.target.value)} 
+                style={{ ...s.select, flex: 1 }}
+              >
+                <option value="">All Folders</option>
+                {getDocFolders().map(folder => (
+                  <option key={folder} value={folder}>{folder}</option>
+                ))}
+              </select>
+              <button style={s.btn} onClick={startAddDoc}>+ New Doc</button>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+              {filteredDocs.length} document{filteredDocs.length !== 1 ? 's' : ''}
+            </div>
+            <div style={s.songList}>
+              {filteredDocs.map(doc => (
+                <div 
+                  key={doc.id} 
+                  style={s.songItem(selectedDoc?.id === doc.id)} 
+                  onClick={() => selectDoc(doc)}
+                >
+                  <div style={{ fontWeight: 'bold' }}>{doc.title}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    {doc.folder && <span style={{ marginRight: '0.5rem' }}>📁 {doc.folder}</span>}
+                    <span style={{ color: doc.visibility === 'user' ? '#22c55e' : '#f59e0b' }}>
+                      {doc.visibility === 'user' ? '👤 User' : '🔒 Admin'}
+                    </span>
+                    {doc.tags?.length > 0 && (
+                      <span style={{ marginLeft: '0.5rem' }}>
+                        🏷️ {doc.tags.slice(0, 2).join(', ')}{doc.tags.length > 2 ? '...' : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {filteredDocs.length === 0 && (
+                <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>
+                  No documents found
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Doc Editor Panel */}
+          <div style={s.panel}>
+            {(selectedDoc || isAddingNewDoc) ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>
+                    {isAddingNewDoc ? '📝 New Document' : '📝 Edit Document'}
+                  </h2>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {!isAddingNewDoc && (
+                      <button style={s.btnDanger} onClick={deleteDoc}>Delete</button>
+                    )}
+                    <button style={s.btnSec} onClick={cancelDocEdit}>Cancel</button>
+                  </div>
+                </div>
+
+                {/* Title & Slug */}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={s.formGroup}>
+                    <label style={s.label}>Title *</label>
+                    <input 
+                      type="text" 
+                      value={docTitle} 
+                      onChange={(e) => {
+                        setDocTitle(e.target.value);
+                        if (isAddingNewDoc) setDocSlug(generateSlug(e.target.value));
+                      }} 
+                      style={s.input} 
+                      placeholder="Document title"
+                    />
+                  </div>
+                  <div style={s.formGroup}>
+                    <label style={s.label}>Slug *</label>
+                    <input 
+                      type="text" 
+                      value={docSlug} 
+                      onChange={(e) => setDocSlug(e.target.value)} 
+                      style={s.input} 
+                      placeholder="url-friendly-slug"
+                    />
+                  </div>
+                </div>
+
+                {/* Folder, Visibility, Tags */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={s.formGroup}>
+                    <label style={s.label}>Folder</label>
+                    <input 
+                      type="text" 
+                      value={docFolder} 
+                      onChange={(e) => setDocFolder(e.target.value)} 
+                      style={s.input} 
+                      placeholder="e.g. Getting Started"
+                      list="doc-folders"
+                    />
+                    <datalist id="doc-folders">
+                      {getDocFolders().map(f => <option key={f} value={f} />)}
+                    </datalist>
+                  </div>
+                  <div style={s.formGroup}>
+                    <label style={s.label}>Visibility</label>
+                    <select value={docVisibility} onChange={(e) => setDocVisibility(e.target.value)} style={s.select}>
+                      <option value="admin">🔒 Admin Only</option>
+                      <option value="user">👤 All Users</option>
+                    </select>
+                  </div>
+                  <div style={s.formGroup}>
+                    <label style={s.label}>Tags (comma-separated)</label>
+                    <input 
+                      type="text" 
+                      value={docTags} 
+                      onChange={(e) => setDocTags(e.target.value)} 
+                      style={s.input} 
+                      placeholder="e.g. overview, setup, guide"
+                    />
+                  </div>
+                </div>
+
+                {/* WYSIWYG Editor */}
+                <div style={s.formGroup}>
+                  <label style={s.label}>Content</label>
+                  <div style={{ marginBottom: '0.5rem', display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('bold')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}
+                    >B</button>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('italic')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontStyle: 'italic' }}
+                    >I</button>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('underline')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', textDecoration: 'underline' }}
+                    >U</button>
+                    <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('formatBlock', false, 'h2')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >H2</button>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('formatBlock', false, 'h3')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >H3</button>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('formatBlock', false, 'p')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >P</button>
+                    <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('insertUnorderedList')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >• List</button>
+                    <button 
+                      type="button" 
+                      onClick={() => document.execCommand('insertOrderedList')} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >1. List</button>
+                    <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        const url = prompt('Enter URL:');
+                        if (url) document.execCommand('createLink', false, url);
+                      }} 
+                      style={{ padding: '0.25rem 0.5rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >🔗 Link</button>
+                  </div>
+                  <div
+                    contentEditable
+                    onInput={(e) => setDocContent(e.currentTarget.innerHTML)}
+                    dangerouslySetInnerHTML={{ __html: docContent }}
+                    style={{
+                      ...s.textarea,
+                      minHeight: '300px',
+                      padding: '1rem',
+                      lineHeight: '1.6',
+                      overflow: 'auto'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                  <button style={s.btn} onClick={saveDoc} disabled={saving}>
+                    {saving ? 'Saving...' : (isAddingNewDoc ? 'Create Document' : 'Save Changes')}
+                  </button>
+                </div>
+
+                {selectedDoc && (
+                  <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#64748b' }}>
+                    Created: {new Date(selectedDoc.created_at).toLocaleString()} by {selectedDoc.created_by || 'unknown'}
+                    {selectedDoc.updated_at && selectedDoc.updated_at !== selectedDoc.created_at && (
+                      <> • Updated: {new Date(selectedDoc.updated_at).toLocaleString()} by {selectedDoc.updated_by || 'unknown'}</>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ color: '#64748b', textAlign: 'center', padding: '4rem' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📚</div>
+                <div>Select a document to edit or create a new one</div>
+              </div>
+            )}
           </div>
         </div>
       )}
