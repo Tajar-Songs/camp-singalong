@@ -31,6 +31,20 @@ export default function Songs() {
   const [activeTab, setActiveTab] = useState('lyrics'); // 'lyrics', 'info', 'media', 'notes'
   const [personalTagInput, setPersonalTagInput] = useState('');
 
+  const [versionAttrs, setVersionAttrs] = useState([]);
+  const [selectedVersionId, setSelectedVersionId] = useState(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareVersionId, setCompareVersionId] = useState(null);
+
+  const VERSION_ATTRIBUTE_LABELS = {
+    'gender_neutral': 'Gender Neutral',
+    'secular': 'Secular',
+    'kid_friendly': 'Kid Friendly',
+    'addresses_sensitivity': 'Addresses Sensitivity',
+    'camp_specific': 'Camp-Specific',
+    'other': 'Other'
+  };
+
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
     const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` };
@@ -133,16 +147,33 @@ export default function Songs() {
       // Load versions
       const versionsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${songId}&select=*`, { headers: getAuthHeaders(false) });
       const versionsData = await versionsRes.json();
-      setVersions(Array.isArray(versionsData) ? versionsData : []);
+      const versionsArray = Array.isArray(versionsData) ? versionsData : [];
+      setVersions(versionsArray);
+      
+      // Set default selected version (prefer singalong default)
+      const defaultV = versionsArray.find(v => v.is_default_singalong) || versionsArray[0];
+      setSelectedVersionId(defaultV?.id || null);
+      setCompareVersionId(null);
+      setCompareMode(false);
+
+      // Load version attributes
+      if (versionsArray.length > 0) {
+        const versionIds = versionsArray.map(v => v.id).join(',');
+        const attrsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?song_version_id=in.(${versionIds})&select=*`, { headers: getAuthHeaders(false) });
+        const attrsData = await attrsRes.json();
+        setVersionAttrs(Array.isArray(attrsData) ? attrsData : []);
+      } else {
+        setVersionAttrs([]);
+      }
 
       // Load notes
       const notesRes = await fetch(`${SUPABASE_URL}/rest/v1/song_notes?song_id=eq.${songId}&select=*&order=created_at.desc`, { headers: getAuthHeaders(false) });
       const notesData = await notesRes.json();
       setSongNotes(Array.isArray(notesData) ? notesData : []);
 
-      // Load media (if table exists)
+      // Load media
       try {
-        const mediaRes = await fetch(`${SUPABASE_URL}/rest/v1/song_media?song_id=eq.${songId}&select=*`, { headers: getAuthHeaders(false) });
+        const mediaRes = await fetch(`${SUPABASE_URL}/rest/v1/song_media?song_id=eq.${songId}&select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
         const mediaData = await mediaRes.json();
         setSongMedia(Array.isArray(mediaData) ? mediaData : []);
       } catch { setSongMedia([]); }
@@ -595,32 +626,159 @@ export default function Songs() {
             {activeTab === 'lyrics' && (
               <div>
                 {versions.length > 0 ? (
-                  versions.map(v => (
-                    <div key={v.id} style={s.versionCard}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        {v.label && <span style={s.versionLabel}>{v.label}</span>}
-                        <div style={{ display: 'flex', gap: '0.25rem' }}>
-                          {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Singalong</span>}
-                          {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#6366f133', color: '#6366f1', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
-                        </div>
-                      </div>
-                      {v.lyrics_content ? (
-                        <div style={s.lyrics}>{v.lyrics_content}</div>
-                      ) : (
-                        <div style={{ color: '#64748b', fontStyle: 'italic' }}>No lyrics available</div>
+                  <>
+                    {/* Version selector */}
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>Version:</span>
+                      <select 
+                        value={selectedVersionId || ''} 
+                        onChange={(e) => setSelectedVersionId(e.target.value)}
+                        style={{ ...s.select, minWidth: '200px' }}
+                      >
+                        {versions.map(v => (
+                          <option key={v.id} value={v.id}>
+                            {v.label || 'Untitled'} 
+                            {v.is_default_singalong ? ' ★' : ''}
+                            {v.version_type === 'alternate' ? ' (alt)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      {versions.length > 1 && (
+                        <button 
+                          style={compareMode ? s.btn : s.btnSec}
+                          onClick={() => {
+                            setCompareMode(!compareMode);
+                            if (!compareMode && !compareVersionId) {
+                              // Set compare to a different version
+                              const other = versions.find(v => v.id !== selectedVersionId);
+                              setCompareVersionId(other?.id || null);
+                            }
+                          }}
+                        >
+                          {compareMode ? '✓ Comparing' : '⇄ Compare'}
+                        </button>
                       )}
-                      {v.performance_notes && (
-                        <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#94a3b8' }}>
-                          <strong>Performance notes:</strong> {v.performance_notes}
-                        </div>
+                      
+                      {compareMode && (
+                        <select 
+                          value={compareVersionId || ''} 
+                          onChange={(e) => setCompareVersionId(e.target.value)}
+                          style={{ ...s.select, minWidth: '200px' }}
+                        >
+                          {versions.filter(v => v.id !== selectedVersionId).map(v => (
+                            <option key={v.id} value={v.id}>
+                              {v.label || 'Untitled'}
+                              {v.is_default_singalong ? ' ★' : ''}
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
-                  ))
+
+                    {/* Version display */}
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: compareMode ? '1fr 1fr' : '1fr', 
+                      gap: '1rem' 
+                    }}>
+                      {/* Primary version */}
+                      {(() => {
+                        const v = versions.find(ver => ver.id === selectedVersionId) || versions[0];
+                        const attrs = versionAttrs.filter(a => a.song_version_id === v?.id);
+                        if (!v) return null;
+                        return (
+                          <div style={s.versionCard}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              <div>
+                                <span style={s.versionLabel}>{v.label || 'Version'}</span>
+                                {v.version_type === 'alternate' && (
+                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#94a3b8' }}>(Alternate)</span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>★ Singalong</span>}
+                                {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#6366f133', color: '#6366f1', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
+                              </div>
+                            </div>
+                            
+                            {/* Version attributes */}
+                            {attrs.length > 0 && (
+                              <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {attrs.map(a => (
+                                  <span key={a.id} style={{ fontSize: '0.7rem', background: '#334155', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>
+                                    {VERSION_ATTRIBUTE_LABELS[a.attribute_type] || a.attribute_type}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {v.lyrics_content ? (
+                              <div style={s.lyrics}>{v.lyrics_content}</div>
+                            ) : (
+                              <div style={{ color: '#64748b', fontStyle: 'italic', padding: '1rem' }}>No lyrics available for this version</div>
+                            )}
+                            
+                            {v.version_notes && (
+                              <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#94a3b8', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
+                                <strong>Notes:</strong> {v.version_notes}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Compare version */}
+                      {compareMode && (() => {
+                        const v = versions.find(ver => ver.id === compareVersionId);
+                        const attrs = versionAttrs.filter(a => a.song_version_id === v?.id);
+                        if (!v) return <div style={s.versionCard}><p style={{ color: '#64748b' }}>Select a version to compare</p></div>;
+                        return (
+                          <div style={s.versionCard}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              <div>
+                                <span style={s.versionLabel}>{v.label || 'Version'}</span>
+                                {v.version_type === 'alternate' && (
+                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#94a3b8' }}>(Alternate)</span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>★ Singalong</span>}
+                                {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#6366f133', color: '#6366f1', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
+                              </div>
+                            </div>
+                            
+                            {attrs.length > 0 && (
+                              <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                                {attrs.map(a => (
+                                  <span key={a.id} style={{ fontSize: '0.7rem', background: '#334155', padding: '0.2rem 0.5rem', borderRadius: '0.25rem' }}>
+                                    {VERSION_ATTRIBUTE_LABELS[a.attribute_type] || a.attribute_type}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {v.lyrics_content ? (
+                              <div style={s.lyrics}>{v.lyrics_content}</div>
+                            ) : (
+                              <div style={{ color: '#64748b', fontStyle: 'italic', padding: '1rem' }}>No lyrics available</div>
+                            )}
+                            
+                            {v.version_notes && (
+                              <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#94a3b8', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
+                                <strong>Notes:</strong> {v.version_notes}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </>
                 ) : (
                   <div style={s.emptyState}>
                     <p>No versions yet</p>
                     {selectedSong.lyrics_text && (
-                      <div style={{ ...s.lyrics, marginTop: '1rem' }}>{selectedSong.lyrics_text}</div>
+                      <div style={{ ...s.lyrics, marginTop: '1rem', maxWidth: '600px' }}>{selectedSong.lyrics_text}</div>
                     )}
                   </div>
                 )}
