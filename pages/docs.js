@@ -1,46 +1,72 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
+// Clean up messy HTML (strip inline styles, normalize tags)
+const cleanHtml = (html) => {
+  if (!html) return '';
+  return html
+    // Remove inline styles
+    .replace(/\s*style="[^"]*"/gi, '')
+    // Remove empty tags
+    .replace(/<(\w+)[^>]*>\s*<\/\1>/gi, '')
+    // Normalize whitespace
+    .replace(/\s+/g, ' ')
+    // Clean up br tags
+    .replace(/<br\s*\/?>/gi, '<br>')
+    .trim();
+};
+
+// Convert HTML to simple markdown
+const htmlToMarkdown = (html) => {
+  if (!html) return '';
+  let md = html
+    // Headers
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n')
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n')
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n\n')
+    // Bold
+    .replace(/<(b|strong)[^>]*>(.*?)<\/\1>/gi, '**$2**')
+    // Italic
+    .replace(/<(i|em)[^>]*>(.*?)<\/\1>/gi, '*$2*')
+    // Links
+    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
+    // Line breaks and paragraphs
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+    .replace(/<p[^>]*>/gi, '')
+    .replace(/<\/p>/gi, '\n\n')
+    // Lists
+    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
+    .replace(/<\/?[uo]l[^>]*>/gi, '\n')
+    // Strip remaining tags
+    .replace(/<[^>]+>/g, '')
+    // Clean up whitespace
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return md;
+};
+
 // Simple markdown to HTML converter
 const markdownToHtml = (md) => {
   if (!md) return '';
   let html = md
-    // Headers (must come before other replacements)
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold and italic
     .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/___(.+?)___/g, '<strong><em>$1</em></strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    // Links
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    // Inline code
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Unordered lists
     .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
-    // Ordered lists  
-    .replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>')
-    // Paragraphs (double newline)
     .replace(/\n\n/g, '</p><p>')
-    // Single newlines to <br>
     .replace(/\n/g, '<br>');
-  
-  // Wrap in paragraph
   html = '<p>' + html + '</p>';
-  
-  // Clean up empty paragraphs
   html = html.replace(/<p><\/p>/g, '').replace(/<p><br><\/p>/g, '');
-  
-  // Wrap consecutive <li> in <ul>
   html = html.replace(/(<li>.*?<\/li>)+/gs, '<ul>$&</ul>');
-  
   return html;
 };
 
@@ -53,21 +79,22 @@ export default function Docs() {
   const [search, setSearch] = useState('');
   const [folderFilter, setFolderFilter] = useState('');
   
-  // Edit mode state
   const [editMode, setEditMode] = useState(false);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
-  const [editorMode, setEditorMode] = useState('markdown');
+  const [editorMode, setEditorMode] = useState('wysiwyg'); // 'wysiwyg', 'markdown', 'code'
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   
-  // Form state
   const [editTitle, setEditTitle] = useState('');
   const [editSlug, setEditSlug] = useState('');
-  const [editContent, setEditContent] = useState('');
+  const [editContentHtml, setEditContentHtml] = useState(''); // HTML content
+  const [editContentMd, setEditContentMd] = useState(''); // Markdown content
   const [editFolder, setEditFolder] = useState('');
   const [editVisibility, setEditVisibility] = useState('admin');
   const [editTags, setEditTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
+  
+  const editorRef = useRef(null);
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -150,11 +177,19 @@ export default function Docs() {
     setIsCreatingNew(false);
     setEditTitle(doc.title || '');
     setEditSlug(doc.slug || '');
-    setEditContent(doc.content_md || doc.content || '');
+    // Use markdown if available, otherwise use HTML
+    if (doc.content_md) {
+      setEditContentMd(doc.content_md);
+      setEditContentHtml(markdownToHtml(doc.content_md));
+      setEditorMode('markdown');
+    } else {
+      setEditContentHtml(doc.content || '');
+      setEditContentMd(htmlToMarkdown(doc.content || ''));
+      setEditorMode('wysiwyg');
+    }
     setEditFolder(doc.folder || '');
     setEditVisibility(doc.visibility || 'admin');
     setEditTags(doc.tags || []);
-    setEditorMode('markdown');
   };
 
   const startCreate = () => {
@@ -163,11 +198,12 @@ export default function Docs() {
     setIsCreatingNew(true);
     setEditTitle('');
     setEditSlug('');
-    setEditContent('');
+    setEditContentHtml('');
+    setEditContentMd('');
     setEditFolder('');
     setEditVisibility('admin');
     setEditTags([]);
-    setEditorMode('markdown');
+    setEditorMode('wysiwyg');
   };
 
   const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); };
@@ -175,16 +211,65 @@ export default function Docs() {
   const addTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !editTags.includes(t)) setEditTags([...editTags, t]); setTagInput(''); };
   const removeTag = (tag) => { setEditTags(editTags.filter(t => t !== tag)); };
 
+  // Sync content when switching modes
+  const switchEditorMode = (newMode) => {
+    // Save current content first
+    if (editorMode === 'wysiwyg' && editorRef.current) {
+      setEditContentHtml(editorRef.current.innerHTML);
+    }
+    
+    if (newMode === 'markdown' && editorMode !== 'markdown') {
+      // Convert HTML to markdown
+      const html = editorMode === 'wysiwyg' && editorRef.current ? editorRef.current.innerHTML : editContentHtml;
+      setEditContentMd(htmlToMarkdown(html));
+    } else if (newMode === 'wysiwyg' && editorMode === 'markdown') {
+      // Convert markdown to HTML
+      setEditContentHtml(markdownToHtml(editContentMd));
+    } else if (newMode === 'code' && editorMode === 'markdown') {
+      // Convert markdown to HTML for code view
+      setEditContentHtml(markdownToHtml(editContentMd));
+    }
+    
+    setEditorMode(newMode);
+  };
+
+  // WYSIWYG toolbar commands
+  const execCommand = (cmd, value = null) => {
+    document.execCommand(cmd, false, value);
+    editorRef.current?.focus();
+  };
+
+  const insertLink = () => {
+    const url = prompt('Enter URL:');
+    if (url) execCommand('createLink', url);
+  };
+
   const saveDoc = async () => {
     if (!editTitle.trim()) { showMessage('❌ Title is required'); return; }
     if (!editSlug.trim()) { showMessage('❌ Slug is required'); return; }
+    
+    // Get final content based on current mode
+    let finalHtml = editContentHtml;
+    let finalMd = editContentMd;
+    
+    if (editorMode === 'wysiwyg' && editorRef.current) {
+      finalHtml = cleanHtml(editorRef.current.innerHTML);
+      finalMd = htmlToMarkdown(finalHtml);
+    } else if (editorMode === 'markdown') {
+      finalHtml = markdownToHtml(editContentMd);
+      finalMd = editContentMd;
+    } else if (editorMode === 'code') {
+      finalHtml = cleanHtml(editContentHtml);
+      finalMd = htmlToMarkdown(finalHtml);
+    }
+    
     setSaving(true);
     try {
       const docData = {
         title: editTitle.trim(),
         slug: editSlug.trim(),
-        content_md: editContent,
-        content: markdownToHtml(editContent),
+        content_md: finalMd,
+        content: finalHtml,
         visibility: editVisibility,
         folder: editFolder.trim() || null,
         tags: editTags,
@@ -200,7 +285,7 @@ export default function Docs() {
           const created = await res.json();
           showMessage('✅ Document created!');
           await loadDocs();
-          if (created[0]) { setSelectedDoc(created[0]); setIsCreatingNew(false); }
+          if (created[0]) { setSelectedDoc(created[0]); setIsCreatingNew(false); setEditMode(false); }
         } else { const error = await res.json(); showMessage(`❌ Error: ${error.message || 'Could not create'}`); }
       } else {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
@@ -235,6 +320,7 @@ export default function Docs() {
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
     btnDanger: { background: '#dc2626', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
     btnSmall: { background: '#334155', color: '#fff', border: 'none', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' },
+    toolbarBtn: { padding: '0.375rem 0.625rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.875rem' },
     card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', overflow: 'hidden' },
     docList: { maxHeight: '60vh', overflowY: 'auto' },
     docItem: (active) => ({ padding: '0.75rem 1rem', borderBottom: '1px solid #334155', cursor: 'pointer', background: active ? '#22c55e22' : 'transparent', borderLeft: active ? '3px solid #22c55e' : '3px solid transparent' }),
@@ -243,12 +329,12 @@ export default function Docs() {
     label: { display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem', fontWeight: '500' },
     formGroup: { marginBottom: '1rem' },
     textarea: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#e2e8f0', fontFamily: 'monospace', fontSize: '0.875rem', lineHeight: '1.6', resize: 'vertical', outline: 'none' },
-    preview: { padding: '1rem', background: '#0f172a', borderRadius: '0.5rem', minHeight: '400px', lineHeight: '1.7' },
+    wysiwygEditor: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#e2e8f0', fontSize: '1rem', lineHeight: '1.7', outline: 'none', overflow: 'auto' },
     tag: { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: '#334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', marginRight: '0.25rem', marginBottom: '0.25rem' },
     tagRemove: { background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0', fontSize: '1rem', lineHeight: 1 },
     existingTag: { background: '#1e293b', border: '1px solid #334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', marginRight: '0.25rem', marginBottom: '0.25rem', color: '#94a3b8' },
     message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
-    editorTab: (active) => ({ padding: '0.5rem 1rem', background: active ? '#334155' : 'transparent', border: '1px solid #334155', borderRadius: '0.375rem', color: active ? '#fff' : '#94a3b8', cursor: 'pointer', fontSize: '0.875rem' }),
+    editorTab: (active) => ({ padding: '0.5rem 1rem', background: active ? '#22c55e' : '#334155', border: 'none', borderRadius: '0.375rem', color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: active ? '600' : '400' }),
   };
 
   if (loading) return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
@@ -308,7 +394,7 @@ export default function Docs() {
               <>
                 {/* Top toolbar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #334155', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isCreatingNew ? '📝 New Document' : `📝 Editing: ${editTitle}`}</h2>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isCreatingNew ? '📝 New Document' : '📝 Editing'}</h2>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button style={s.btn} onClick={saveDoc} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
                     <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
@@ -354,9 +440,9 @@ export default function Docs() {
                     <input type="text" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} style={{ ...s.input, marginBottom: 0, flex: 1 }} placeholder="Add tag and press Enter" />
                     <button style={s.btnSmall} onClick={() => addTag(tagInput)}>Add</button>
                   </div>
-                  {allExistingTags.length > 0 && (
+                  {allExistingTags.filter(t => !editTags.includes(t)).length > 0 && (
                     <div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>Existing tags (click to add):</div>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>Existing tags:</div>
                       <div>{allExistingTags.filter(t => !editTags.includes(t)).map(tag => <button key={tag} style={s.existingTag} onClick={() => addTag(tag)}>{tag}</button>)}</div>
                     </div>
                   )}
@@ -365,43 +451,60 @@ export default function Docs() {
                 {/* Content Editor */}
                 <div style={s.formGroup}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <label style={s.label}>Content (Markdown)</label>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button style={s.editorTab(editorMode === 'markdown')} onClick={() => setEditorMode('markdown')}>Edit</button>
-                      <button style={s.editorTab(editorMode === 'preview')} onClick={() => setEditorMode('preview')}>Preview</button>
-                      <button style={s.editorTab(editorMode === 'split')} onClick={() => setEditorMode('split')}>Split</button>
+                    <label style={s.label}>Content</label>
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      <button style={s.editorTab(editorMode === 'wysiwyg')} onClick={() => switchEditorMode('wysiwyg')}>Visual</button>
+                      <button style={s.editorTab(editorMode === 'markdown')} onClick={() => switchEditorMode('markdown')}>Markdown</button>
+                      <button style={s.editorTab(editorMode === 'code')} onClick={() => switchEditorMode('code')}>HTML</button>
                     </div>
                   </div>
                   
+                  {editorMode === 'wysiwyg' && (
+                    <>
+                      {/* WYSIWYG Toolbar */}
+                      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap', padding: '0.5rem', background: '#1e293b', borderRadius: '0.375rem' }}>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('bold')} title="Bold"><b>B</b></button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('italic')} title="Italic"><i>I</i></button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('underline')} title="Underline"><u>U</u></button>
+                        <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h1')} title="Heading 1">H1</button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h2')} title="Heading 2">H2</button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h3')} title="Heading 3">H3</button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'p')} title="Paragraph">P</button>
+                        <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('insertUnorderedList')} title="Bullet List">• List</button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('insertOrderedList')} title="Numbered List">1. List</button>
+                        <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                        <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link">🔗 Link</button>
+                        <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting">✖ Clear</button>
+                      </div>
+                      <div
+                        ref={editorRef}
+                        contentEditable
+                        style={s.wysiwygEditor}
+                        className="doc-content"
+                        dangerouslySetInnerHTML={{ __html: editContentHtml }}
+                        onBlur={() => setEditContentHtml(editorRef.current?.innerHTML || '')}
+                      />
+                    </>
+                  )}
+                  
                   {editorMode === 'markdown' && (
-                    <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} style={s.textarea} placeholder="Write your content in markdown...
-
-# Heading 1
-## Heading 2
-### Heading 3
-
-**bold** or __bold__
-*italic* or _italic_
-
-- List item
-- Another item
-
-1. Numbered item
-2. Another item
-
-[Link text](url)
-\`inline code\`" />
+                    <textarea 
+                      value={editContentMd} 
+                      onChange={(e) => setEditContentMd(e.target.value)} 
+                      style={s.textarea} 
+                      placeholder="# Heading&#10;&#10;Regular paragraph text.&#10;&#10;**bold** and *italic*&#10;&#10;- List item&#10;- Another item&#10;&#10;[Link text](url)" 
+                    />
                   )}
                   
-                  {editorMode === 'preview' && (
-                    <div style={s.preview} className="doc-content" dangerouslySetInnerHTML={{ __html: markdownToHtml(editContent) || '<p style="color:#64748b">Nothing to preview</p>' }} />
-                  )}
-                  
-                  {editorMode === 'split' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                      <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} style={{ ...s.textarea, minHeight: '300px' }} placeholder="Write markdown here..." />
-                      <div style={{ ...s.preview, minHeight: '300px', overflow: 'auto' }} className="doc-content" dangerouslySetInnerHTML={{ __html: markdownToHtml(editContent) || '<p style="color:#64748b">Preview</p>' }} />
-                    </div>
+                  {editorMode === 'code' && (
+                    <textarea 
+                      value={editContentHtml} 
+                      onChange={(e) => setEditContentHtml(e.target.value)} 
+                      style={{ ...s.textarea, fontFamily: 'monospace', fontSize: '0.8rem' }} 
+                      placeholder="<h1>Heading</h1>&#10;<p>Paragraph text</p>" 
+                    />
                   )}
                 </div>
 
@@ -428,7 +531,7 @@ export default function Docs() {
                     <button style={s.btnSec} onClick={() => setSelectedDoc(null)}>×</button>
                   </div>
                 </div>
-                <div className="doc-content" dangerouslySetInnerHTML={{ __html: markdownToHtml(selectedDoc.content_md) || selectedDoc.content || '<p>No content yet.</p>' }} style={{ lineHeight: '1.7' }} />
+                <div className="doc-content" dangerouslySetInnerHTML={{ __html: selectedDoc.content || '<p>No content yet.</p>' }} style={{ lineHeight: '1.7' }} />
               </>
             )}
           </div>
@@ -452,7 +555,7 @@ export default function Docs() {
         .doc-content li { margin: 0.25rem 0; }
         .doc-content a { color: #22c55e; text-decoration: underline; }
         .doc-content a:hover { color: #4ade80; }
-        .doc-content strong, .doc-content b { font-weight: bold; }
+        .doc-content strong, .doc-content b { font-weight: bold; color: #fff; }
         .doc-content em, .doc-content i { font-style: italic; }
         .doc-content code { background: #334155; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-family: monospace; }
       `}</style>
