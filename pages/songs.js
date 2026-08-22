@@ -35,6 +35,8 @@ export default function Songs() {
   const [selectedVersionId, setSelectedVersionId] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareVersionId, setCompareVersionId] = useState(null);
+  const [listWidth, setListWidth] = useState(400);
+  const [isResizing, setIsResizing] = useState(false);
 
   const VERSION_ATTRIBUTE_LABELS = {
     'gender_neutral': 'Gender Neutral',
@@ -52,8 +54,8 @@ export default function Songs() {
     return headers;
   };
 
-  useEffect(() => { checkAuth(); }, []);
-  useEffect(() => { if (user) loadData(); }, [user]);
+  useEffect(() => { checkAuth(); loadData(); }, []);
+  useEffect(() => { if (user) loadUserPrefs(); }, [user]);
   useEffect(() => { if (selectedSong) loadSongDetails(selectedSong.id); }, [selectedSong?.id]);
 
   const checkAuth = async () => {
@@ -78,6 +80,19 @@ export default function Songs() {
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
+  const loadUserPrefs = async () => {
+    if (!user) return;
+    try {
+      const prefsRes = await fetch(`${SUPABASE_URL}/rest/v1/user_song_preferences?user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
+      const prefsData = await prefsRes.json();
+      const prefsMap = {};
+      if (Array.isArray(prefsData)) {
+        prefsData.forEach(p => { prefsMap[p.song_id] = p; });
+      }
+      setUserPrefs(prefsMap);
+    } catch (error) { console.error('Error loading preferences:', error); }
+  };
+
   const loadData = async () => {
     try {
       // Load songs
@@ -95,17 +110,6 @@ export default function Songs() {
       // Load tags
       const tagsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers: getAuthHeaders(false) });
       const tagsData = await tagsRes.json();
-      
-      // Load user preferences
-      if (user) {
-        const prefsRes = await fetch(`${SUPABASE_URL}/rest/v1/user_song_preferences?user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
-        const prefsData = await prefsRes.json();
-        const prefsMap = {};
-        if (Array.isArray(prefsData)) {
-          prefsData.forEach(p => { prefsMap[p.song_id] = p; });
-        }
-        setUserPrefs(prefsMap);
-      }
 
       // Build songbook map
       const songbookMap = {};
@@ -291,6 +295,30 @@ export default function Songs() {
     savePreference(songId, { personal_tags: current.filter(t => t !== tag) });
   };
 
+  // Resize handlers
+  const startResize = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing) return;
+      const newWidth = Math.max(250, Math.min(600, e.clientX - 24)); // 24px for padding
+      setListWidth(newWidth);
+    };
+    const handleMouseUp = () => setIsResizing(false);
+    
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   // Get page for selected songbook
   const getPageForSongbook = (song) => {
     if (!songbookFilter) return song.songbooks?.[0]?.page || '';
@@ -358,7 +386,7 @@ export default function Songs() {
 
   const s = {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
-    wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'grid', gridTemplateColumns: selectedSong ? '400px 1fr' : '1fr', gap: '1.5rem' },
+    wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'grid', gridTemplateColumns: selectedSong ? `${listWidth}px 8px 1fr` : '1fr', gap: '0.5rem' },
     header: { marginBottom: '1rem' },
     title: { fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' },
     subtitle: { color: '#94a3b8', fontSize: '0.875rem' },
@@ -428,17 +456,6 @@ export default function Songs() {
     return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
   }
 
-  if (!user) {
-    return (
-      <div style={{ ...s.container, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
-        <div style={{ fontSize: '4rem' }}>🎵</div>
-        <h1 style={{ fontSize: '1.5rem' }}>Song Library</h1>
-        <p style={{ color: '#94a3b8' }}>Please log in to explore songs.</p>
-        <Link href="/" style={{ ...s.btn, textDecoration: 'none' }}>Go to Login</Link>
-      </div>
-    );
-  }
-
   const pref = selectedSong ? userPrefs[selectedSong.id] : null;
 
   return (
@@ -492,17 +509,19 @@ export default function Songs() {
               </div>
             )}
 
-            <div style={s.filterGroup}>
-              <span style={s.filterLabel}>My Songs</span>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
-                <option value="">All</option>
-                <option value="favorite">⭐ Favorites</option>
-                <option value="known">✓ Known</option>
-                <option value="want_to_learn">📚 Want to Learn</option>
-              </select>
-            </div>
+            {user && (
+              <div style={s.filterGroup}>
+                <span style={s.filterLabel}>My Songs</span>
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
+                  <option value="">All</option>
+                  <option value="favorite">⭐ Favorites</option>
+                  <option value="known">✓ Known</option>
+                  <option value="want_to_learn">📚 Want to Learn</option>
+                </select>
+              </div>
+            )}
 
-            {allPersonalTags.length > 0 && (
+            {user && allPersonalTags.length > 0 && (
               <div style={s.filterGroup}>
                 <span style={s.filterLabel}>My Tags</span>
                 <select value={personalTagFilter} onChange={(e) => setPersonalTagFilter(e.target.value)} style={s.select}>
@@ -547,6 +566,27 @@ export default function Songs() {
           </div>
         </div>
 
+        {/* Resize handle */}
+        {selectedSong && (
+          <div
+            onMouseDown={startResize}
+            style={{
+              width: '8px',
+              cursor: 'col-resize',
+              background: isResizing ? '#22c55e' : '#334155',
+              borderRadius: '4px',
+              transition: 'background 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            onMouseEnter={(e) => e.target.style.background = '#22c55e'}
+            onMouseLeave={(e) => { if (!isResizing) e.target.style.background = '#334155'; }}
+          >
+            <div style={{ width: '2px', height: '40px', background: '#64748b', borderRadius: '1px' }} />
+          </div>
+        )}
+
         {/* Song Detail Panel */}
         {selectedSong && (
           <div style={s.main}>
@@ -563,48 +603,56 @@ export default function Songs() {
               <button style={s.btnSec} onClick={() => setSelectedSong(null)}>×</button>
             </div>
 
-            {/* Personal Actions */}
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem' }}>
-              <button 
-                onClick={() => toggleFavorite(selectedSong.id)} 
-                style={s.statusBtn(pref?.is_favorite, '#f59e0b')}
-              >
-                ⭐ Favorite
-              </button>
-              <button 
-                onClick={() => setStatus(selectedSong.id, 'known')} 
-                style={s.statusBtn(pref?.status === 'known', '#22c55e')}
-              >
-                ✓ Known
-              </button>
-              <button 
-                onClick={() => setStatus(selectedSong.id, 'want_to_learn')} 
-                style={s.statusBtn(pref?.status === 'want_to_learn', '#6366f1')}
-              >
-                📚 Want to Learn
-              </button>
-            </div>
-
-            {/* Personal Tags */}
-            <div style={{ marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>My Tags:</div>
-              <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {pref?.personal_tags?.map(tag => (
-                  <span key={tag} style={s.personalTag}>
-                    {tag}
-                    <button onClick={() => removePersonalTag(selectedSong.id, tag)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
-                  </span>
-                ))}
-                <input
-                  type="text"
-                  placeholder="+ Add tag"
-                  value={personalTagInput}
-                  onChange={(e) => setPersonalTagInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { addPersonalTag(selectedSong.id, personalTagInput); } }}
-                  style={{ ...s.input, width: '100px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                />
+            {/* Personal Actions - only for logged in users */}
+            {user ? (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem' }}>
+                <button 
+                  onClick={() => toggleFavorite(selectedSong.id)} 
+                  style={s.statusBtn(pref?.is_favorite, '#f59e0b')}
+                >
+                  ⭐ Favorite
+                </button>
+                <button 
+                  onClick={() => setStatus(selectedSong.id, 'known')} 
+                  style={s.statusBtn(pref?.status === 'known', '#22c55e')}
+                >
+                  ✓ Known
+                </button>
+                <button 
+                  onClick={() => setStatus(selectedSong.id, 'want_to_learn')} 
+                  style={s.statusBtn(pref?.status === 'want_to_learn', '#6366f1')}
+                >
+                  📚 Want to Learn
+                </button>
               </div>
-            </div>
+            ) : (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
+                <Link href="/" style={{ color: '#22c55e' }}>Log in</Link> to save favorites and track songs you know
+              </div>
+            )}
+
+            {/* Personal Tags - only for logged in users */}
+            {user && (
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>My Tags:</div>
+                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {pref?.personal_tags?.map(tag => (
+                    <span key={tag} style={s.personalTag}>
+                      {tag}
+                      <button onClick={() => removePersonalTag(selectedSong.id, tag)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+                    </span>
+                  ))}
+                  <input
+                    type="text"
+                    placeholder="+ Add tag"
+                    value={personalTagInput}
+                    onChange={(e) => setPersonalTagInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { addPersonalTag(selectedSong.id, personalTagInput); } }}
+                    style={{ ...s.input, width: '100px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Global Tags */}
             {selectedSong.tags?.length > 0 && (
