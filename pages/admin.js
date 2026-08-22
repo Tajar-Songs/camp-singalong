@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -39,6 +40,8 @@ const MEMBER_ROLES = [
 ];
 
 export default function Admin() {
+  const router = useRouter();
+  
   // Auth state
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -209,6 +212,16 @@ export default function Admin() {
 
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
+  
+  // Read tab from URL query parameter
+  useEffect(() => {
+    if (router.query.tab) {
+      const validTabs = ['songs', 'groups', 'songbooks', 'docs', 'duplicates', 'changelog'];
+      if (validTabs.includes(router.query.tab)) {
+        setMainTab(router.query.tab);
+      }
+    }
+  }, [router.query.tab]);
   useEffect(() => { if (userProfile?.role === 'admin') loadAllData(); }, [userProfile]);
 
   const refreshAccessToken = async () => {
