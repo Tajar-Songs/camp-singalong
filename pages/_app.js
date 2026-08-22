@@ -176,8 +176,8 @@ export default function App({ Component, pageProps }) {
         <meta name="robots" content="noindex, nofollow" />
       </Head>
       
-      {/* Navigation bar - only show when logged in and done checking */}
-      {user && !checking && (
+      {/* Navigation bar - show when done checking */}
+      {!checking && (
         <nav style={navStyle}>
           <div style={navContainerStyle}>
             {/* Left: Logo/Brand */}
@@ -196,26 +196,45 @@ export default function App({ Component, pageProps }) {
               </div>
             </div>
             
-            {/* Right: User info + Logout */}
+            {/* Right: User info + Logout OR Login link */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span className="nav-email" style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                {userProfile?.display_name || user?.email || ''}
-              </span>
-              <button
-                onClick={handleLogout}
-                style={{
-                  background: '#dc2626',
-                  color: 'white',
-                  border: 'none',
-                  padding: '0.375rem 0.75rem',
-                  borderRadius: '0.375rem',
-                  fontSize: '0.75rem',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                }}
-              >
-                Logout
-              </button>
+              {user ? (
+                <>
+                  <span className="nav-email" style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    {userProfile?.display_name || user?.email || ''}
+                  </span>
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      background: '#dc2626',
+                      color: 'white',
+                      border: 'none',
+                      padding: '0.375rem 0.75rem',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      fontWeight: '500',
+                    }}
+                  >
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <Link 
+                  href="/" 
+                  style={{
+                    background: '#22c55e',
+                    color: 'white',
+                    padding: '0.375rem 0.75rem',
+                    borderRadius: '0.375rem',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    textDecoration: 'none',
+                  }}
+                >
+                  Log in
+                </Link>
+              )}
               
               {/* Mobile menu button */}
               <button
@@ -260,7 +279,7 @@ export default function App({ Component, pageProps }) {
       )}
       
       {/* Add padding to body when nav is visible */}
-      <div style={{ paddingTop: user && !checking ? '3rem' : 0 }}>
+      <div style={{ paddingTop: !checking ? '3rem' : 0 }}>
         <Component {...pageProps} />
       </div>
       
