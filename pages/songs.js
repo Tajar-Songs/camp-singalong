@@ -268,25 +268,61 @@ export default function Songs() {
   };
 
   // Render media embed
-  const renderMedia = (url) => {
+  const renderMedia = (media) => {
+    const url = media.url || media.media_url;
     if (!url) return null;
+    
     // YouTube
     const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/);
     if (ytMatch) {
       return (
+        <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, maxWidth: '400px' }}>
+          <iframe
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '0.5rem' }}
+            src={`https://www.youtube.com/embed/${ytMatch[1]}`}
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+    
+    // Spotify
+    const spotifyMatch = url.match(/open\.spotify\.com\/(track|album|playlist)\/([^?]+)/);
+    if (spotifyMatch) {
+      return (
         <iframe
+          style={{ borderRadius: '0.5rem', maxWidth: '400px' }}
+          src={`https://open.spotify.com/embed/${spotifyMatch[1]}/${spotifyMatch[2]}`}
           width="100%"
-          height="200"
-          src={`https://www.youtube.com/embed/${ytMatch[1]}`}
+          height="152"
           frameBorder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-          style={{ borderRadius: '0.5rem' }}
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
         />
       );
     }
-    // Generic link
-    return <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#22c55e' }}>{url}</a>;
+    
+    // Generic link with preview card
+    return (
+      <a 
+        href={url} 
+        target="_blank" 
+        rel="noopener noreferrer" 
+        style={{ 
+          display: 'block',
+          padding: '0.75rem',
+          background: '#0f172a',
+          borderRadius: '0.5rem',
+          color: '#22c55e',
+          textDecoration: 'none',
+          fontSize: '0.875rem',
+          wordBreak: 'break-all'
+        }}
+      >
+        🔗 {url}
+      </a>
+    );
   };
 
   const s = {
@@ -561,9 +597,15 @@ export default function Songs() {
                 {versions.length > 0 ? (
                   versions.map(v => (
                     <div key={v.id} style={s.versionCard}>
-                      {v.label && <div style={s.versionLabel}>{v.label}</div>}
-                      {v.lyrics ? (
-                        <div style={s.lyrics}>{v.lyrics}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        {v.label && <span style={s.versionLabel}>{v.label}</span>}
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Singalong</span>}
+                          {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#6366f133', color: '#6366f1', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
+                        </div>
+                      </div>
+                      {v.lyrics_content ? (
+                        <div style={s.lyrics}>{v.lyrics_content}</div>
                       ) : (
                         <div style={{ color: '#64748b', fontStyle: 'italic' }}>No lyrics available</div>
                       )}
@@ -603,9 +645,10 @@ export default function Songs() {
               <div>
                 {songMedia.length > 0 ? (
                   songMedia.map(m => (
-                    <div key={m.id} style={{ marginBottom: '1rem' }}>
-                      {m.label && <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{m.label}</div>}
-                      {renderMedia(m.url)}
+                    <div key={m.id} style={{ marginBottom: '1.5rem' }}>
+                      {(m.label || m.title) && <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{m.label || m.title}</div>}
+                      {m.description && <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{m.description}</div>}
+                      {renderMedia(m)}
                     </div>
                   ))
                 ) : (
