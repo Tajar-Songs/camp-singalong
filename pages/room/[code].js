@@ -1644,7 +1644,7 @@ if (view === 'display' && showLyrics && currentSong) {
         {/* Header Section */}
         <div className={`rounded-3xl shadow-xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-green-100'}`}>
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-xl font-black tracking-tight">🎵 Camp Singalong</h1>
+            <h1 className="text-xl font-black tracking-tight">🎵 Tajar's Songbook</h1>
             <div className="flex items-center gap-2">
               {/* User status */}
               {user ? (
