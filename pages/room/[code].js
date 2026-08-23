@@ -1638,12 +1638,6 @@ if (view === 'display' && showLyrics && currentSong) {
           </div>
         </div>
       )}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
       
       <div className="max-w-4xl mx-auto space-y-4">
         
