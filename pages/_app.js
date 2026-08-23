@@ -129,7 +129,7 @@ export default function App({ Component, pageProps }) {
 
   // Navigation items - only compute when we have data
   const navItems = [
-    { href: '/', label: 'Singalong', show: true },
+    { href: '/', label: 'Sing Together', show: true },
     { href: '/songs', label: 'Songs', show: true },
     { href: '/docs', label: 'Docs', show: true },
     { href: '/admin', label: 'Admin', show: isAdmin },
@@ -182,9 +182,9 @@ export default function App({ Component, pageProps }) {
           <div style={navContainerStyle}>
             {/* Left: Logo/Brand */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-              <span style={{ fontWeight: 'bold', color: '#22c55e', fontSize: '1.1rem' }}>
+              <Link href="/" style={{ fontWeight: 'bold', color: '#22c55e', fontSize: '1.1rem', textDecoration: 'none' }}>
                 🎵 Camp Singalong
-              </span>
+              </Link>
               
               {/* Desktop nav links */}
               <div className="nav-desktop" style={{ display: 'flex', gap: '0.25rem' }}>
@@ -221,7 +221,7 @@ export default function App({ Component, pageProps }) {
                 </>
               ) : (
                 <Link 
-                  href="/" 
+                  href="/?login=true" 
                   style={{
                     background: '#22c55e',
                     color: 'white',
