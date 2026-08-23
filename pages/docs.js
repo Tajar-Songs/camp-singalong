@@ -103,8 +103,8 @@ export default function Docs() {
     return headers;
   };
 
-  useEffect(() => { checkAuth(); }, []);
-  useEffect(() => { if (user) loadDocs(); }, [user, userProfile]);
+  useEffect(() => { checkAuth(); loadDocs(); }, []);
+  useEffect(() => { if (user) loadDocs(); }, [user, userProfile]); // Reload when user changes to get admin-only docs
 
   const checkAuth = async () => {
     try {
@@ -338,15 +338,6 @@ export default function Docs() {
   };
 
   if (loading) return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
-
-  if (!user) return (
-    <div style={{ ...s.container, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
-      <div style={{ fontSize: '3rem' }}>📚</div>
-      <h1 style={{ fontSize: '1.5rem' }}>Documentation</h1>
-      <p style={{ color: '#94a3b8' }}>Please log in to view documentation.</p>
-      <Link href="/" style={{ ...s.btn, textDecoration: 'none' }}>Go to Login</Link>
-    </div>
-  );
 
   return (
     <div style={s.container}>
