@@ -977,7 +977,7 @@ export default function Home() {
           <div className="text-center mb-8">
             <div className="text-6xl mb-4 drop-shadow-lg">🎵</div>
             <h1 className={`text-3xl sm:text-4xl font-black tracking-tight ${isDark ? 'text-white' : 'text-green-900'}`}>
-              Camp <span className="text-green-600">Singalong</span>
+              Tajar's <span className="text-green-600">Songbook</span>
             </h1>
           </div>
           
