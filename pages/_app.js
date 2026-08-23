@@ -183,7 +183,7 @@ export default function App({ Component, pageProps }) {
             {/* Left: Logo/Brand */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
               <Link href="/" style={{ fontWeight: 'bold', color: '#22c55e', fontSize: '1.1rem', textDecoration: 'none' }}>
-                🎵 Camp Singalong
+                🎵 Tajar's Songbook
               </Link>
               
               {/* Desktop nav links */}
