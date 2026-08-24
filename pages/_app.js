@@ -133,6 +133,7 @@ export default function App({ Component, pageProps }) {
     { href: '/songs', label: 'Songs', show: true },
     { href: '/docs', label: 'Docs', show: true },
     { href: '/ideas', label: 'Ideas', show: true },
+    { href: '/profile', label: 'Profile', show: !!user },
     { href: '/admin', label: 'Admin', show: isAdmin },
     { href: '/tags', label: 'Tags', show: isAdmin },
     { href: '/reports', label: 'Reports', show: isAdmin },
