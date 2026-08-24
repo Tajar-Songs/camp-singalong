@@ -37,6 +37,7 @@ export default function Songs() {
   const [compareVersionId, setCompareVersionId] = useState(null);
   const [listWidth, setListWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
+  const [versionPrefs, setVersionPrefs] = useState({});
 
   const VERSION_ATTRIBUTE_LABELS = {
     'gender_neutral': 'Gender Neutral',
@@ -46,6 +47,13 @@ export default function Songs() {
     'camp_specific': 'Camp-Specific',
     'other': 'Other'
   };
+
+  const FAMILIARITY_OPTIONS = [
+    { value: 'teach', label: '🎓 Can teach', color: '#22c55e' },
+    { value: 'sing_along', label: '🎤 Sing along', color: '#3b82f6' },
+    { value: 'heard_it', label: '👂 Heard it', color: '#f59e0b' },
+    { value: 'dont_know', label: '❓ Don\'t know', color: '#64748b' }
+  ];
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -90,6 +98,15 @@ export default function Songs() {
         prefsData.forEach(p => { prefsMap[p.song_id] = p; });
       }
       setUserPrefs(prefsMap);
+      
+      // Load version preferences
+      const vPrefsRes = await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
+      const vPrefsData = await vPrefsRes.json();
+      const vPrefsMap = {};
+      if (Array.isArray(vPrefsData)) {
+        vPrefsData.forEach(vp => { vPrefsMap[vp.version_id] = vp; });
+      }
+      setVersionPrefs(vPrefsMap);
     } catch (error) { console.error('Error loading preferences:', error); }
   };
 
@@ -229,6 +246,7 @@ export default function Songs() {
       // Status filters
       const pref = userPrefs[song.id];
       if (statusFilter === 'favorite' && !pref?.is_favorite) return false;
+      if (statusFilter === 'dislike' && !pref?.is_dislike) return false;
       if (statusFilter === 'known' && pref?.status !== 'known') return false;
       if (statusFilter === 'want_to_learn' && pref?.status !== 'want_to_learn') return false;
       // Personal tag filter
@@ -274,6 +292,11 @@ export default function Songs() {
     savePreference(songId, { is_favorite: !current });
   };
 
+  const toggleDislike = (songId) => {
+    const current = userPrefs[songId]?.is_dislike || false;
+    savePreference(songId, { is_dislike: !current });
+  };
+
   const setStatus = (songId, status) => {
     const current = userPrefs[songId]?.status;
     // Toggle off if clicking same status
@@ -293,6 +316,46 @@ export default function Songs() {
   const removePersonalTag = (songId, tag) => {
     const current = userPrefs[songId]?.personal_tags || [];
     savePreference(songId, { personal_tags: current.filter(t => t !== tag) });
+  };
+
+  const setVersionFamiliarity = async (versionId, familiarity) => {
+    if (!user) return;
+    const existing = versionPrefs[versionId];
+    
+    try {
+      if (existing) {
+        if (familiarity === null || familiarity === '') {
+          // Remove
+          await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?id=eq.${existing.id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          });
+          setVersionPrefs(prev => { const n = {...prev}; delete n[versionId]; return n; });
+        } else {
+          // Update
+          await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?id=eq.${existing.id}`, {
+            method: 'PATCH',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ familiarity, updated_at: new Date().toISOString() })
+          });
+          setVersionPrefs(prev => ({ ...prev, [versionId]: { ...existing, familiarity } }));
+        }
+      } else if (familiarity) {
+        // Create
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
+          body: JSON.stringify({ user_id: user.id, version_id: versionId, familiarity })
+        });
+        const data = await res.json();
+        if (data[0]) {
+          setVersionPrefs(prev => ({ ...prev, [versionId]: data[0] }));
+        }
+      }
+    } catch (error) {
+      console.error('Error setting familiarity:', error);
+      showMessage('❌ Error saving');
+    }
   };
 
   // Resize handlers
@@ -515,6 +578,7 @@ export default function Songs() {
                 <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
                   <option value="">All</option>
                   <option value="favorite">⭐ Favorites</option>
+                  <option value="dislike">👎 Dislikes</option>
                   <option value="known">✓ Known</option>
                   <option value="want_to_learn">📚 Want to Learn</option>
                 </select>
@@ -611,6 +675,12 @@ export default function Songs() {
                   style={s.statusBtn(pref?.is_favorite, '#f59e0b')}
                 >
                   ⭐ Favorite
+                </button>
+                <button 
+                  onClick={() => toggleDislike(selectedSong.id)} 
+                  style={s.statusBtn(pref?.is_dislike, '#ef4444')}
+                >
+                  👎 Dislike
                 </button>
                 <button 
                   onClick={() => setStatus(selectedSong.id, 'known')} 
@@ -761,6 +831,34 @@ export default function Songs() {
                               </div>
                             )}
                             
+                            {/* Version familiarity - logged in users */}
+                            {user && (
+                              <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>How well I know this:</span>
+                                <select
+                                  value={versionPrefs[v.id]?.familiarity || ''}
+                                  onChange={(e) => setVersionFamiliarity(v.id, e.target.value || null)}
+                                  style={{ ...s.select, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                >
+                                  <option value="">Not set</option>
+                                  {FAMILIARITY_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
+                                {versionPrefs[v.id]?.familiarity && (
+                                  <span style={{ 
+                                    fontSize: '0.7rem', 
+                                    padding: '0.2rem 0.5rem', 
+                                    borderRadius: '0.25rem',
+                                    background: `${FAMILIARITY_OPTIONS.find(o => o.value === versionPrefs[v.id]?.familiarity)?.color}20`,
+                                    color: FAMILIARITY_OPTIONS.find(o => o.value === versionPrefs[v.id]?.familiarity)?.color
+                                  }}>
+                                    {FAMILIARITY_OPTIONS.find(o => o.value === versionPrefs[v.id]?.familiarity)?.label}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            
                             {v.lyrics_content ? (
                               <div style={s.lyrics}>{v.lyrics_content}</div>
                             ) : (
@@ -803,6 +901,23 @@ export default function Songs() {
                                     {VERSION_ATTRIBUTE_LABELS[a.attribute_type] || a.attribute_type}
                                   </span>
                                 ))}
+                              </div>
+                            )}
+                            
+                            {/* Version familiarity - logged in users */}
+                            {user && (
+                              <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>How well I know this:</span>
+                                <select
+                                  value={versionPrefs[v.id]?.familiarity || ''}
+                                  onChange={(e) => setVersionFamiliarity(v.id, e.target.value || null)}
+                                  style={{ ...s.select, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                >
+                                  <option value="">Not set</option>
+                                  {FAMILIARITY_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
                               </div>
                             )}
                             
