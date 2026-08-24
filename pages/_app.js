@@ -152,7 +152,8 @@ export default function App({ Component, pageProps }) {
 
   const adminNavItems = [
     { href: '/admin', label: 'Songs' },
-    { href: '/suggestions', label: 'Suggestions' },
+    { href: '/suggestions', label: 'Song Suggestions' },
+    { href: '/ideas', label: 'Feature Requests' },
     { href: '/tags', label: 'Tags' },
     { href: '/reports', label: 'Reports' },
     { href: '/users', label: 'Users' },
