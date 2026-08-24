@@ -39,6 +39,7 @@ export default function Suggest() {
   const [year, setYear] = useState('');
   const [origin, setOrigin] = useState('');
   const [tuneOf, setTuneOf] = useState('');
+  const [newSongLyrics, setNewSongLyrics] = useState('');
   
   const [versionItems, setVersionItems] = useState([{ label: '', lyrics: '' }]);
   
@@ -130,6 +131,7 @@ export default function Suggest() {
     setIncludeOrigin(false); setIncludeTuneOf(false); setIncludeVersion(false);
     setIncludeMedia(false); setIncludeNote(false); setIncludeAlias(false); setIncludeFlag(false);
     setTitle(''); setAuthor(''); setComposer(''); setYear(''); setOrigin(''); setTuneOf('');
+    setNewSongLyrics('');
     setVersionItems([{ label: '', lyrics: '' }]);
     setMediaItems([{ type: 'youtube', url: '', label: '' }]);
     setNoteItems([{ type: 'history', content: '' }]);
@@ -275,7 +277,7 @@ export default function Suggest() {
         title: title.trim(),
         author: author.trim() || null,
         composer: composer.trim() || null,
-        lyrics_text: versionLyrics.trim() || null,
+        lyrics_text: newSongLyrics.trim() || null,
         source_url: sourceUrl.trim() || null,
         reason: reason.trim() || null,
         batch_id: batchId,
@@ -598,7 +600,7 @@ export default function Suggest() {
               <input type="text" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Who wrote the music?" style={s.input} />
 
               <label style={s.label}>Lyrics</label>
-              <textarea value={versionLyrics} onChange={(e) => setVersionLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.textarea, minHeight: '200px', fontFamily: 'monospace' }} />
+              <textarea value={newSongLyrics} onChange={(e) => setNewSongLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.textarea, minHeight: '200px', fontFamily: 'monospace' }} />
             </>
           ) : (
             <>
