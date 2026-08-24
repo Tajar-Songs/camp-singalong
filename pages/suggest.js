@@ -55,6 +55,9 @@ export default function Suggest() {
   // Common
   const [reason, setReason] = useState('');
 
+  // Multi-suggestion support
+  const [pendingSuggestions, setPendingSuggestions] = useState([]);
+
   // My suggestions
   const [mySuggestions, setMySuggestions] = useState([]);
   const [showMySuggestions, setShowMySuggestions] = useState(false);
@@ -154,6 +157,143 @@ export default function Suggest() {
   };
 
   const submitSuggestion = async () => {
+    if (!user) return;
+    
+    // Validation
+    if (suggestionType === 'new_song' && !title.trim()) {
+      showMsg('❌ Please enter a song title');
+      return;
+    }
+    if (['new_version', 'media', 'note', 'edit', 'add_alias', 'add_flag'].includes(suggestionType) && !selectedSongId) {
+      showMsg('❌ Please select a song');
+      return;
+    }
+    if (suggestionType === 'new_version' && !versionLabel.trim()) {
+      showMsg('❌ Please enter a version label');
+      return;
+    }
+    if (suggestionType === 'media' && !mediaUrl.trim()) {
+      showMsg('❌ Please enter a media URL');
+      return;
+    }
+    if (suggestionType === 'note' && !noteContent.trim()) {
+      showMsg('❌ Please enter note content');
+      return;
+    }
+    if (suggestionType === 'edit' && !suggestedValue.trim()) {
+      showMsg('❌ Please enter the suggested value');
+      return;
+    }
+    if (suggestionType === 'add_alias' && !aliasTitle.trim()) {
+      showMsg('❌ Please enter the alternate name');
+      return;
+    }
+    if (suggestionType === 'add_flag' && !flagNotes.trim()) {
+      showMsg('❌ Please describe the flag');
+      return;
+    }
+
+    // Build payload
+    const songName = songs.find(s => s.id === selectedSongId)?.title || '';
+    const payload = {
+      suggestion_type: suggestionType,
+      song_id: selectedSongId || null,
+      version_id: selectedVersionId || null,
+      title: suggestionType === 'new_song' ? title.trim() : (suggestionType === 'add_alias' ? aliasTitle.trim() : null),
+      author: suggestionType === 'new_song' ? author.trim() || null : null,
+      composer: suggestionType === 'new_song' ? composer.trim() || null : null,
+      lyrics_text: suggestionType === 'new_song' ? lyricsText.trim() || null : null,
+      version_label: suggestionType === 'new_version' ? versionLabel.trim() : null,
+      lyrics_content: suggestionType === 'new_version' ? lyricsContent.trim() || null : null,
+      media_type: suggestionType === 'media' ? mediaType : null,
+      media_url: suggestionType === 'media' ? mediaUrl.trim() : null,
+      media_label: suggestionType === 'media' ? mediaLabel.trim() || null : null,
+      note_content: suggestionType === 'note' ? noteContent.trim() : (suggestionType === 'add_flag' ? flagNotes.trim() : null),
+      note_type: suggestionType === 'note' ? noteType : (suggestionType === 'add_flag' ? flagType : null),
+      field_name: suggestionType === 'edit' ? fieldName : null,
+      current_value: suggestionType === 'edit' ? currentValue.trim() || null : null,
+      suggested_value: suggestionType === 'edit' ? suggestedValue.trim() : null,
+      reason: reason.trim() || null,
+      created_by: user.id,
+      // For display purposes
+      _display: {
+        type: typeLabels[suggestionType],
+        songName,
+        summary: getSuggestionSummary(suggestionType)
+      }
+    };
+
+    // Add to pending list
+    setPendingSuggestions(prev => [...prev, { ...payload, _tempId: Date.now() }]);
+    resetForm();
+    showMsg('✅ Added to list! Add more or submit all.');
+  };
+
+  // Get a short summary of the suggestion for display
+  const getSuggestionSummary = (type) => {
+    switch(type) {
+      case 'new_song': return title.trim();
+      case 'new_version': return versionLabel.trim();
+      case 'media': return mediaLabel.trim() || mediaUrl.trim().substring(0, 30) + '...';
+      case 'note': return noteContent.trim().substring(0, 40) + (noteContent.length > 40 ? '...' : '');
+      case 'edit': return `${fieldName}: ${suggestedValue.trim().substring(0, 30)}`;
+      case 'add_alias': return aliasTitle.trim();
+      case 'add_flag': return `${flagType}: ${flagNotes.trim().substring(0, 30)}`;
+      default: return '';
+    }
+  };
+
+  // Remove from pending list
+  const removePending = (tempId) => {
+    setPendingSuggestions(prev => prev.filter(p => p._tempId !== tempId));
+  };
+
+  // Submit all pending suggestions
+  const submitAllSuggestions = async () => {
+    if (pendingSuggestions.length === 0) {
+      showMsg('❌ No suggestions to submit');
+      return;
+    }
+
+    setSubmitting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const suggestion of pendingSuggestions) {
+      // Remove display fields before submitting
+      const { _display, _tempId, ...payload } = suggestion;
+      
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data[0]) {
+          setMySuggestions(prev => [data[0], ...prev]);
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (error) {
+        console.error('Error submitting:', error);
+        failCount++;
+      }
+    }
+
+    setPendingSuggestions([]);
+    setSubmitting(false);
+    
+    if (failCount === 0) {
+      showMsg(`✅ All ${successCount} suggestion(s) submitted!`);
+    } else {
+      showMsg(`⚠️ ${successCount} submitted, ${failCount} failed`);
+    }
+  };
+
+  // Submit single suggestion immediately (legacy behavior)
+  const submitSingleSuggestion = async () => {
     if (!user) return;
     
     // Validation
@@ -493,10 +633,64 @@ export default function Suggest() {
           <label style={s.label}>Why are you suggesting this? (optional)</label>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Any additional context..." style={{ ...s.textarea, minHeight: '80px' }} />
 
-          <button onClick={submitSuggestion} disabled={submitting} style={{ ...s.btn, opacity: submitting ? 0.5 : 1 }}>
-            {submitting ? 'Submitting...' : 'Submit Suggestion'}
-          </button>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button onClick={submitSuggestion} disabled={submitting} style={{ ...s.btn, opacity: submitting ? 0.5 : 1 }}>
+              ➕ Add to List
+            </button>
+            <button onClick={submitSingleSuggestion} disabled={submitting} style={{ ...s.btnSec, opacity: submitting ? 0.5 : 1 }}>
+              {submitting ? 'Submitting...' : 'Submit Just This One'}
+            </button>
+          </div>
         </div>
+
+        {/* Pending Suggestions List */}
+        {pendingSuggestions.length > 0 && (
+          <div style={{ ...s.card, background: '#1e3a2e', border: '1px solid #22c55e40' }}>
+            <h2 style={{ ...s.cardTitle, color: '#22c55e' }}>📋 Ready to Submit ({pendingSuggestions.length})</h2>
+            <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1rem' }}>
+              These suggestions will be submitted together when you click "Submit All"
+            </p>
+            
+            {pendingSuggestions.map((p, idx) => (
+              <div key={p._tempId} style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '0.75rem',
+                background: '#0f172a',
+                borderRadius: '0.5rem',
+                marginBottom: '0.5rem'
+              }}>
+                <div>
+                  <span style={{ color: '#22c55e', fontWeight: 'bold' }}>{p._display?.type}</span>
+                  {p._display?.songName && <span style={{ color: '#94a3b8' }}> for "{p._display.songName}"</span>}
+                  {p._display?.summary && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>{p._display.summary}</div>}
+                </div>
+                <button 
+                  onClick={() => removePending(p._tempId)}
+                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1.2rem' }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            
+            <button 
+              onClick={submitAllSuggestions} 
+              disabled={submitting}
+              style={{ 
+                ...s.btn, 
+                width: '100%', 
+                marginTop: '1rem',
+                background: '#22c55e',
+                opacity: submitting ? 0.5 : 1
+              }}
+            >
+              {submitting ? 'Submitting...' : `🚀 Submit All ${pendingSuggestions.length} Suggestion(s)`}
+            </button>
+          </div>
+        )}
 
         {/* My Suggestions */}
         <div style={s.card}>
