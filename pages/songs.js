@@ -57,6 +57,7 @@ export default function Songs() {
   const [suggestEditField, setSuggestEditField] = useState('author');
   const [suggestEditValue, setSuggestEditValue] = useState('');
   const [suggestReason, setSuggestReason] = useState('');
+  const [suggestSourceUrl, setSuggestSourceUrl] = useState('');
 
   const [versionAttrs, setVersionAttrs] = useState([]);
   const [selectedVersionId, setSelectedVersionId] = useState(null);
@@ -431,6 +432,7 @@ export default function Songs() {
     setSuggestEditField('author');
     setSuggestEditValue('');
     setSuggestReason('');
+    setSuggestSourceUrl('');
   };
 
   const submitSuggestion = async () => {
@@ -480,6 +482,7 @@ export default function Songs() {
       current_value: null,
       suggested_value: suggestType === 'edit_info' ? suggestEditValue.trim() : null,
       reason: suggestReason.trim() || null,
+      source_url: suggestSourceUrl.trim() || null,
       created_by: user.id,
       status: 'pending'
     };
@@ -1522,10 +1525,16 @@ export default function Songs() {
                   </div>
                 )}
 
-                {/* REASON (common to all) */}
+                {/* SOURCE URL (common to all) */}
                 <div style={{ marginTop: '1rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Why are you suggesting this? (optional)</label>
-                  <textarea value={suggestReason} onChange={(e) => setSuggestReason(e.target.value)} placeholder="Any additional context..." style={{ ...s.input, minHeight: '60px' }} />
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Where did you find this info? (optional)</label>
+                  <input type="text" value={suggestSourceUrl} onChange={(e) => setSuggestSourceUrl(e.target.value)} placeholder="Link to Wikipedia, camp website, etc." style={s.input} />
+                </div>
+
+                {/* REASON (common to all) */}
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Additional context (optional)</label>
+                  <textarea value={suggestReason} onChange={(e) => setSuggestReason(e.target.value)} placeholder="Anything else you want to share..." style={{ ...s.input, minHeight: '60px' }} />
                 </div>
 
                 {/* SUBMIT BUTTON */}
