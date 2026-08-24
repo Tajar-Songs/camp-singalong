@@ -42,6 +42,21 @@ export default function Songs() {
   const [suggestType, setSuggestType] = useState(''); // 'new_version', 'edit_info', 'add_media', 'add_note', 'add_alias', 'add_flag'
   const [suggestExpanded, setSuggestExpanded] = useState(false);
   const [suggestSubmitting, setSuggestSubmitting] = useState(false);
+  
+  // Suggestion form fields
+  const [suggestVersionLabel, setSuggestVersionLabel] = useState('');
+  const [suggestLyrics, setSuggestLyrics] = useState('');
+  const [suggestMediaType, setSuggestMediaType] = useState('youtube');
+  const [suggestMediaUrl, setSuggestMediaUrl] = useState('');
+  const [suggestMediaLabel, setSuggestMediaLabel] = useState('');
+  const [suggestNoteType, setSuggestNoteType] = useState('history');
+  const [suggestNoteContent, setSuggestNoteContent] = useState('');
+  const [suggestAlias, setSuggestAlias] = useState('');
+  const [suggestFlagType, setSuggestFlagType] = useState('content_warning');
+  const [suggestFlagNotes, setSuggestFlagNotes] = useState('');
+  const [suggestEditField, setSuggestEditField] = useState('author');
+  const [suggestEditValue, setSuggestEditValue] = useState('');
+  const [suggestReason, setSuggestReason] = useState('');
 
   const [versionAttrs, setVersionAttrs] = useState([]);
   const [selectedVersionId, setSelectedVersionId] = useState(null);
@@ -136,9 +151,19 @@ export default function Songs() {
       const entriesRes = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers: getAuthHeaders(false) });
       const entriesData = await entriesRes.json();
       
-      // Load tags
-      const tagsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers: getAuthHeaders(false) });
-      const tagsData = await tagsRes.json();
+      // Load tag definitions
+      const tagDefsRes = await fetch(`${SUPABASE_URL}/rest/v1/tags?select=*`, { headers: getAuthHeaders(false) });
+      const tagDefsData = await tagDefsRes.json();
+      
+      // Load song-tag associations
+      const songTagsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers: getAuthHeaders(false) });
+      const songTagsData = await songTagsRes.json();
+      
+      // Build tag lookup map
+      const tagMap = {};
+      if (Array.isArray(tagDefsData)) {
+        tagDefsData.forEach(t => { tagMap[t.id] = t.name; });
+      }
       
       // Load aliases
       const aliasesRes = await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers: getAuthHeaders(false) });
@@ -163,11 +188,13 @@ export default function Songs() {
       // Enrich songs with songbooks, tags, and aliases
       const enrichedSongs = (Array.isArray(songsData) ? songsData : []).map(song => {
         const songEntries = (Array.isArray(entriesData) ? entriesData : []).filter(e => e.song_id === song.id);
-        const songTags = (Array.isArray(tagsData) ? tagsData : []).filter(t => t.song_id === song.id).map(t => t.tag);
+        // Get tag names by looking up tag_ids in tagMap
+        const songTagIds = (Array.isArray(songTagsData) ? songTagsData : []).filter(st => st.song_id === song.id).map(st => st.tag_id);
+        const songTagNames = songTagIds.map(tid => tagMap[tid]).filter(Boolean);
         const songAliasesList = (Array.isArray(aliasesData) ? aliasesData : []).filter(a => a.song_id === song.id).map(a => a.alias_title);
         return {
           ...song,
-          tags: songTags,
+          tags: songTagNames,
           aliases: songAliasesList,
           songbooks: songEntries.map(e => ({
             id: e.songbook_id,
@@ -388,6 +415,96 @@ export default function Songs() {
   const removePersonalTag = (songId, tag) => {
     const current = userPrefs[songId]?.personal_tags || [];
     savePreference(songId, { personal_tags: current.filter(t => t !== tag) });
+  };
+
+  const resetSuggestForm = () => {
+    setSuggestVersionLabel('');
+    setSuggestLyrics('');
+    setSuggestMediaType('youtube');
+    setSuggestMediaUrl('');
+    setSuggestMediaLabel('');
+    setSuggestNoteType('history');
+    setSuggestNoteContent('');
+    setSuggestAlias('');
+    setSuggestFlagType('content_warning');
+    setSuggestFlagNotes('');
+    setSuggestEditField('author');
+    setSuggestEditValue('');
+    setSuggestReason('');
+  };
+
+  const submitSuggestion = async () => {
+    if (!user || !selectedSong) return;
+    
+    // Validation
+    if (suggestType === 'new_version' && !suggestVersionLabel.trim()) {
+      showMessage('❌ Please enter a version label');
+      return;
+    }
+    if (suggestType === 'add_media' && !suggestMediaUrl.trim()) {
+      showMessage('❌ Please enter a media URL');
+      return;
+    }
+    if (suggestType === 'add_note' && !suggestNoteContent.trim()) {
+      showMessage('❌ Please enter note content');
+      return;
+    }
+    if (suggestType === 'add_alias' && !suggestAlias.trim()) {
+      showMessage('❌ Please enter the alternate name');
+      return;
+    }
+    if (suggestType === 'add_flag' && !suggestFlagNotes.trim()) {
+      showMessage('❌ Please describe the flag');
+      return;
+    }
+    if (suggestType === 'edit_info' && !suggestEditValue.trim()) {
+      showMessage('❌ Please enter the suggested value');
+      return;
+    }
+
+    setSuggestSubmitting(true);
+
+    const payload = {
+      suggestion_type: suggestType === 'edit_info' ? 'edit' : suggestType,
+      song_id: selectedSong.id,
+      version_id: null,
+      title: suggestType === 'add_alias' ? suggestAlias.trim() : null,
+      version_label: suggestType === 'new_version' ? suggestVersionLabel.trim() : null,
+      lyrics_content: suggestType === 'new_version' ? suggestLyrics.trim() || null : null,
+      media_type: suggestType === 'add_media' ? suggestMediaType : null,
+      media_url: suggestType === 'add_media' ? suggestMediaUrl.trim() : null,
+      media_label: suggestType === 'add_media' ? suggestMediaLabel.trim() || null : null,
+      note_content: suggestType === 'add_note' ? suggestNoteContent.trim() : (suggestType === 'add_flag' ? suggestFlagNotes.trim() : null),
+      note_type: suggestType === 'add_note' ? suggestNoteType : (suggestType === 'add_flag' ? suggestFlagType : null),
+      field_name: suggestType === 'edit_info' ? suggestEditField : null,
+      current_value: null,
+      suggested_value: suggestType === 'edit_info' ? suggestEditValue.trim() : null,
+      reason: suggestReason.trim() || null,
+      created_by: user.id,
+      status: 'pending'
+    };
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      
+      if (res.ok) {
+        showMessage('✅ Suggestion submitted! Thanks for contributing.');
+        resetSuggestForm();
+        setSuggestType('');
+        setShowSuggestModal(false);
+      } else {
+        showMessage('❌ Failed to submit suggestion');
+      }
+    } catch (error) {
+      console.error('Error submitting suggestion:', error);
+      showMessage('❌ Failed to submit suggestion');
+    }
+    
+    setSuggestSubmitting(false);
   };
 
   const setVersionFamiliarity = async (versionId, familiarity) => {
@@ -739,18 +856,92 @@ export default function Songs() {
         {/* Song Detail Panel */}
         {selectedSong && (
           <div style={s.main}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>{selectedSong.title}</h2>
-                <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
-                  {selectedSong.songbooks?.map(sb => (
-                    <span key={sb.id} style={{ marginRight: '1rem' }}>{sb.name}: {sb.page}</span>
-                  ))}
-                </div>
-              </div>
+            {/* Header with close button */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{selectedSong.title}</h2>
               <button style={s.btnSec} onClick={() => setSelectedSong(null)}>×</button>
             </div>
+
+            {/* Quick metadata row - aliases */}
+            {selectedSong.aliases && selectedSong.aliases.length > 0 && (
+              <div style={{ fontSize: '0.875rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+                <em>Also known as: {selectedSong.aliases.join(', ')}</em>
+              </div>
+            )}
+
+            {/* Prominent info cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+              {/* Songbooks card */}
+              {selectedSong.songbooks && selectedSong.songbooks.length > 0 && (
+                <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}>📚 Songbooks</div>
+                  {selectedSong.songbooks.map((sb, idx) => (
+                    <div key={idx} style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                      <span style={{ fontWeight: '500' }}>{sb.name}</span>
+                      <span style={{ color: '#94a3b8', marginLeft: '0.5rem' }}>
+                        {sb.section && `§${sb.section}`}
+                        {sb.page && ` p.${sb.page}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Tags card */}
+              {selectedSong.tags && selectedSong.tags.length > 0 && (
+                <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}>🏷️ Tags</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                    {selectedSong.tags.map(tag => (
+                      <span key={tag} style={{ 
+                        background: '#3b82f620', 
+                        color: '#3b82f6',
+                        padding: '0.2rem 0.5rem', 
+                        borderRadius: '0.25rem', 
+                        fontSize: '0.75rem'
+                      }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Groups card */}
+              {songGroups.length > 0 && (
+                <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}>🎭 Song Groups</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                    {songGroups.map(membership => {
+                      const group = allGroups.find(g => g.id === membership.group_id);
+                      return group ? (
+                        <span key={membership.id} style={{ 
+                          background: '#6366f120', 
+                          color: '#a5b4fc',
+                          padding: '0.2rem 0.5rem', 
+                          borderRadius: '0.25rem', 
+                          fontSize: '0.75rem'
+                        }}>
+                          {group.group_name}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Flags/Warnings */}
+            {songFlags.length > 0 && (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f59e0b15', border: '1px solid #f59e0b30', borderRadius: '0.5rem' }}>
+                <div style={{ fontWeight: 'bold', color: '#f59e0b', marginBottom: '0.25rem', fontSize: '0.8rem' }}>⚠️ Flags</div>
+                {songFlags.map(f => (
+                  <div key={f.id} style={{ fontSize: '0.85rem' }}>
+                    <span style={{ fontWeight: '500' }}>{f.flag_type}:</span> {f.flag_notes || 'No details'}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Personal Actions - only for logged in users */}
             {user ? (
@@ -1044,107 +1235,20 @@ export default function Songs() {
 
             {activeTab === 'info' && (
               <div>
-                {/* Flags/Warnings at top if any */}
-                {songFlags.length > 0 && (
-                  <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f59e0b15', border: '1px solid #f59e0b30', borderRadius: '0.5rem' }}>
-                    <div style={{ fontWeight: 'bold', color: '#f59e0b', marginBottom: '0.5rem', fontSize: '0.875rem' }}>⚠️ Flags</div>
-                    {songFlags.map(f => (
-                      <div key={f.id} style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
-                        <span style={{ fontWeight: '500' }}>{f.flag_type}:</span> {f.flag_notes || 'No details'}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Songbooks - which books contain this song */}
-                {selectedSong.songbooks && selectedSong.songbooks.length > 0 && (
-                  <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>📚 Found in Songbooks</div>
-                    {selectedSong.songbooks.map((sb, idx) => (
-                      <div key={idx} style={{ fontSize: '0.875rem', marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontWeight: '500' }}>{sb.name}</span>
-                        <span style={{ color: '#94a3b8' }}>
-                          {sb.section && `Section ${sb.section}`}
-                          {sb.section && sb.page && ' · '}
-                          {sb.page && `Page ${sb.page}`}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Song Groups */}
-                {songGroups.length > 0 && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🎭 Part of Groups</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                      {songGroups.map(membership => {
-                        const group = allGroups.find(g => g.id === membership.group_id);
-                        return group ? (
-                          <span key={membership.id} style={{ 
-                            background: '#6366f120', 
-                            color: '#a5b4fc',
-                            border: '1px solid #6366f140',
-                            padding: '0.25rem 0.5rem', 
-                            borderRadius: '0.25rem', 
-                            fontSize: '0.75rem'
-                          }}>
-                            {group.group_name}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {/* Basic info */}
-                {selectedSong.author && <div style={s.infoRow}><span style={s.infoLabel}>Author:</span> {selectedSong.author}</div>}
-                {selectedSong.composer && <div style={s.infoRow}><span style={s.infoLabel}>Composer:</span> {selectedSong.composer}</div>}
-                {selectedSong.origin && <div style={s.infoRow}><span style={s.infoLabel}>Origin:</span> {selectedSong.origin}</div>}
-                {selectedSong.year_written && <div style={s.infoRow}><span style={s.infoLabel}>Year:</span> {selectedSong.year_written}</div>}
-                {selectedSong.tune_of && <div style={s.infoRow}><span style={s.infoLabel}>Tune of:</span> {selectedSong.tune_of}</div>}
-                {selectedSong.original_language && <div style={s.infoRow}><span style={s.infoLabel}>Language:</span> {selectedSong.original_language}</div>}
-
-                {/* Aliases */}
-                {songAliases.length > 0 && (
-                  <div style={{ ...s.infoRow, alignItems: 'flex-start' }}>
-                    <span style={s.infoLabel}>Also known as:</span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                      {songAliases.map(a => (
-                        <span key={a.id} style={{ background: '#334155', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.8rem' }}>
-                          {a.alias_title}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* System Tags */}
-                {selectedSong.tags && selectedSong.tags.length > 0 && (
-                  <div style={{ marginTop: '1rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🏷️ Categories</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                      {selectedSong.tags.map(tag => (
-                        <span key={tag} style={{ 
-                          background: '#3b82f620', 
-                          color: '#3b82f6',
-                          border: '1px solid #3b82f640',
-                          padding: '0.25rem 0.5rem', 
-                          borderRadius: '0.25rem', 
-                          fontSize: '0.75rem',
-                          fontWeight: '500'
-                        }}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div style={{ marginBottom: '1rem' }}>
+                  {selectedSong.author && <div style={s.infoRow}><span style={s.infoLabel}>Author:</span> {selectedSong.author}</div>}
+                  {selectedSong.composer && <div style={s.infoRow}><span style={s.infoLabel}>Composer:</span> {selectedSong.composer}</div>}
+                  {selectedSong.origin && <div style={s.infoRow}><span style={s.infoLabel}>Origin:</span> {selectedSong.origin}</div>}
+                  {selectedSong.year_written && <div style={s.infoRow}><span style={s.infoLabel}>Year:</span> {selectedSong.year_written}</div>}
+                  {selectedSong.tune_of && <div style={s.infoRow}><span style={s.infoLabel}>Tune of:</span> {selectedSong.tune_of}</div>}
+                  {selectedSong.original_language && <div style={s.infoRow}><span style={s.infoLabel}>Language:</span> {selectedSong.original_language}</div>}
+                </div>
 
                 {/* Personal Tags (for logged-in users) */}
                 {user && pref?.personal_tags && pref.personal_tags.length > 0 && (
                   <div style={{ marginTop: '1rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🏷️ Your Tags</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🏷️ Your Personal Tags</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                       {pref.personal_tags.map(tag => (
                         <span key={tag} style={{ 
@@ -1170,10 +1274,8 @@ export default function Songs() {
                 )}
 
                 {!selectedSong.author && !selectedSong.composer && !selectedSong.origin && 
-                 !selectedSong.year_written && !selectedSong.tune_of && !selectedSong.original_language &&
-                 selectedSong.tags?.length === 0 && songAliases.length === 0 && 
-                 selectedSong.songbooks?.length === 0 && songGroups.length === 0 && songFlags.length === 0 && (
-                  <div style={s.emptyState}>No additional info available</div>
+                 !selectedSong.year_written && !selectedSong.tune_of && !selectedSong.original_language && (
+                  <div style={s.emptyState}>No additional info available yet</div>
                 )}
               </div>
             )}
@@ -1289,28 +1391,157 @@ export default function Songs() {
               </div>
             ) : (
               <div>
-                <button onClick={() => setSuggestType('')} style={{ ...s.btnSec, marginBottom: '1rem', fontSize: '0.8rem' }}>
+                <button onClick={() => { setSuggestType(''); resetSuggestForm(); }} style={{ ...s.btnSec, marginBottom: '1rem', fontSize: '0.8rem' }}>
                   ← Back to options
                 </button>
-                
-                <p style={{ color: '#94a3b8', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                  This will open the full suggestion form with "{selectedSong.title}" pre-selected.
-                </p>
-                
-                <Link 
-                  href={`/suggest?song_id=${selectedSong.id}&type=${suggestType}`}
-                  style={{ 
-                    display: 'inline-block',
-                    background: '#22c55e', 
-                    color: '#fff', 
-                    padding: '0.75rem 1.5rem', 
-                    borderRadius: '0.5rem', 
-                    textDecoration: 'none',
-                    fontWeight: '600'
-                  }}
-                >
-                  Continue to Suggestion Form →
-                </Link>
+
+                {/* NEW VERSION FORM */}
+                {suggestType === 'new_version' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Version Label *</label>
+                      <input type="text" value={suggestVersionLabel} onChange={(e) => setSuggestVersionLabel(e.target.value)} placeholder="e.g., Camp Tawonga version, Gender-neutral version" style={s.input} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Lyrics</label>
+                      <textarea value={suggestLyrics} onChange={(e) => setSuggestLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.input, minHeight: '200px', fontFamily: 'monospace' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* EDIT INFO FORM */}
+                {suggestType === 'edit_info' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>What needs editing?</label>
+                      <select value={suggestEditField} onChange={(e) => setSuggestEditField(e.target.value)} style={s.select}>
+                        <option value="author">Author</option>
+                        <option value="composer">Composer</option>
+                        <option value="origin">Origin</option>
+                        <option value="year_written">Year Written</option>
+                        <option value="tune_of">Tune Of</option>
+                        <option value="lyrics">Lyrics (correction)</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Suggested Value *</label>
+                      <textarea value={suggestEditValue} onChange={(e) => setSuggestEditValue(e.target.value)} placeholder="What it should say..." style={{ ...s.input, minHeight: '80px' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* ADD MEDIA FORM */}
+                {suggestType === 'add_media' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Media Type</label>
+                      <select value={suggestMediaType} onChange={(e) => setSuggestMediaType(e.target.value)} style={s.select}>
+                        <option value="youtube">YouTube</option>
+                        <option value="spotify">Spotify</option>
+                        <option value="soundcloud">SoundCloud</option>
+                        <option value="audio">Other Audio</option>
+                        <option value="video">Other Video</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>URL *</label>
+                      <input type="text" value={suggestMediaUrl} onChange={(e) => setSuggestMediaUrl(e.target.value)} placeholder="https://..." style={s.input} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Label (optional)</label>
+                      <input type="text" value={suggestMediaLabel} onChange={(e) => setSuggestMediaLabel(e.target.value)} placeholder="e.g., Official recording, Live at camp 2023" style={s.input} />
+                    </div>
+                  </div>
+                )}
+
+                {/* ADD NOTE FORM */}
+                {suggestType === 'add_note' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Note Type</label>
+                      <select value={suggestNoteType} onChange={(e) => setSuggestNoteType(e.target.value)} style={s.select}>
+                        <option value="history">History/Background</option>
+                        <option value="teaching">Teaching Tips</option>
+                        <option value="motions">Motions/Actions</option>
+                        <option value="performance">Performance Notes</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Note Content *</label>
+                      <textarea value={suggestNoteContent} onChange={(e) => setSuggestNoteContent(e.target.value)} placeholder="Share your knowledge..." style={{ ...s.input, minHeight: '120px' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* ADD ALIAS FORM */}
+                {suggestType === 'add_alias' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Alternate Name *</label>
+                      <input type="text" value={suggestAlias} onChange={(e) => setSuggestAlias(e.target.value)} placeholder="What else is this song called?" style={s.input} />
+                    </div>
+                  </div>
+                )}
+
+                {/* ADD FLAG FORM */}
+                {suggestType === 'add_flag' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Flag Type</label>
+                      <select value={suggestFlagType} onChange={(e) => setSuggestFlagType(e.target.value)} style={s.select}>
+                        <option value="content_warning">Content Warning</option>
+                        <option value="cultural_sensitivity">Cultural Sensitivity</option>
+                        <option value="outdated_language">Outdated Language</option>
+                        <option value="historical_context">Needs Historical Context</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Description *</label>
+                      <textarea value={suggestFlagNotes} onChange={(e) => setSuggestFlagNotes(e.target.value)} placeholder="Describe the issue or concern..." style={{ ...s.input, minHeight: '100px' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* REASON (common to all) */}
+                <div style={{ marginTop: '1rem' }}>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Why are you suggesting this? (optional)</label>
+                  <textarea value={suggestReason} onChange={(e) => setSuggestReason(e.target.value)} placeholder="Any additional context..." style={{ ...s.input, minHeight: '60px' }} />
+                </div>
+
+                {/* SUBMIT BUTTON */}
+                <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                  <button 
+                    onClick={submitSuggestion} 
+                    disabled={suggestSubmitting}
+                    style={{ 
+                      background: suggestSubmitting ? '#334155' : '#22c55e', 
+                      color: '#fff', 
+                      padding: '0.75rem 1.5rem', 
+                      borderRadius: '0.5rem', 
+                      border: 'none',
+                      cursor: suggestSubmitting ? 'not-allowed' : 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    {suggestSubmitting ? 'Submitting...' : 'Submit Suggestion'}
+                  </button>
+                  <Link 
+                    href={`/suggest?song_id=${selectedSong.id}&type=${suggestType}`}
+                    style={{ 
+                      color: '#94a3b8', 
+                      padding: '0.75rem', 
+                      fontSize: '0.8rem',
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    Open full form instead
+                  </Link>
+                </div>
+              </div>
+            )}
               </div>
             )}
           </div>
