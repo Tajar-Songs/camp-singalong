@@ -44,14 +44,9 @@ export default function Suggest() {
   const [versionLyrics, setVersionLyrics] = useState('');
   
   const [mediaItems, setMediaItems] = useState([{ type: 'youtube', url: '', label: '' }]);
-  
-  const [noteType, setNoteType] = useState('history');
-  const [noteContent, setNoteContent] = useState('');
-  
-  const [alias, setAlias] = useState('');
-  
-  const [flagType, setFlagType] = useState('content_warning');
-  const [flagNotes, setFlagNotes] = useState('');
+  const [noteItems, setNoteItems] = useState([{ type: 'history', content: '' }]);
+  const [aliasItems, setAliasItems] = useState([{ title: '' }]);
+  const [flagItems, setFlagItems] = useState([{ type: 'content_warning', notes: '' }]);
 
   // Common fields
   const [sourceUrl, setSourceUrl] = useState('');
@@ -138,13 +133,13 @@ export default function Suggest() {
     setTitle(''); setAuthor(''); setComposer(''); setYear(''); setOrigin(''); setTuneOf('');
     setVersionLabel(''); setVersionLyrics('');
     setMediaItems([{ type: 'youtube', url: '', label: '' }]);
-    setNoteType('history'); setNoteContent('');
-    setAlias('');
-    setFlagType('content_warning'); setFlagNotes('');
+    setNoteItems([{ type: 'history', content: '' }]);
+    setAliasItems([{ title: '' }]);
+    setFlagItems([{ type: 'content_warning', notes: '' }]);
     setSourceUrl(''); setReason('');
   };
 
-  // Add another media item
+  // Media helpers
   const addMediaItem = () => {
     setMediaItems([...mediaItems, { type: 'youtube', url: '', label: '' }]);
   };
@@ -156,9 +151,46 @@ export default function Suggest() {
   };
 
   const removeMediaItem = (index) => {
-    if (mediaItems.length > 1) {
-      setMediaItems(mediaItems.filter((_, i) => i !== index));
-    }
+    if (mediaItems.length > 1) setMediaItems(mediaItems.filter((_, i) => i !== index));
+  };
+
+  // Note helpers
+  const addNoteItem = () => {
+    setNoteItems([...noteItems, { type: 'history', content: '' }]);
+  };
+
+  const updateNoteItem = (index, field, value) => {
+    const updated = [...noteItems];
+    updated[index][field] = value;
+    setNoteItems(updated);
+  };
+
+  const removeNoteItem = (index) => {
+    if (noteItems.length > 1) setNoteItems(noteItems.filter((_, i) => i !== index));
+  };
+
+  // Alias helpers
+  const addAliasItem = () => {
+    setAliasItems([...aliasItems, { title: '' }]);
+  };
+
+  const updateAliasItem = (index, value) => {
+    const updated = [...aliasItems];
+    updated[index].title = value;
+    setAliasItems(updated);
+  };
+
+  const removeAliasItem = (index) => {
+    if (aliasItems.length > 1) setAliasItems(aliasItems.filter((_, i) => i !== index));
+  };
+
+  // Flag helpers
+  const addFlagItem = () => {
+    setFlagItems([...flagItems, { type: 'content_warning', notes: '' }]);
+  };
+
+  const removeFlagItem = (index) => {
+    if (flagItems.length > 1) setFlagItems(flagItems.filter((_, i) => i !== index));
   };
 
   // Generate UUID for batch
@@ -202,16 +234,16 @@ export default function Suggest() {
       showMsg('❌ Please enter at least one media URL');
       return;
     }
-    if (includeNote && !noteContent.trim()) {
-      showMsg('❌ Please enter note content');
+    if (includeNote && !noteItems.some(n => n.content.trim())) {
+      showMsg('❌ Please enter at least one note');
       return;
     }
-    if (includeAlias && !alias.trim()) {
-      showMsg('❌ Please enter the alternate name');
+    if (includeAlias && !aliasItems.some(a => a.title.trim())) {
+      showMsg('❌ Please enter at least one alternate name');
       return;
     }
-    if (includeFlag && !flagNotes.trim()) {
-      showMsg('❌ Please describe the flag');
+    if (includeFlag && !flagItems.some(f => f.notes.trim())) {
+      showMsg('❌ Please describe at least one flag');
       return;
     }
 
@@ -370,44 +402,56 @@ export default function Suggest() {
       });
     }
 
-    // Note
-    if (includeNote && noteContent.trim()) {
-      suggestions.push({
-        suggestion_type: 'note',
-        song_id: songId,
-        note_type: noteType,
-        note_content: noteContent.trim(),
-        source_url: sourceUrl.trim() || null,
-        reason: reason.trim() || null,
-        batch_id: batchId,
-        created_by: user.id
+    // Note items
+    if (includeNote) {
+      noteItems.forEach(n => {
+        if (n.content.trim()) {
+          suggestions.push({
+            suggestion_type: 'note',
+            song_id: songId,
+            note_type: n.type,
+            note_content: n.content.trim(),
+            source_url: sourceUrl.trim() || null,
+            reason: reason.trim() || null,
+            batch_id: batchId,
+            created_by: user.id
+          });
+        }
       });
     }
 
-    // Alias
-    if (includeAlias && alias.trim()) {
-      suggestions.push({
-        suggestion_type: 'add_alias',
-        song_id: songId,
-        title: alias.trim(),
-        source_url: sourceUrl.trim() || null,
-        reason: reason.trim() || null,
-        batch_id: batchId,
-        created_by: user.id
+    // Alias items
+    if (includeAlias) {
+      aliasItems.forEach(a => {
+        if (a.title.trim()) {
+          suggestions.push({
+            suggestion_type: 'add_alias',
+            song_id: songId,
+            title: a.title.trim(),
+            source_url: sourceUrl.trim() || null,
+            reason: reason.trim() || null,
+            batch_id: batchId,
+            created_by: user.id
+          });
+        }
       });
     }
 
-    // Flag
-    if (includeFlag && flagNotes.trim()) {
-      suggestions.push({
-        suggestion_type: 'add_flag',
-        song_id: songId,
-        note_type: flagType,
-        note_content: flagNotes.trim(),
-        source_url: sourceUrl.trim() || null,
-        reason: reason.trim() || null,
-        batch_id: batchId,
-        created_by: user.id
+    // Flag items
+    if (includeFlag) {
+      flagItems.forEach(f => {
+        if (f.notes.trim()) {
+          suggestions.push({
+            suggestion_type: 'add_flag',
+            song_id: songId,
+            note_type: f.type,
+            note_content: f.notes.trim(),
+            source_url: sourceUrl.trim() || null,
+            reason: reason.trim() || null,
+            batch_id: batchId,
+            created_by: user.id
+          });
+        }
       });
     }
 
@@ -622,11 +666,19 @@ export default function Suggest() {
 
               <label style={includeAlias ? s.checkboxActive : s.checkbox} onClick={() => setIncludeAlias(!includeAlias)}>
                 <input type="checkbox" checked={includeAlias} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>🏷️ Alternate Name</span>
+                <span>🏷️ Alternate Name(s)</span>
               </label>
               {includeAlias && (
                 <div style={s.fieldGroup}>
-                  <input type="text" value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Another name this song is known by" style={s.input} />
+                  {aliasItems.map((item, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: '0.5rem', marginBottom: idx < aliasItems.length - 1 ? '0.5rem' : 0 }}>
+                      <input type="text" value={item.title} onChange={(e) => updateAliasItem(idx, e.target.value)} placeholder="Another name this song is known by" style={{ ...s.input, flex: 1, marginBottom: 0 }} />
+                      {aliasItems.length > 1 && (
+                        <button onClick={() => removeAliasItem(idx)} style={{ ...s.btnSec, padding: '0.5rem 0.75rem' }}>×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button onClick={addAliasItem} style={{ ...s.btnSec, marginTop: '0.5rem' }}>+ Add Another Name</button>
                 </div>
               )}
 
@@ -676,40 +728,56 @@ export default function Suggest() {
               {/* Note */}
               <label style={includeNote ? s.checkboxActive : s.checkbox} onClick={() => setIncludeNote(!includeNote)}>
                 <input type="checkbox" checked={includeNote} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>📋 Note (history, teaching tips, etc.)</span>
+                <span>📋 Note(s) (history, teaching tips, etc.)</span>
               </label>
               {includeNote && (
                 <div style={s.fieldGroup}>
-                  <label style={{ ...s.label, marginTop: 0 }}>Note Type</label>
-                  <select value={noteType} onChange={(e) => setNoteType(e.target.value)} style={s.select}>
-                    <option value="history">History / Background</option>
-                    <option value="teaching">Teaching Tips</option>
-                    <option value="motions">Motions / Actions</option>
-                    <option value="performance">Performance Notes</option>
-                    <option value="other">Other</option>
-                  </select>
-                  <label style={s.label}>Content *</label>
-                  <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Share what you know..." style={s.textarea} />
+                  {noteItems.map((item, idx) => (
+                    <div key={idx} style={{ marginBottom: idx < noteItems.length - 1 ? '1rem' : 0, paddingBottom: idx < noteItems.length - 1 ? '1rem' : 0, borderBottom: idx < noteItems.length - 1 ? '1px solid #334155' : 'none' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <select value={item.type} onChange={(e) => updateNoteItem(idx, 'type', e.target.value)} style={{ ...s.select, flex: 1 }}>
+                          <option value="history">History / Background</option>
+                          <option value="teaching">Teaching Tips</option>
+                          <option value="motions">Motions / Actions</option>
+                          <option value="performance">Performance Notes</option>
+                          <option value="other">Other</option>
+                        </select>
+                        {noteItems.length > 1 && (
+                          <button onClick={() => removeNoteItem(idx)} style={{ ...s.btnSec, padding: '0.5rem 0.75rem' }}>×</button>
+                        )}
+                      </div>
+                      <textarea value={item.content} onChange={(e) => updateNoteItem(idx, 'content', e.target.value)} placeholder="Share what you know..." style={s.textarea} />
+                    </div>
+                  ))}
+                  <button onClick={addNoteItem} style={{ ...s.btnSec, marginTop: '0.5rem' }}>+ Add Another Note</button>
                 </div>
               )}
 
               {/* Flag */}
               <label style={includeFlag ? s.checkboxActive : s.checkbox} onClick={() => setIncludeFlag(!includeFlag)}>
                 <input type="checkbox" checked={includeFlag} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>⚠️ Flag an Issue</span>
+                <span>⚠️ Flag Issue(s)</span>
               </label>
               {includeFlag && (
                 <div style={s.fieldGroup}>
-                  <label style={{ ...s.label, marginTop: 0 }}>Flag Type</label>
-                  <select value={flagType} onChange={(e) => setFlagType(e.target.value)} style={s.select}>
-                    <option value="content_warning">Content Warning</option>
-                    <option value="cultural_sensitivity">Cultural Sensitivity</option>
-                    <option value="outdated_language">Outdated Language</option>
-                    <option value="historical_context">Needs Historical Context</option>
-                    <option value="other">Other</option>
-                  </select>
-                  <label style={s.label}>Description *</label>
-                  <textarea value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} placeholder="Describe the issue..." style={s.textarea} />
+                  {flagItems.map((item, idx) => (
+                    <div key={idx} style={{ marginBottom: idx < flagItems.length - 1 ? '1rem' : 0, paddingBottom: idx < flagItems.length - 1 ? '1rem' : 0, borderBottom: idx < flagItems.length - 1 ? '1px solid #334155' : 'none' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <select value={item.type} onChange={(e) => updateFlagItem(idx, 'type', e.target.value)} style={{ ...s.select, flex: 1 }}>
+                          <option value="content_warning">Content Warning</option>
+                          <option value="cultural_sensitivity">Cultural Sensitivity</option>
+                          <option value="outdated_language">Outdated Language</option>
+                          <option value="historical_context">Needs Historical Context</option>
+                          <option value="other">Other</option>
+                        </select>
+                        {flagItems.length > 1 && (
+                          <button onClick={() => removeFlagItem(idx)} style={{ ...s.btnSec, padding: '0.5rem 0.75rem' }}>×</button>
+                        )}
+                      </div>
+                      <textarea value={item.notes} onChange={(e) => updateFlagItem(idx, 'notes', e.target.value)} placeholder="Describe the issue..." style={s.textarea} />
+                    </div>
+                  ))}
+                  <button onClick={addFlagItem} style={{ ...s.btnSec, marginTop: '0.5rem' }}>+ Add Another Flag</button>
                 </div>
               )}
             </>
