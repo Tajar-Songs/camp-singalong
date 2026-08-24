@@ -1542,8 +1542,6 @@ export default function Songs() {
                 </div>
               </div>
             )}
-              </div>
-            )}
           </div>
         </div>
       )}
