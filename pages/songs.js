@@ -21,6 +21,8 @@ export default function Songs() {
   const [songMedia, setSongMedia] = useState([]);
   const [songAliases, setSongAliases] = useState([]);
   const [songFlags, setSongFlags] = useState([]);
+  const [songGroups, setSongGroups] = useState([]);
+  const [allGroups, setAllGroups] = useState([]);
 
   // UI state
   const [selectedSong, setSelectedSong] = useState(null);
@@ -147,6 +149,11 @@ export default function Songs() {
       const allVersionsData = await allVersionsRes.json();
       setAllVersions(Array.isArray(allVersionsData) ? allVersionsData : []);
 
+      // Load song groups
+      const groupsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*`, { headers: getAuthHeaders(false) });
+      const groupsData = await groupsRes.json();
+      setAllGroups(Array.isArray(groupsData) ? groupsData : []);
+
       // Build songbook map
       const songbookMap = {};
       if (Array.isArray(songbooksData)) {
@@ -233,6 +240,13 @@ export default function Songs() {
         const flagsData = await flagsRes.json();
         setSongFlags(Array.isArray(flagsData) ? flagsData : []);
       } catch { setSongFlags([]); }
+
+      // Load group memberships
+      try {
+        const membersRes = await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?song_id=eq.${songId}&select=*`, { headers: getAuthHeaders(false) });
+        const membersData = await membersRes.json();
+        setSongGroups(Array.isArray(membersData) ? membersData : []);
+      } catch { setSongGroups([]); }
 
     } catch (error) {
       console.error('Error loading song details:', error);
@@ -1042,6 +1056,47 @@ export default function Songs() {
                   </div>
                 )}
 
+                {/* Songbooks - which books contain this song */}
+                {selectedSong.songbooks && selectedSong.songbooks.length > 0 && (
+                  <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>📚 Found in Songbooks</div>
+                    {selectedSong.songbooks.map((sb, idx) => (
+                      <div key={idx} style={{ fontSize: '0.875rem', marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: '500' }}>{sb.name}</span>
+                        <span style={{ color: '#94a3b8' }}>
+                          {sb.section && `Section ${sb.section}`}
+                          {sb.section && sb.page && ' · '}
+                          {sb.page && `Page ${sb.page}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Song Groups */}
+                {songGroups.length > 0 && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🎭 Part of Groups</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      {songGroups.map(membership => {
+                        const group = allGroups.find(g => g.id === membership.group_id);
+                        return group ? (
+                          <span key={membership.id} style={{ 
+                            background: '#6366f120', 
+                            color: '#a5b4fc',
+                            border: '1px solid #6366f140',
+                            padding: '0.25rem 0.5rem', 
+                            borderRadius: '0.25rem', 
+                            fontSize: '0.75rem'
+                          }}>
+                            {group.group_name}
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Basic info */}
                 {selectedSong.author && <div style={s.infoRow}><span style={s.infoLabel}>Author:</span> {selectedSong.author}</div>}
                 {selectedSong.composer && <div style={s.infoRow}><span style={s.infoLabel}>Composer:</span> {selectedSong.composer}</div>}
@@ -1114,7 +1169,10 @@ export default function Songs() {
                   </div>
                 )}
 
-                {!selectedSong.author && !selectedSong.composer && !selectedSong.origin && selectedSong.tags?.length === 0 && songAliases.length === 0 && (
+                {!selectedSong.author && !selectedSong.composer && !selectedSong.origin && 
+                 !selectedSong.year_written && !selectedSong.tune_of && !selectedSong.original_language &&
+                 selectedSong.tags?.length === 0 && songAliases.length === 0 && 
+                 selectedSong.songbooks?.length === 0 && songGroups.length === 0 && songFlags.length === 0 && (
                   <div style={s.emptyState}>No additional info available</div>
                 )}
               </div>
