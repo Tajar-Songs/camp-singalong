@@ -13,6 +13,7 @@ export default function App({ Component, pageProps }) {
   const [userProfile, setUserProfile] = useState(null);
   const [checking, setChecking] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -37,7 +38,19 @@ export default function App({ Component, pageProps }) {
   // Close nav when route changes
   useEffect(() => {
     setNavOpen(false);
+    setAdminMenuOpen(false);
   }, [router.pathname]);
+
+  // Close admin menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (adminMenuOpen && !e.target.closest('.admin-dropdown')) {
+        setAdminMenuOpen(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [adminMenuOpen]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -127,22 +140,26 @@ export default function App({ Component, pageProps }) {
   const isAdmin = userProfile?.role === 'admin';
   const currentPath = router.pathname;
 
-  // Navigation items - only compute when we have data
-  const navItems = [
+  // Navigation items - split into user and admin
+  const userNavItems = [
     { href: '/', label: 'Sing Together', show: true },
     { href: '/songs', label: 'Songs', show: true },
     { href: '/docs', label: 'Docs', show: true },
     { href: '/ideas', label: 'Feature Requests', show: true },
-    { href: '/suggest', label: 'Song Suggestions', show: !!user },
+    { href: '/suggest', label: 'Suggest', show: !!user },
     { href: '/profile', label: 'Profile', show: !!user },
-    { href: '/admin', label: 'Admin', show: isAdmin },
-    { href: '/suggestions', label: 'Suggestions', show: isAdmin },
-    { href: '/tags', label: 'Tags', show: isAdmin },
-    { href: '/reports', label: 'Reports', show: isAdmin },
-    { href: '/users', label: 'Users', show: isAdmin },
   ];
 
-  const visibleNavItems = navItems.filter(item => item.show);
+  const adminNavItems = [
+    { href: '/admin', label: 'Songs' },
+    { href: '/suggestions', label: 'Suggestions' },
+    { href: '/tags', label: 'Tags' },
+    { href: '/reports', label: 'Reports' },
+    { href: '/users', label: 'Users' },
+  ];
+
+  const visibleUserItems = userNavItems.filter(item => item.show);
+  const isOnAdminPage = adminNavItems.some(item => currentPath === item.href);
 
   // Styles
   const navStyle = {
@@ -191,12 +208,67 @@ export default function App({ Component, pageProps }) {
               </Link>
               
               {/* Desktop nav links */}
-              <div className="nav-desktop" style={{ display: 'flex', gap: '0.25rem' }}>
-                {visibleNavItems.map(item => (
+              <div className="nav-desktop" style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                {visibleUserItems.map(item => (
                   <Link key={item.href} href={item.href} style={linkStyle(currentPath === item.href)}>
                     {item.label}
                   </Link>
                 ))}
+                
+                {/* Admin dropdown */}
+                {isAdmin && (
+                  <div className="admin-dropdown" style={{ position: 'relative', marginLeft: '0.5rem' }}>
+                    <button
+                      onClick={() => setAdminMenuOpen(!adminMenuOpen)}
+                      style={{
+                        ...linkStyle(isOnAdminPage),
+                        background: isOnAdminPage ? '#7c3aed' : 'transparent',
+                        border: '1px solid #7c3aed',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      ⚙️ Admin {adminMenuOpen ? '▲' : '▼'}
+                    </button>
+                    
+                    {adminMenuOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: '0.25rem',
+                        background: '#1e293b',
+                        border: '1px solid #334155',
+                        borderRadius: '0.5rem',
+                        padding: '0.5rem',
+                        minWidth: '150px',
+                        zIndex: 10000,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      }}>
+                        {adminNavItems.map(item => (
+                          <Link 
+                            key={item.href} 
+                            href={item.href}
+                            onClick={() => setAdminMenuOpen(false)}
+                            style={{
+                              display: 'block',
+                              padding: '0.5rem 0.75rem',
+                              color: currentPath === item.href ? '#7c3aed' : '#e2e8f0',
+                              textDecoration: 'none',
+                              borderRadius: '0.25rem',
+                              fontSize: '0.875rem',
+                              background: currentPath === item.href ? '#7c3aed20' : 'transparent',
+                            }}
+                          >
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -269,7 +341,7 @@ export default function App({ Component, pageProps }) {
               flexDirection: 'column',
               gap: '0.25rem',
             }}>
-              {visibleNavItems.map(item => (
+              {visibleUserItems.map(item => (
                 <Link key={item.href} href={item.href} style={{
                   ...linkStyle(currentPath === item.href),
                   padding: '0.75rem 1rem',
@@ -277,6 +349,37 @@ export default function App({ Component, pageProps }) {
                   {item.label}
                 </Link>
               ))}
+              
+              {/* Admin section in mobile */}
+              {isAdmin && (
+                <>
+                  <div style={{ 
+                    borderTop: '1px solid #334155', 
+                    marginTop: '0.5rem', 
+                    paddingTop: '0.5rem',
+                    marginBottom: '0.25rem',
+                  }}>
+                    <span style={{ 
+                      fontSize: '0.7rem', 
+                      color: '#7c3aed', 
+                      textTransform: 'uppercase', 
+                      fontWeight: 'bold',
+                      padding: '0 1rem',
+                    }}>
+                      ⚙️ Admin
+                    </span>
+                  </div>
+                  {adminNavItems.map(item => (
+                    <Link key={item.href} href={item.href} style={{
+                      ...linkStyle(currentPath === item.href),
+                      padding: '0.75rem 1rem',
+                      background: currentPath === item.href ? '#7c3aed20' : 'transparent',
+                    }}>
+                      {item.label}
+                    </Link>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </nav>
