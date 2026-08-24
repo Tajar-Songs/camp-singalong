@@ -12,51 +12,50 @@ export default function Suggest() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Data for dropdowns
+  // Data
   const [songs, setSongs] = useState([]);
   const [versions, setVersions] = useState([]);
 
-  // Form state
-  const [suggestionType, setSuggestionType] = useState('new_song');
+  // Mode: 'new_song' or 'existing_song'
+  const [mode, setMode] = useState('existing_song');
   const [selectedSongId, setSelectedSongId] = useState('');
-  const [selectedVersionId, setSelectedVersionId] = useState('');
 
-  // New song fields
+  // What to include (checkboxes)
+  const [includeAuthor, setIncludeAuthor] = useState(false);
+  const [includeComposer, setIncludeComposer] = useState(false);
+  const [includeYear, setIncludeYear] = useState(false);
+  const [includeOrigin, setIncludeOrigin] = useState(false);
+  const [includeTuneOf, setIncludeTuneOf] = useState(false);
+  const [includeVersion, setIncludeVersion] = useState(false);
+  const [includeMedia, setIncludeMedia] = useState(false);
+  const [includeNote, setIncludeNote] = useState(false);
+  const [includeAlias, setIncludeAlias] = useState(false);
+  const [includeFlag, setIncludeFlag] = useState(false);
+
+  // Field values
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [composer, setComposer] = useState('');
-  const [lyricsText, setLyricsText] = useState('');
-
-  // New version fields
+  const [year, setYear] = useState('');
+  const [origin, setOrigin] = useState('');
+  const [tuneOf, setTuneOf] = useState('');
+  
   const [versionLabel, setVersionLabel] = useState('');
-  const [lyricsContent, setLyricsContent] = useState('');
-
-  // Media fields
-  const [mediaType, setMediaType] = useState('youtube');
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [mediaLabel, setMediaLabel] = useState('');
-
-  // Note fields
-  const [noteContent, setNoteContent] = useState('');
+  const [versionLyrics, setVersionLyrics] = useState('');
+  
+  const [mediaItems, setMediaItems] = useState([{ type: 'youtube', url: '', label: '' }]);
+  
   const [noteType, setNoteType] = useState('history');
-
-  // Edit fields
-  const [fieldName, setFieldName] = useState('title');
-  const [currentValue, setCurrentValue] = useState('');
-  const [suggestedValue, setSuggestedValue] = useState('');
-
-  // Alias fields
-  const [aliasTitle, setAliasTitle] = useState('');
-
-  // Flag fields
+  const [noteContent, setNoteContent] = useState('');
+  
+  const [alias, setAlias] = useState('');
+  
   const [flagType, setFlagType] = useState('content_warning');
   const [flagNotes, setFlagNotes] = useState('');
 
-  // Common
+  // Common fields
+  const [sourceUrl, setSourceUrl] = useState('');
   const [reason, setReason] = useState('');
-
-  // Multi-suggestion support
-  const [pendingSuggestions, setPendingSuggestions] = useState([]);
 
   // My suggestions
   const [mySuggestions, setMySuggestions] = useState([]);
@@ -72,24 +71,13 @@ export default function Suggest() {
   useEffect(() => { checkAuth(); }, []);
   useEffect(() => { if (selectedSongId) loadVersions(selectedSongId); }, [selectedSongId]);
   
-  // Handle query params from songs page
+  // Handle query params
   useEffect(() => {
     if (router.isReady && songs.length > 0) {
-      const { song_id, type } = router.query;
+      const { song_id } = router.query;
       if (song_id) {
         setSelectedSongId(song_id);
-        // Map modal types to form types
-        const typeMap = {
-          'new_version': 'new_version',
-          'edit_info': 'edit',
-          'add_media': 'media',
-          'add_note': 'note',
-          'add_alias': 'add_alias',
-          'add_flag': 'add_flag'
-        };
-        if (type && typeMap[type]) {
-          setSuggestionType(typeMap[type]);
-        }
+        setMode('existing_song');
       }
     }
   }, [router.isReady, router.query, songs]);
@@ -135,143 +123,309 @@ export default function Suggest() {
 
   const loadMySuggestions = async (userId) => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions?created_by=eq.${userId}&order=created_at.desc`, { headers: getAuthHeaders(false) });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions?created_by=eq.${userId}&order=created_at.desc&limit=50`, { headers: getAuthHeaders(false) });
       const data = await res.json();
       setMySuggestions(Array.isArray(data) ? data : []);
     } catch (error) { console.error('Error loading suggestions:', error); }
   };
 
-  const showMsg = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
+  const showMsg = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 4000); };
 
   const resetForm = () => {
-    setSelectedSongId('');
-    setSelectedVersionId('');
-    setTitle(''); setAuthor(''); setComposer(''); setLyricsText('');
-    setVersionLabel(''); setLyricsContent('');
-    setMediaType('youtube'); setMediaUrl(''); setMediaLabel('');
-    setNoteContent(''); setNoteType('history');
-    setFieldName('title'); setCurrentValue(''); setSuggestedValue('');
-    setAliasTitle('');
+    setIncludeAuthor(false); setIncludeComposer(false); setIncludeYear(false);
+    setIncludeOrigin(false); setIncludeTuneOf(false); setIncludeVersion(false);
+    setIncludeMedia(false); setIncludeNote(false); setIncludeAlias(false); setIncludeFlag(false);
+    setTitle(''); setAuthor(''); setComposer(''); setYear(''); setOrigin(''); setTuneOf('');
+    setVersionLabel(''); setVersionLyrics('');
+    setMediaItems([{ type: 'youtube', url: '', label: '' }]);
+    setNoteType('history'); setNoteContent('');
+    setAlias('');
     setFlagType('content_warning'); setFlagNotes('');
-    setReason('');
+    setSourceUrl(''); setReason('');
   };
 
-  const submitSuggestion = async () => {
+  // Add another media item
+  const addMediaItem = () => {
+    setMediaItems([...mediaItems, { type: 'youtube', url: '', label: '' }]);
+  };
+
+  const updateMediaItem = (index, field, value) => {
+    const updated = [...mediaItems];
+    updated[index][field] = value;
+    setMediaItems(updated);
+  };
+
+  const removeMediaItem = (index) => {
+    if (mediaItems.length > 1) {
+      setMediaItems(mediaItems.filter((_, i) => i !== index));
+    }
+  };
+
+  // Generate UUID for batch
+  const generateUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  const submitSuggestions = async () => {
     if (!user) return;
-    
+
     // Validation
-    if (suggestionType === 'new_song' && !title.trim()) {
+    if (mode === 'new_song' && !title.trim()) {
       showMsg('❌ Please enter a song title');
       return;
     }
-    if (['new_version', 'media', 'note', 'edit', 'add_alias', 'add_flag'].includes(suggestionType) && !selectedSongId) {
+    if (mode === 'existing_song' && !selectedSongId) {
       showMsg('❌ Please select a song');
       return;
     }
-    if (suggestionType === 'new_version' && !versionLabel.trim()) {
+
+    // Check at least one thing is being suggested
+    const hasAnySuggestion = mode === 'new_song' || 
+      includeAuthor || includeComposer || includeYear || includeOrigin || includeTuneOf ||
+      includeVersion || includeMedia || includeNote || includeAlias || includeFlag;
+    
+    if (!hasAnySuggestion) {
+      showMsg('❌ Please select at least one thing to suggest');
+      return;
+    }
+
+    // Validate filled fields
+    if (includeVersion && !versionLabel.trim()) {
       showMsg('❌ Please enter a version label');
       return;
     }
-    if (suggestionType === 'media' && !mediaUrl.trim()) {
-      showMsg('❌ Please enter a media URL');
+    if (includeMedia && !mediaItems.some(m => m.url.trim())) {
+      showMsg('❌ Please enter at least one media URL');
       return;
     }
-    if (suggestionType === 'note' && !noteContent.trim()) {
+    if (includeNote && !noteContent.trim()) {
       showMsg('❌ Please enter note content');
       return;
     }
-    if (suggestionType === 'edit' && !suggestedValue.trim()) {
-      showMsg('❌ Please enter the suggested value');
-      return;
-    }
-    if (suggestionType === 'add_alias' && !aliasTitle.trim()) {
+    if (includeAlias && !alias.trim()) {
       showMsg('❌ Please enter the alternate name');
       return;
     }
-    if (suggestionType === 'add_flag' && !flagNotes.trim()) {
+    if (includeFlag && !flagNotes.trim()) {
       showMsg('❌ Please describe the flag');
       return;
     }
 
-    // Build payload
-    const songName = songs.find(s => s.id === selectedSongId)?.title || '';
-    const payload = {
-      suggestion_type: suggestionType,
-      song_id: selectedSongId || null,
-      version_id: selectedVersionId || null,
-      title: suggestionType === 'new_song' ? title.trim() : (suggestionType === 'add_alias' ? aliasTitle.trim() : null),
-      author: suggestionType === 'new_song' ? author.trim() || null : null,
-      composer: suggestionType === 'new_song' ? composer.trim() || null : null,
-      lyrics_text: suggestionType === 'new_song' ? lyricsText.trim() || null : null,
-      version_label: suggestionType === 'new_version' ? versionLabel.trim() : null,
-      lyrics_content: suggestionType === 'new_version' ? lyricsContent.trim() || null : null,
-      media_type: suggestionType === 'media' ? mediaType : null,
-      media_url: suggestionType === 'media' ? mediaUrl.trim() : null,
-      media_label: suggestionType === 'media' ? mediaLabel.trim() || null : null,
-      note_content: suggestionType === 'note' ? noteContent.trim() : (suggestionType === 'add_flag' ? flagNotes.trim() : null),
-      note_type: suggestionType === 'note' ? noteType : (suggestionType === 'add_flag' ? flagType : null),
-      field_name: suggestionType === 'edit' ? fieldName : null,
-      current_value: suggestionType === 'edit' ? currentValue.trim() || null : null,
-      suggested_value: suggestionType === 'edit' ? suggestedValue.trim() : null,
-      reason: reason.trim() || null,
-      created_by: user.id,
-      // For display purposes
-      _display: {
-        type: typeLabels[suggestionType],
-        songName,
-        summary: getSuggestionSummary(suggestionType)
-      }
-    };
-
-    // Add to pending list
-    setPendingSuggestions(prev => [...prev, { ...payload, _tempId: Date.now() }]);
-    resetForm();
-    showMsg('✅ Added to list! Add more or submit all.');
-  };
-
-  // Get a short summary of the suggestion for display
-  const getSuggestionSummary = (type) => {
-    switch(type) {
-      case 'new_song': return title.trim();
-      case 'new_version': return versionLabel.trim();
-      case 'media': return mediaLabel.trim() || mediaUrl.trim().substring(0, 30) + '...';
-      case 'note': return noteContent.trim().substring(0, 40) + (noteContent.length > 40 ? '...' : '');
-      case 'edit': return `${fieldName}: ${suggestedValue.trim().substring(0, 30)}`;
-      case 'add_alias': return aliasTitle.trim();
-      case 'add_flag': return `${flagType}: ${flagNotes.trim().substring(0, 30)}`;
-      default: return '';
-    }
-  };
-
-  // Remove from pending list
-  const removePending = (tempId) => {
-    setPendingSuggestions(prev => prev.filter(p => p._tempId !== tempId));
-  };
-
-  // Submit all pending suggestions
-  const submitAllSuggestions = async () => {
-    if (pendingSuggestions.length === 0) {
-      showMsg('❌ No suggestions to submit');
-      return;
-    }
-
     setSubmitting(true);
+    const batchId = generateUUID();
+    const suggestions = [];
+    const songId = mode === 'new_song' ? null : selectedSongId;
+    const songTitle = mode === 'new_song' ? title.trim() : songs.find(s => s.id === selectedSongId)?.title;
+
+    // Build suggestion list
+    if (mode === 'new_song') {
+      suggestions.push({
+        suggestion_type: 'new_song',
+        song_id: null,
+        title: title.trim(),
+        author: author.trim() || null,
+        composer: composer.trim() || null,
+        lyrics_text: versionLyrics.trim() || null,
+        source_url: sourceUrl.trim() || null,
+        reason: reason.trim() || null,
+        batch_id: batchId,
+        created_by: user.id
+      });
+      
+      // If also including other fields for new song, add separate suggestions
+      if (includeOrigin && origin.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: null,
+          field_name: 'origin',
+          suggested_value: origin.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+      if (includeYear && year.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: null,
+          field_name: 'year_written',
+          suggested_value: year.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+      if (includeTuneOf && tuneOf.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: null,
+          field_name: 'tune_of',
+          suggested_value: tuneOf.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+    } else {
+      // Existing song edits
+      if (includeAuthor && author.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: songId,
+          field_name: 'author',
+          suggested_value: author.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+      if (includeComposer && composer.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: songId,
+          field_name: 'composer',
+          suggested_value: composer.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+      if (includeYear && year.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: songId,
+          field_name: 'year_written',
+          suggested_value: year.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+      if (includeOrigin && origin.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: songId,
+          field_name: 'origin',
+          suggested_value: origin.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+      if (includeTuneOf && tuneOf.trim()) {
+        suggestions.push({
+          suggestion_type: 'edit',
+          song_id: songId,
+          field_name: 'tune_of',
+          suggested_value: tuneOf.trim(),
+          source_url: sourceUrl.trim() || null,
+          reason: reason.trim() || null,
+          batch_id: batchId,
+          created_by: user.id
+        });
+      }
+    }
+
+    // Version (both modes)
+    if (includeVersion && versionLabel.trim()) {
+      suggestions.push({
+        suggestion_type: 'new_version',
+        song_id: songId,
+        version_label: versionLabel.trim(),
+        lyrics_content: versionLyrics.trim() || null,
+        source_url: sourceUrl.trim() || null,
+        reason: reason.trim() || null,
+        batch_id: batchId,
+        created_by: user.id
+      });
+    }
+
+    // Media items
+    if (includeMedia) {
+      mediaItems.forEach(m => {
+        if (m.url.trim()) {
+          suggestions.push({
+            suggestion_type: 'media',
+            song_id: songId,
+            media_type: m.type,
+            media_url: m.url.trim(),
+            media_label: m.label.trim() || null,
+            source_url: sourceUrl.trim() || null,
+            reason: reason.trim() || null,
+            batch_id: batchId,
+            created_by: user.id
+          });
+        }
+      });
+    }
+
+    // Note
+    if (includeNote && noteContent.trim()) {
+      suggestions.push({
+        suggestion_type: 'note',
+        song_id: songId,
+        note_type: noteType,
+        note_content: noteContent.trim(),
+        source_url: sourceUrl.trim() || null,
+        reason: reason.trim() || null,
+        batch_id: batchId,
+        created_by: user.id
+      });
+    }
+
+    // Alias
+    if (includeAlias && alias.trim()) {
+      suggestions.push({
+        suggestion_type: 'add_alias',
+        song_id: songId,
+        title: alias.trim(),
+        source_url: sourceUrl.trim() || null,
+        reason: reason.trim() || null,
+        batch_id: batchId,
+        created_by: user.id
+      });
+    }
+
+    // Flag
+    if (includeFlag && flagNotes.trim()) {
+      suggestions.push({
+        suggestion_type: 'add_flag',
+        song_id: songId,
+        note_type: flagType,
+        note_content: flagNotes.trim(),
+        source_url: sourceUrl.trim() || null,
+        reason: reason.trim() || null,
+        batch_id: batchId,
+        created_by: user.id
+      });
+    }
+
+    // Submit all
     let successCount = 0;
     let failCount = 0;
+    const newSuggestions = [];
 
-    for (const suggestion of pendingSuggestions) {
-      // Remove display fields before submitting
-      const { _display, _tempId, ...payload } = suggestion;
-      
+    for (const suggestion of suggestions) {
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions`, {
           method: 'POST',
           headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(suggestion)
         });
         const data = await res.json();
         if (data[0]) {
-          setMySuggestions(prev => [data[0], ...prev]);
+          newSuggestions.push(data[0]);
           successCount++;
         } else {
           failCount++;
@@ -282,107 +436,24 @@ export default function Suggest() {
       }
     }
 
-    setPendingSuggestions([]);
+    setMySuggestions(prev => [...newSuggestions, ...prev]);
+    resetForm();
     setSubmitting(false);
-    
+
     if (failCount === 0) {
-      showMsg(`✅ All ${successCount} suggestion(s) submitted!`);
+      showMsg(`✅ Submitted ${successCount} suggestion(s)! An admin will review them.`);
     } else {
       showMsg(`⚠️ ${successCount} submitted, ${failCount} failed`);
     }
   };
 
-  // Submit single suggestion immediately (legacy behavior)
-  const submitSingleSuggestion = async () => {
-    if (!user) return;
-    
-    // Validation
-    if (suggestionType === 'new_song' && !title.trim()) {
-      showMsg('❌ Please enter a song title');
-      return;
-    }
-    if (['new_version', 'media', 'note', 'edit', 'add_alias', 'add_flag'].includes(suggestionType) && !selectedSongId) {
-      showMsg('❌ Please select a song');
-      return;
-    }
-    if (suggestionType === 'new_version' && !versionLabel.trim()) {
-      showMsg('❌ Please enter a version label');
-      return;
-    }
-    if (suggestionType === 'media' && !mediaUrl.trim()) {
-      showMsg('❌ Please enter a media URL');
-      return;
-    }
-    if (suggestionType === 'note' && !noteContent.trim()) {
-      showMsg('❌ Please enter note content');
-      return;
-    }
-    if (suggestionType === 'edit' && !suggestedValue.trim()) {
-      showMsg('❌ Please enter the suggested value');
-      return;
-    }
-    if (suggestionType === 'add_alias' && !aliasTitle.trim()) {
-      showMsg('❌ Please enter the alternate name');
-      return;
-    }
-    if (suggestionType === 'add_flag' && !flagNotes.trim()) {
-      showMsg('❌ Please describe the flag');
-      return;
-    }
-
-    setSubmitting(true);
-
-    const payload = {
-      suggestion_type: suggestionType,
-      song_id: selectedSongId || null,
-      version_id: selectedVersionId || null,
-      title: suggestionType === 'new_song' ? title.trim() : (suggestionType === 'add_alias' ? aliasTitle.trim() : null),
-      author: suggestionType === 'new_song' ? author.trim() || null : null,
-      composer: suggestionType === 'new_song' ? composer.trim() || null : null,
-      lyrics_text: suggestionType === 'new_song' ? lyricsText.trim() || null : null,
-      version_label: suggestionType === 'new_version' ? versionLabel.trim() : null,
-      lyrics_content: suggestionType === 'new_version' ? lyricsContent.trim() || null : null,
-      media_type: suggestionType === 'media' ? mediaType : null,
-      media_url: suggestionType === 'media' ? mediaUrl.trim() : null,
-      media_label: suggestionType === 'media' ? mediaLabel.trim() || null : null,
-      note_content: suggestionType === 'note' ? noteContent.trim() : (suggestionType === 'add_flag' ? flagNotes.trim() : null),
-      note_type: suggestionType === 'note' ? noteType : (suggestionType === 'add_flag' ? flagType : null),
-      field_name: suggestionType === 'edit' ? fieldName : null,
-      current_value: suggestionType === 'edit' ? currentValue.trim() || null : null,
-      suggested_value: suggestionType === 'edit' ? suggestedValue.trim() : null,
-      reason: reason.trim() || null,
-      created_by: user.id
-    };
-
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data[0]) {
-        setMySuggestions(prev => [data[0], ...prev]);
-        resetForm();
-        showMsg('✅ Suggestion submitted! An admin will review it.');
-      } else {
-        showMsg('❌ Error submitting suggestion');
-      }
-    } catch (error) {
-      console.error('Error submitting:', error);
-      showMsg('❌ Error submitting suggestion');
-    }
-
-    setSubmitting(false);
-  };
-
   const typeLabels = {
     new_song: '🎵 New Song',
     new_version: '📝 New Version',
-    media: '🎬 Media Link',
+    media: '🎬 Media',
     note: '📋 Note',
     edit: '✏️ Edit',
-    add_alias: '🏷️ Alternate Name',
+    add_alias: '🏷️ Alias',
     add_flag: '⚠️ Flag'
   };
 
@@ -394,303 +465,273 @@ export default function Suggest() {
 
   const s = {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
-    wrapper: { maxWidth: '700px', margin: '0 auto', padding: '1.5rem' },
-    header: { marginBottom: '1.5rem' },
-    title: { fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' },
-    subtitle: { color: '#94a3b8', fontSize: '0.875rem' },
-    card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', padding: '1.25rem', marginBottom: '1rem' },
-    cardTitle: { fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '1rem' },
-    label: { display: 'block', fontSize: '0.875rem', color: '#94a3b8', marginBottom: '0.375rem' },
-    input: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', outline: 'none', fontSize: '0.875rem', marginBottom: '1rem' },
-    textarea: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', outline: 'none', fontSize: '0.875rem', marginBottom: '1rem', minHeight: '120px', resize: 'vertical', fontFamily: 'inherit' },
-    select: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', outline: 'none', fontSize: '0.875rem', marginBottom: '1rem' },
-    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '600' },
-    btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem' },
-    typeBtn: (active) => ({
-      background: active ? '#22c55e' : '#334155',
-      color: '#fff',
-      border: 'none',
-      padding: '0.5rem 0.75rem',
-      borderRadius: '0.375rem',
+    wrapper: { maxWidth: '800px', margin: '0 auto', padding: '1.5rem' },
+    card: { background: '#1e293b', borderRadius: '0.75rem', padding: '1.5rem', marginBottom: '1.5rem' },
+    cardTitle: { fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' },
+    label: { display: 'block', fontSize: '0.875rem', color: '#94a3b8', marginBottom: '0.25rem', marginTop: '0.75rem' },
+    input: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', fontSize: '1rem' },
+    textarea: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', fontSize: '1rem', minHeight: '120px', fontFamily: 'inherit', resize: 'vertical' },
+    select: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', fontSize: '1rem' },
+    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' },
+    btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' },
+    checkbox: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' },
+    checkboxActive: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: '#22c55e20', border: '1px solid #22c55e40', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' },
+    fieldGroup: { background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', marginBottom: '0.75rem', border: '1px solid #334155' },
+    msg: { position: 'fixed', top: '4.5rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 1000 },
+    modeBtn: (active) => ({ 
+      flex: 1, 
+      padding: '1rem', 
+      background: active ? '#22c55e20' : '#0f172a', 
+      border: active ? '2px solid #22c55e' : '1px solid #334155', 
+      borderRadius: '0.5rem', 
+      color: active ? '#22c55e' : '#94a3b8',
       cursor: 'pointer',
-      fontSize: '0.8rem',
-      fontWeight: active ? '600' : '400'
-    }),
-    message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
-    suggestionItem: { padding: '0.75rem', borderBottom: '1px solid #334155', fontSize: '0.875rem' }
+      fontWeight: active ? '600' : '400',
+      fontSize: '1rem'
+    })
   };
 
   if (loading) {
-    return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
+    return <div style={s.container}><div style={s.wrapper}><p>Loading...</p></div></div>;
   }
 
-  if (!user) {
-    return (
-      <div style={s.container}>
-        <div style={{ ...s.wrapper, textAlign: 'center', paddingTop: '4rem' }}>
-          <p>Please <Link href="/?login=true" style={{ color: '#22c55e' }}>log in</Link> to make suggestions.</p>
-        </div>
-      </div>
-    );
-  }
+  const selectedSong = songs.find(s => s.id === selectedSongId);
 
   return (
     <div style={s.container}>
-      {message && <div style={s.message}>{message}</div>}
-      
       <div style={s.wrapper}>
-        <div style={s.header}>
-          <h1 style={s.title}>💡 Suggest a Change</h1>
-          <p style={s.subtitle}>Help improve our songbook! Admins will review your suggestions.</p>
-        </div>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>💡 Suggest Song Info</h1>
 
-        {/* Suggestion Type Selector */}
+        {message && <div style={s.msg}>{message}</div>}
+
+        {/* Mode Selection */}
         <div style={s.card}>
-          <h2 style={s.cardTitle}>What would you like to suggest?</h2>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {Object.entries(typeLabels).map(([type, label]) => (
-              <button
-                key={type}
-                onClick={() => { setSuggestionType(type); resetForm(); }}
-                style={s.typeBtn(suggestionType === type)}
-              >
-                {label}
-              </button>
-            ))}
+          <h2 style={s.cardTitle}>What do you want to suggest?</h2>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button onClick={() => setMode('new_song')} style={s.modeBtn(mode === 'new_song')}>
+              🎵 New Song
+            </button>
+            <button onClick={() => setMode('existing_song')} style={s.modeBtn(mode === 'existing_song')}>
+              ✏️ Add to Existing Song
+            </button>
           </div>
         </div>
 
-        {/* Form based on type */}
+        {/* Main Form */}
         <div style={s.card}>
-          <h2 style={s.cardTitle}>{typeLabels[suggestionType]}</h2>
-
-          {/* NEW SONG */}
-          {suggestionType === 'new_song' && (
+          {mode === 'new_song' ? (
             <>
+              <h2 style={s.cardTitle}>🎵 Suggest a New Song</h2>
+              <p style={{ color: '#94a3b8', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                Fill in what you know - only the title is required.
+              </p>
+
               <label style={s.label}>Song Title *</label>
-              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Enter song title" style={s.input} />
-              
-              <label style={s.label}>Author</label>
+              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Song title" style={s.input} />
+
+              <label style={s.label}>Author / Lyricist</label>
               <input type="text" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Who wrote the lyrics?" style={s.input} />
-              
+
               <label style={s.label}>Composer</label>
               <input type="text" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Who wrote the music?" style={s.input} />
-              
-              <label style={s.label}>Lyrics</label>
-              <textarea value={lyricsText} onChange={(e) => setLyricsText(e.target.value)} placeholder="Paste lyrics here..." style={s.textarea} />
-            </>
-          )}
 
-          {/* NEW VERSION */}
-          {suggestionType === 'new_version' && (
-            <>
-              <label style={s.label}>For which song? *</label>
-              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
-                <option value="">Select a song...</option>
-                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-              
-              <label style={s.label}>Version Label *</label>
-              <input type="text" value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} placeholder="e.g., 'Camp Arrowhead Version', 'Gender Neutral'" style={s.input} />
-              
               <label style={s.label}>Lyrics</label>
-              <textarea value={lyricsContent} onChange={(e) => setLyricsContent(e.target.value)} placeholder="Paste version lyrics here..." style={s.textarea} />
+              <textarea value={versionLyrics} onChange={(e) => setVersionLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.textarea, minHeight: '200px', fontFamily: 'monospace' }} />
             </>
-          )}
-
-          {/* MEDIA */}
-          {suggestionType === 'media' && (
+          ) : (
             <>
-              <label style={s.label}>For which song? *</label>
+              <h2 style={s.cardTitle}>✏️ Add Info to Existing Song</h2>
+              
+              <label style={s.label}>Select Song *</label>
               <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
-                <option value="">Select a song...</option>
+                <option value="">Choose a song...</option>
                 {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
 
-              {versions.length > 0 && (
+              {selectedSongId && (
                 <>
-                  <label style={s.label}>For which version? (optional)</label>
-                  <select value={selectedVersionId} onChange={(e) => setSelectedVersionId(e.target.value)} style={s.select}>
-                    <option value="">All versions / general</option>
-                    {versions.map(v => <option key={v.id} value={v.id}>{v.label || 'Untitled'}</option>)}
-                  </select>
+                  <p style={{ color: '#94a3b8', marginTop: '1rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                    Check what you want to add for "<strong style={{ color: '#fff' }}>{selectedSong?.title}</strong>"
+                  </p>
                 </>
               )}
-              
-              <label style={s.label}>Media Type</label>
-              <select value={mediaType} onChange={(e) => setMediaType(e.target.value)} style={s.select}>
-                <option value="youtube">YouTube</option>
-                <option value="spotify">Spotify</option>
-                <option value="other">Other Link</option>
-              </select>
-              
-              <label style={s.label}>URL *</label>
-              <input type="url" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} placeholder="https://..." style={s.input} />
-              
-              <label style={s.label}>Label (optional)</label>
-              <input type="text" value={mediaLabel} onChange={(e) => setMediaLabel(e.target.value)} placeholder="e.g., 'Official recording', 'Live at camp'" style={s.input} />
             </>
           )}
 
-          {/* NOTE */}
-          {suggestionType === 'note' && (
+          {/* Optional sections - show for both modes */}
+          {(mode === 'new_song' || selectedSongId) && (
             <>
-              <label style={s.label}>For which song? *</label>
-              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
-                <option value="">Select a song...</option>
-                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-
-              {versions.length > 0 && (
-                <>
-                  <label style={s.label}>For which version? (optional)</label>
-                  <select value={selectedVersionId} onChange={(e) => setSelectedVersionId(e.target.value)} style={s.select}>
-                    <option value="">All versions / general</option>
-                    {versions.map(v => <option key={v.id} value={v.id}>{v.label || 'Untitled'}</option>)}
-                  </select>
-                </>
-              )}
-              
-              <label style={s.label}>Note Type</label>
-              <select value={noteType} onChange={(e) => setNoteType(e.target.value)} style={s.select}>
-                <option value="history">History / Background</option>
-                <option value="teaching">Teaching Tips</option>
-                <option value="motions">Motions / Actions</option>
-                <option value="other">Other</option>
-              </select>
-              
-              <label style={s.label}>Note Content *</label>
-              <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Share what you know..." style={s.textarea} />
-            </>
-          )}
-
-          {/* EDIT */}
-          {suggestionType === 'edit' && (
-            <>
-              <label style={s.label}>For which song? *</label>
-              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
-                <option value="">Select a song...</option>
-                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-              
-              <label style={s.label}>What needs to be edited?</label>
-              <select value={fieldName} onChange={(e) => setFieldName(e.target.value)} style={s.select}>
-                <option value="title">Title</option>
-                <option value="author">Author</option>
-                <option value="composer">Composer</option>
-                <option value="origin">Origin</option>
-                <option value="year_written">Year Written</option>
-                <option value="lyrics">Lyrics</option>
-                <option value="other">Other</option>
-              </select>
-              
-              <label style={s.label}>Current Value (if known)</label>
-              <input type="text" value={currentValue} onChange={(e) => setCurrentValue(e.target.value)} placeholder="What it currently says..." style={s.input} />
-              
-              <label style={s.label}>Suggested Value *</label>
-              <textarea value={suggestedValue} onChange={(e) => setSuggestedValue(e.target.value)} placeholder="What it should say..." style={s.textarea} />
-            </>
-          )}
-
-          {/* ADD ALIAS */}
-          {suggestionType === 'add_alias' && (
-            <>
-              <label style={s.label}>For which song? *</label>
-              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
-                <option value="">Select a song...</option>
-                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-              
-              <label style={s.label}>Alternate Name *</label>
-              <input type="text" value={aliasTitle} onChange={(e) => setAliasTitle(e.target.value)} placeholder="What else is this song called?" style={s.input} />
-            </>
-          )}
-
-          {/* ADD FLAG */}
-          {suggestionType === 'add_flag' && (
-            <>
-              <label style={s.label}>For which song? *</label>
-              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
-                <option value="">Select a song...</option>
-                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-              
-              <label style={s.label}>Flag Type</label>
-              <select value={flagType} onChange={(e) => setFlagType(e.target.value)} style={s.select}>
-                <option value="content_warning">Content Warning</option>
-                <option value="cultural_sensitivity">Cultural Sensitivity</option>
-                <option value="outdated_language">Outdated Language</option>
-                <option value="historical_context">Needs Historical Context</option>
-                <option value="other">Other</option>
-              </select>
-              
-              <label style={s.label}>Description *</label>
-              <textarea value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} placeholder="Describe the issue or concern..." style={s.textarea} />
-            </>
-          )}
-
-          {/* Common: Reason */}
-          <label style={s.label}>Why are you suggesting this? (optional)</label>
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Any additional context..." style={{ ...s.textarea, minHeight: '80px' }} />
-
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={submitSuggestion} disabled={submitting} style={{ ...s.btn, opacity: submitting ? 0.5 : 1 }}>
-              ➕ Add to List
-            </button>
-            <button onClick={submitSingleSuggestion} disabled={submitting} style={{ ...s.btnSec, opacity: submitting ? 0.5 : 1 }}>
-              {submitting ? 'Submitting...' : 'Submit Just This One'}
-            </button>
-          </div>
-        </div>
-
-        {/* Pending Suggestions List */}
-        {pendingSuggestions.length > 0 && (
-          <div style={{ ...s.card, background: '#1e3a2e', border: '1px solid #22c55e40' }}>
-            <h2 style={{ ...s.cardTitle, color: '#22c55e' }}>📋 Ready to Submit ({pendingSuggestions.length})</h2>
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1rem' }}>
-              These suggestions will be submitted together when you click "Submit All"
-            </p>
-            
-            {pendingSuggestions.map((p, idx) => (
-              <div key={p._tempId} style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                padding: '0.75rem',
-                background: '#0f172a',
-                borderRadius: '0.5rem',
-                marginBottom: '0.5rem'
-              }}>
-                <div>
-                  <span style={{ color: '#22c55e', fontWeight: 'bold' }}>{p._display?.type}</span>
-                  {p._display?.songName && <span style={{ color: '#94a3b8' }}> for "{p._display.songName}"</span>}
-                  {p._display?.summary && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>{p._display.summary}</div>}
-                </div>
-                <button 
-                  onClick={() => removePending(p._tempId)}
-                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1.2rem' }}
-                >
-                  ×
-                </button>
+              <div style={{ marginTop: '1.5rem', marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#94a3b8' }}>Additional Info (check what you want to add)</h3>
               </div>
-            ))}
-            
-            <button 
-              onClick={submitAllSuggestions} 
-              disabled={submitting}
-              style={{ 
-                ...s.btn, 
-                width: '100%', 
-                marginTop: '1rem',
-                background: '#22c55e',
-                opacity: submitting ? 0.5 : 1
-              }}
-            >
-              {submitting ? 'Submitting...' : `🚀 Submit All ${pendingSuggestions.length} Suggestion(s)`}
-            </button>
-          </div>
-        )}
+
+              {/* Basic Info */}
+              {mode === 'existing_song' && (
+                <>
+                  <label style={includeAuthor ? s.checkboxActive : s.checkbox} onClick={() => setIncludeAuthor(!includeAuthor)}>
+                    <input type="checkbox" checked={includeAuthor} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                    <span>✏️ Author / Lyricist</span>
+                  </label>
+                  {includeAuthor && (
+                    <div style={s.fieldGroup}>
+                      <input type="text" value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Who wrote the lyrics?" style={s.input} />
+                    </div>
+                  )}
+
+                  <label style={includeComposer ? s.checkboxActive : s.checkbox} onClick={() => setIncludeComposer(!includeComposer)}>
+                    <input type="checkbox" checked={includeComposer} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                    <span>🎼 Composer</span>
+                  </label>
+                  {includeComposer && (
+                    <div style={s.fieldGroup}>
+                      <input type="text" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Who wrote the music?" style={s.input} />
+                    </div>
+                  )}
+                </>
+              )}
+
+              <label style={includeYear ? s.checkboxActive : s.checkbox} onClick={() => setIncludeYear(!includeYear)}>
+                <input type="checkbox" checked={includeYear} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>📅 Year Written</span>
+              </label>
+              {includeYear && (
+                <div style={s.fieldGroup}>
+                  <input type="text" value={year} onChange={(e) => setYear(e.target.value)} placeholder="e.g., 1965" style={s.input} />
+                </div>
+              )}
+
+              <label style={includeOrigin ? s.checkboxActive : s.checkbox} onClick={() => setIncludeOrigin(!includeOrigin)}>
+                <input type="checkbox" checked={includeOrigin} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>🌍 Origin / Source</span>
+              </label>
+              {includeOrigin && (
+                <div style={s.fieldGroup}>
+                  <input type="text" value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="e.g., American folk song, Hebrew, Camp tradition" style={s.input} />
+                </div>
+              )}
+
+              <label style={includeTuneOf ? s.checkboxActive : s.checkbox} onClick={() => setIncludeTuneOf(!includeTuneOf)}>
+                <input type="checkbox" checked={includeTuneOf} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>🎵 Tune Of (if sung to another melody)</span>
+              </label>
+              {includeTuneOf && (
+                <div style={s.fieldGroup}>
+                  <input type="text" value={tuneOf} onChange={(e) => setTuneOf(e.target.value)} placeholder="Name of the original song" style={s.input} />
+                </div>
+              )}
+
+              <label style={includeAlias ? s.checkboxActive : s.checkbox} onClick={() => setIncludeAlias(!includeAlias)}>
+                <input type="checkbox" checked={includeAlias} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>🏷️ Alternate Name</span>
+              </label>
+              {includeAlias && (
+                <div style={s.fieldGroup}>
+                  <input type="text" value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Another name this song is known by" style={s.input} />
+                </div>
+              )}
+
+              {/* Version */}
+              <label style={includeVersion ? s.checkboxActive : s.checkbox} onClick={() => setIncludeVersion(!includeVersion)}>
+                <input type="checkbox" checked={includeVersion} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>📝 {mode === 'new_song' ? 'Additional Version' : 'Add Version / Lyrics'}</span>
+              </label>
+              {includeVersion && (
+                <div style={s.fieldGroup}>
+                  <label style={{ ...s.label, marginTop: 0 }}>Version Label *</label>
+                  <input type="text" value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} placeholder="e.g., Camp version, Gender-neutral version" style={s.input} />
+                  <label style={s.label}>Lyrics</label>
+                  <textarea value={versionLyrics} onChange={(e) => setVersionLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.textarea, minHeight: '150px', fontFamily: 'monospace' }} />
+                </div>
+              )}
+
+              {/* Media */}
+              <label style={includeMedia ? s.checkboxActive : s.checkbox} onClick={() => setIncludeMedia(!includeMedia)}>
+                <input type="checkbox" checked={includeMedia} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>🎬 Media Links (YouTube, Spotify, etc.)</span>
+              </label>
+              {includeMedia && (
+                <div style={s.fieldGroup}>
+                  {mediaItems.map((item, idx) => (
+                    <div key={idx} style={{ marginBottom: idx < mediaItems.length - 1 ? '1rem' : 0, paddingBottom: idx < mediaItems.length - 1 ? '1rem' : 0, borderBottom: idx < mediaItems.length - 1 ? '1px solid #334155' : 'none' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <select value={item.type} onChange={(e) => updateMediaItem(idx, 'type', e.target.value)} style={{ ...s.select, flex: 1 }}>
+                          <option value="youtube">YouTube</option>
+                          <option value="spotify">Spotify</option>
+                          <option value="soundcloud">SoundCloud</option>
+                          <option value="audio">Other Audio</option>
+                          <option value="video">Other Video</option>
+                        </select>
+                        {mediaItems.length > 1 && (
+                          <button onClick={() => removeMediaItem(idx)} style={{ ...s.btnSec, padding: '0.5rem 0.75rem' }}>×</button>
+                        )}
+                      </div>
+                      <input type="text" value={item.url} onChange={(e) => updateMediaItem(idx, 'url', e.target.value)} placeholder="https://..." style={{ ...s.input, marginBottom: '0.5rem' }} />
+                      <input type="text" value={item.label} onChange={(e) => updateMediaItem(idx, 'label', e.target.value)} placeholder="Label (optional) - e.g., 'Official recording'" style={s.input} />
+                    </div>
+                  ))}
+                  <button onClick={addMediaItem} style={{ ...s.btnSec, marginTop: '0.75rem' }}>+ Add Another Media Link</button>
+                </div>
+              )}
+
+              {/* Note */}
+              <label style={includeNote ? s.checkboxActive : s.checkbox} onClick={() => setIncludeNote(!includeNote)}>
+                <input type="checkbox" checked={includeNote} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>📋 Note (history, teaching tips, etc.)</span>
+              </label>
+              {includeNote && (
+                <div style={s.fieldGroup}>
+                  <label style={{ ...s.label, marginTop: 0 }}>Note Type</label>
+                  <select value={noteType} onChange={(e) => setNoteType(e.target.value)} style={s.select}>
+                    <option value="history">History / Background</option>
+                    <option value="teaching">Teaching Tips</option>
+                    <option value="motions">Motions / Actions</option>
+                    <option value="performance">Performance Notes</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <label style={s.label}>Content *</label>
+                  <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Share what you know..." style={s.textarea} />
+                </div>
+              )}
+
+              {/* Flag */}
+              <label style={includeFlag ? s.checkboxActive : s.checkbox} onClick={() => setIncludeFlag(!includeFlag)}>
+                <input type="checkbox" checked={includeFlag} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
+                <span>⚠️ Flag an Issue</span>
+              </label>
+              {includeFlag && (
+                <div style={s.fieldGroup}>
+                  <label style={{ ...s.label, marginTop: 0 }}>Flag Type</label>
+                  <select value={flagType} onChange={(e) => setFlagType(e.target.value)} style={s.select}>
+                    <option value="content_warning">Content Warning</option>
+                    <option value="cultural_sensitivity">Cultural Sensitivity</option>
+                    <option value="outdated_language">Outdated Language</option>
+                    <option value="historical_context">Needs Historical Context</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <label style={s.label}>Description *</label>
+                  <textarea value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} placeholder="Describe the issue..." style={s.textarea} />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Source and Reason */}
+          {(mode === 'new_song' || selectedSongId) && (
+            <>
+              <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
+                <label style={s.label}>Where did you find this info? (optional)</label>
+                <input type="text" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="Link to source (Wikipedia, camp website, etc.)" style={s.input} />
+
+                <label style={s.label}>Any additional context? (optional)</label>
+                <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Anything else you want to share..." style={{ ...s.textarea, minHeight: '80px' }} />
+              </div>
+
+              <button onClick={submitSuggestions} disabled={submitting} style={{ ...s.btn, width: '100%', marginTop: '1.5rem', opacity: submitting ? 0.5 : 1 }}>
+                {submitting ? 'Submitting...' : '🚀 Submit Suggestion(s)'}
+              </button>
+            </>
+          )}
+        </div>
 
         {/* My Suggestions */}
         <div style={s.card}>
@@ -710,31 +751,27 @@ export default function Suggest() {
                   const statusColor = statusColors[sug.status] || statusColors.pending;
                   const song = songs.find(s => s.id === sug.song_id);
                   return (
-                    <div key={sug.id} style={s.suggestionItem}>
+                    <div key={sug.id} style={{ padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                         <div>
                           <span style={{ fontWeight: 'bold' }}>{typeLabels[sug.suggestion_type]}</span>
                           {song && <span style={{ color: '#94a3b8' }}> for "{song.title}"</span>}
                           {sug.title && <span style={{ color: '#94a3b8' }}> - {sug.title}</span>}
+                          {sug.field_name && <span style={{ color: '#94a3b8' }}> ({sug.field_name})</span>}
                         </div>
                         <span style={{
                           fontSize: '0.7rem',
                           padding: '0.2rem 0.5rem',
                           borderRadius: '0.25rem',
                           background: statusColor.bg,
-                          color: statusColor.text,
-                          textTransform: 'uppercase',
-                          fontWeight: 'bold'
+                          color: statusColor.text
                         }}>
                           {sug.status}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
-                        {new Date(sug.created_at).toLocaleDateString()}
-                      </div>
                       {sug.admin_notes && (
-                        <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', fontSize: '0.8rem' }}>
-                          <span style={{ color: '#22c55e' }}>Admin:</span> {sug.admin_notes}
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                          Admin: {sug.admin_notes}
                         </div>
                       )}
                     </div>
