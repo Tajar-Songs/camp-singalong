@@ -19,10 +19,13 @@ export default function Songs() {
   const [allVersions, setAllVersions] = useState([]);
   const [songNotes, setSongNotes] = useState([]);
   const [songMedia, setSongMedia] = useState([]);
+  const [songAliases, setSongAliases] = useState([]);
+  const [songFlags, setSongFlags] = useState([]);
 
   // UI state
   const [selectedSong, setSelectedSong] = useState(null);
   const [search, setSearch] = useState('');
+  const [searchLyrics, setSearchLyrics] = useState(true); // true = include lyrics, false = names only
   const [songbookFilter, setSongbookFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
@@ -31,6 +34,12 @@ export default function Songs() {
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState('lyrics'); // 'lyrics', 'info', 'media', 'notes'
   const [personalTagInput, setPersonalTagInput] = useState('');
+
+  // Suggestion modal
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [suggestType, setSuggestType] = useState(''); // 'new_version', 'edit_info', 'add_media', 'add_note', 'add_alias', 'add_flag'
+  const [suggestExpanded, setSuggestExpanded] = useState(false);
+  const [suggestSubmitting, setSuggestSubmitting] = useState(false);
 
   const [versionAttrs, setVersionAttrs] = useState([]);
   const [selectedVersionId, setSelectedVersionId] = useState(null);
@@ -129,8 +138,12 @@ export default function Songs() {
       const tagsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers: getAuthHeaders(false) });
       const tagsData = await tagsRes.json();
       
-      // Load all versions for filtering
-      const allVersionsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=id,song_id`, { headers: getAuthHeaders(false) });
+      // Load aliases
+      const aliasesRes = await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers: getAuthHeaders(false) });
+      const aliasesData = await aliasesRes.json();
+      
+      // Load all versions for filtering (include lyrics for search)
+      const allVersionsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=id,song_id,lyrics_content`, { headers: getAuthHeaders(false) });
       const allVersionsData = await allVersionsRes.json();
       setAllVersions(Array.isArray(allVersionsData) ? allVersionsData : []);
 
@@ -140,13 +153,15 @@ export default function Songs() {
         songbooksData.forEach(sb => { songbookMap[sb.id] = sb.name; });
       }
 
-      // Enrich songs with songbooks and tags
+      // Enrich songs with songbooks, tags, and aliases
       const enrichedSongs = (Array.isArray(songsData) ? songsData : []).map(song => {
         const songEntries = (Array.isArray(entriesData) ? entriesData : []).filter(e => e.song_id === song.id);
         const songTags = (Array.isArray(tagsData) ? tagsData : []).filter(t => t.song_id === song.id).map(t => t.tag);
+        const songAliasesList = (Array.isArray(aliasesData) ? aliasesData : []).filter(a => a.song_id === song.id).map(a => a.alias_title);
         return {
           ...song,
           tags: songTags,
+          aliases: songAliasesList,
           songbooks: songEntries.map(e => ({
             id: e.songbook_id,
             name: songbookMap[e.songbook_id] || 'Unknown',
@@ -205,6 +220,20 @@ export default function Songs() {
         setSongMedia(Array.isArray(mediaData) ? mediaData : []);
       } catch { setSongMedia([]); }
 
+      // Load aliases
+      try {
+        const aliasesRes = await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?song_id=eq.${songId}&select=*`, { headers: getAuthHeaders(false) });
+        const aliasesData = await aliasesRes.json();
+        setSongAliases(Array.isArray(aliasesData) ? aliasesData : []);
+      } catch { setSongAliases([]); }
+
+      // Load flags
+      try {
+        const flagsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_flags?song_id=eq.${songId}&select=*`, { headers: getAuthHeaders(false) });
+        const flagsData = await flagsRes.json();
+        setSongFlags(Array.isArray(flagsData) ? flagsData : []);
+      } catch { setSongFlags([]); }
+
     } catch (error) {
       console.error('Error loading song details:', error);
     }
@@ -239,9 +268,20 @@ export default function Songs() {
       // Search filter
       if (search) {
         const s = search.toLowerCase();
-        if (!song.title?.toLowerCase().includes(s) && 
-            !song.author?.toLowerCase().includes(s) &&
-            !song.composer?.toLowerCase().includes(s)) return false;
+        // Always search title, author, composer, aliases
+        const matchesBasic = song.title?.toLowerCase().includes(s) || 
+            song.author?.toLowerCase().includes(s) ||
+            song.composer?.toLowerCase().includes(s) ||
+            song.aliases?.some(a => a.toLowerCase().includes(s));
+        
+        if (searchLyrics) {
+          // Also search lyrics in all versions
+          const songVers = allVersions.filter(v => v.song_id === song.id);
+          const matchesLyrics = songVers.some(v => v.lyrics_content?.toLowerCase().includes(s));
+          if (!matchesBasic && !matchesLyrics) return false;
+        } else {
+          if (!matchesBasic) return false;
+        }
       }
       // Songbook filter
       if (songbookFilter && !song.songbooks?.some(sb => sb.name === songbookFilter)) return false;
@@ -271,7 +311,7 @@ export default function Songs() {
       if (personalTagFilter && !pref?.personal_tags?.includes(personalTagFilter)) return false;
       return true;
     });
-  }, [songs, search, songbookFilter, sectionFilter, tagFilter, statusFilter, personalTagFilter, userPrefs, allVersions, versionPrefs]);
+  }, [songs, search, searchLyrics, songbookFilter, sectionFilter, tagFilter, statusFilter, personalTagFilter, userPrefs, allVersions, versionPrefs]);
 
   // Save user preference
   const savePreference = async (songId, updates) => {
@@ -552,13 +592,24 @@ export default function Songs() {
           </div>
 
           {/* Search */}
-          <input
-            type="text"
-            placeholder="Search songs..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ ...s.input, width: '100%', marginBottom: '0.75rem' }}
-          />
+          <div style={{ marginBottom: '0.75rem' }}>
+            <input
+              type="text"
+              placeholder={searchLyrics ? "Search titles, authors, aliases, lyrics..." : "Search titles, authors, aliases..."}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ ...s.input, width: '100%', marginBottom: '0.5rem' }}
+            />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#94a3b8', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={searchLyrics}
+                onChange={(e) => setSearchLyrics(e.target.checked)}
+                style={{ accentColor: '#22c55e' }}
+              />
+              Include lyrics in search
+            </label>
+          </div>
 
           {/* Filters */}
           <div style={s.filters}>
@@ -729,7 +780,7 @@ export default function Songs() {
                   {pref?.personal_tags?.map(tag => (
                     <span key={tag} style={s.personalTag}>
                       {tag}
-                      <button onClick={() => removePersonalTag(selectedSong.id, tag)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+                      <button onClick={() => removePersonalTag(selectedSong.id, tag)} style={s.removeTag}>×</button>
                     </span>
                   ))}
                   <input
@@ -737,18 +788,27 @@ export default function Songs() {
                     placeholder="+ Add tag"
                     value={personalTagInput}
                     onChange={(e) => setPersonalTagInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { addPersonalTag(selectedSong.id, personalTagInput); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && personalTagInput.trim()) {
+                        addPersonalTag(selectedSong.id, personalTagInput.trim());
+                        setPersonalTagInput('');
+                      }
+                    }}
                     style={{ ...s.input, width: '100px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
                   />
                 </div>
               </div>
             )}
 
-            {/* Global Tags */}
-            {selectedSong.tags?.length > 0 && (
+            {/* Suggest Changes Button */}
+            {user && (
               <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>Tags:</div>
-                {selectedSong.tags.map(tag => <span key={tag} style={s.tag}>{tag}</span>)}
+                <button
+                  onClick={() => setShowSuggestModal(true)}
+                  style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  💡 Suggest Changes
+                </button>
               </div>
             )}
 
@@ -970,13 +1030,91 @@ export default function Songs() {
 
             {activeTab === 'info' && (
               <div>
+                {/* Flags/Warnings at top if any */}
+                {songFlags.length > 0 && (
+                  <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f59e0b15', border: '1px solid #f59e0b30', borderRadius: '0.5rem' }}>
+                    <div style={{ fontWeight: 'bold', color: '#f59e0b', marginBottom: '0.5rem', fontSize: '0.875rem' }}>⚠️ Flags</div>
+                    {songFlags.map(f => (
+                      <div key={f.id} style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                        <span style={{ fontWeight: '500' }}>{f.flag_type}:</span> {f.flag_notes || 'No details'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Basic info */}
                 {selectedSong.author && <div style={s.infoRow}><span style={s.infoLabel}>Author:</span> {selectedSong.author}</div>}
                 {selectedSong.composer && <div style={s.infoRow}><span style={s.infoLabel}>Composer:</span> {selectedSong.composer}</div>}
                 {selectedSong.origin && <div style={s.infoRow}><span style={s.infoLabel}>Origin:</span> {selectedSong.origin}</div>}
                 {selectedSong.year_written && <div style={s.infoRow}><span style={s.infoLabel}>Year:</span> {selectedSong.year_written}</div>}
                 {selectedSong.tune_of && <div style={s.infoRow}><span style={s.infoLabel}>Tune of:</span> {selectedSong.tune_of}</div>}
                 {selectedSong.original_language && <div style={s.infoRow}><span style={s.infoLabel}>Language:</span> {selectedSong.original_language}</div>}
-                {!selectedSong.author && !selectedSong.composer && !selectedSong.origin && (
+
+                {/* Aliases */}
+                {songAliases.length > 0 && (
+                  <div style={{ ...s.infoRow, alignItems: 'flex-start' }}>
+                    <span style={s.infoLabel}>Also known as:</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      {songAliases.map(a => (
+                        <span key={a.id} style={{ background: '#334155', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.8rem' }}>
+                          {a.alias_title}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* System Tags */}
+                {selectedSong.tags && selectedSong.tags.length > 0 && (
+                  <div style={{ marginTop: '1rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🏷️ Categories</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      {selectedSong.tags.map(tag => (
+                        <span key={tag} style={{ 
+                          background: '#3b82f620', 
+                          color: '#3b82f6',
+                          border: '1px solid #3b82f640',
+                          padding: '0.25rem 0.5rem', 
+                          borderRadius: '0.25rem', 
+                          fontSize: '0.75rem',
+                          fontWeight: '500'
+                        }}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Personal Tags (for logged-in users) */}
+                {user && pref?.personal_tags && pref.personal_tags.length > 0 && (
+                  <div style={{ marginTop: '1rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🏷️ Your Tags</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      {pref.personal_tags.map(tag => (
+                        <span key={tag} style={{ 
+                          background: '#22c55e20', 
+                          color: '#22c55e',
+                          border: '1px solid #22c55e40',
+                          padding: '0.25rem 0.5rem', 
+                          borderRadius: '0.25rem', 
+                          fontSize: '0.75rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}>
+                          {tag}
+                          <button
+                            onClick={() => removePersonalTag(selectedSong.id, tag)}
+                            style={{ background: 'none', border: 'none', color: '#22c55e', cursor: 'pointer', padding: 0, fontSize: '0.9rem' }}
+                          >×</button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!selectedSong.author && !selectedSong.composer && !selectedSong.origin && selectedSong.tags?.length === 0 && songAliases.length === 0 && (
                   <div style={s.emptyState}>No additional info available</div>
                 )}
               </div>
@@ -1024,6 +1162,102 @@ export default function Songs() {
           </div>
         )}
       </div>
+
+      {/* Suggestion Modal */}
+      {showSuggestModal && selectedSong && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#1e293b',
+            borderRadius: '0.75rem',
+            border: '1px solid #334155',
+            width: '100%',
+            maxWidth: suggestExpanded ? '900px' : '500px',
+            maxHeight: suggestExpanded ? '90vh' : '80vh',
+            overflow: 'auto',
+            padding: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontWeight: 'bold', fontSize: '1.25rem' }}>💡 Suggest Changes</h2>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button onClick={() => setSuggestExpanded(!suggestExpanded)} style={s.btnSec}>
+                  {suggestExpanded ? '⊟ Compact' : '⊞ Expand'}
+                </button>
+                <button onClick={() => { setShowSuggestModal(false); setSuggestType(''); }} style={s.btnSec}>×</button>
+              </div>
+            </div>
+
+            <p style={{ color: '#94a3b8', marginBottom: '1rem', fontSize: '0.875rem' }}>
+              Suggesting changes for: <strong style={{ color: '#fff' }}>{selectedSong.title}</strong>
+            </p>
+
+            {!suggestType ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <button onClick={() => setSuggestType('new_version')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
+                  📝 <strong>Add New Version</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Different lyrics, alternate version, camp-specific adaptation</div>
+                </button>
+                <button onClick={() => setSuggestType('edit_info')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
+                  ✏️ <strong>Edit Song Info</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Fix author, composer, origin, year, or other details</div>
+                </button>
+                <button onClick={() => setSuggestType('add_media')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
+                  🎬 <strong>Add Media Link</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>YouTube video, Spotify track, or other recording</div>
+                </button>
+                <button onClick={() => setSuggestType('add_note')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
+                  📋 <strong>Add Note</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>History, teaching tips, motions, or other context</div>
+                </button>
+                <button onClick={() => setSuggestType('add_alias')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
+                  🏷️ <strong>Add Alternate Name</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Other names this song is known by</div>
+                </button>
+                <button onClick={() => setSuggestType('add_flag')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
+                  ⚠️ <strong>Flag an Issue</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Content warning, sensitivity note, or other flag</div>
+                </button>
+              </div>
+            ) : (
+              <div>
+                <button onClick={() => setSuggestType('')} style={{ ...s.btnSec, marginBottom: '1rem', fontSize: '0.8rem' }}>
+                  ← Back to options
+                </button>
+                
+                <p style={{ color: '#94a3b8', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                  This will open the full suggestion form with "{selectedSong.title}" pre-selected.
+                </p>
+                
+                <Link 
+                  href={`/suggest?song_id=${selectedSong.id}&type=${suggestType}`}
+                  style={{ 
+                    display: 'inline-block',
+                    background: '#22c55e', 
+                    color: '#fff', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.5rem', 
+                    textDecoration: 'none',
+                    fontWeight: '600'
+                  }}
+                >
+                  Continue to Suggestion Form →
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
