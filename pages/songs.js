@@ -1388,6 +1388,23 @@ export default function Songs() {
                   ⚠️ <strong>Flag an Issue</strong>
                   <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Content warning, sensitivity note, or other flag</div>
                 </button>
+                
+                {/* Suggest multiple link */}
+                <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
+                  <Link 
+                    href={`/suggest?song_id=${selectedSong.id}`}
+                    style={{ 
+                      color: '#94a3b8', 
+                      fontSize: '0.875rem',
+                      textDecoration: 'underline',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem'
+                    }}
+                  >
+                    📋 Need to suggest multiple things? Use the full form →
+                  </Link>
+                </div>
               </div>
             ) : (
               <div>
