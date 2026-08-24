@@ -981,23 +981,6 @@ export default function Home() {
             </h1>
           </div>
           
-          {/* User status */}
-          <div className={`mb-6 p-3 rounded-xl text-center ${isDark ? 'bg-slate-800' : 'bg-green-50'}`}>
-            {user ? (
-              <div className="flex items-center justify-between">
-                <span className={`text-sm ${isDark ? 'text-slate-300' : 'text-green-700'}`}>
-                  👋 {userProfile?.display_name || user.email}
-                </span>
-                <button onClick={handleLogout} className="text-xs text-red-500 hover:underline">Sign out</button>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span className={`text-sm ${isDark ? 'text-slate-400' : 'text-green-600'}`}>Guest mode</span>
-                <button onClick={() => setShowAuthModal(true)} className="text-sm text-green-600 hover:underline font-semibold">Sign in</button>
-              </div>
-            )}
-          </div>
-          
           <div className="space-y-6">
             <button
               onClick={createRoom}
