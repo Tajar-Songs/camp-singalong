@@ -16,6 +16,7 @@ export default function Songs() {
   const [allTags, setAllTags] = useState([]);
   const [userPrefs, setUserPrefs] = useState({});
   const [versions, setVersions] = useState([]);
+  const [allVersions, setAllVersions] = useState([]);
   const [songNotes, setSongNotes] = useState([]);
   const [songMedia, setSongMedia] = useState([]);
 
@@ -127,6 +128,11 @@ export default function Songs() {
       // Load tags
       const tagsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers: getAuthHeaders(false) });
       const tagsData = await tagsRes.json();
+      
+      // Load all versions for filtering
+      const allVersionsRes = await fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=id,song_id`, { headers: getAuthHeaders(false) });
+      const allVersionsData = await allVersionsRes.json();
+      setAllVersions(Array.isArray(allVersionsData) ? allVersionsData : []);
 
       // Build songbook map
       const songbookMap = {};
@@ -249,11 +255,23 @@ export default function Songs() {
       if (statusFilter === 'dislike' && !pref?.is_dislike) return false;
       if (statusFilter === 'known' && pref?.status !== 'known') return false;
       if (statusFilter === 'want_to_learn' && pref?.status !== 'want_to_learn') return false;
+      // Untagged: no song-level preferences set at all
+      if (statusFilter === 'untagged') {
+        if (pref && (pref.is_favorite || pref.is_dislike || pref.status || (pref.personal_tags && pref.personal_tags.length > 0))) {
+          return false;
+        }
+      }
+      // No familiarity: none of the song's versions have familiarity set
+      if (statusFilter === 'no_familiarity') {
+        const songVers = allVersions.filter(v => v.song_id === song.id);
+        const hasFamiliarity = songVers.some(v => versionPrefs[v.id]?.familiarity);
+        if (hasFamiliarity) return false;
+      }
       // Personal tag filter
       if (personalTagFilter && !pref?.personal_tags?.includes(personalTagFilter)) return false;
       return true;
     });
-  }, [songs, search, songbookFilter, sectionFilter, tagFilter, statusFilter, personalTagFilter, userPrefs]);
+  }, [songs, search, songbookFilter, sectionFilter, tagFilter, statusFilter, personalTagFilter, userPrefs, allVersions, versionPrefs]);
 
   // Save user preference
   const savePreference = async (songId, updates) => {
@@ -581,6 +599,8 @@ export default function Songs() {
                   <option value="dislike">👎 Dislikes</option>
                   <option value="known">✓ Known</option>
                   <option value="want_to_learn">📚 Want to Learn</option>
+                  <option value="untagged">🔍 Untagged (no prefs)</option>
+                  <option value="no_familiarity">🔍 No familiarity set</option>
                 </select>
               </div>
             )}
