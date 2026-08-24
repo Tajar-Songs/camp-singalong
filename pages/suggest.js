@@ -45,6 +45,13 @@ export default function Suggest() {
   const [currentValue, setCurrentValue] = useState('');
   const [suggestedValue, setSuggestedValue] = useState('');
 
+  // Alias fields
+  const [aliasTitle, setAliasTitle] = useState('');
+
+  // Flag fields
+  const [flagType, setFlagType] = useState('content_warning');
+  const [flagNotes, setFlagNotes] = useState('');
+
   // Common
   const [reason, setReason] = useState('');
 
@@ -61,6 +68,28 @@ export default function Suggest() {
 
   useEffect(() => { checkAuth(); }, []);
   useEffect(() => { if (selectedSongId) loadVersions(selectedSongId); }, [selectedSongId]);
+  
+  // Handle query params from songs page
+  useEffect(() => {
+    if (router.isReady && songs.length > 0) {
+      const { song_id, type } = router.query;
+      if (song_id) {
+        setSelectedSongId(song_id);
+        // Map modal types to form types
+        const typeMap = {
+          'new_version': 'new_version',
+          'edit_info': 'edit',
+          'add_media': 'media',
+          'add_note': 'note',
+          'add_alias': 'add_alias',
+          'add_flag': 'add_flag'
+        };
+        if (type && typeMap[type]) {
+          setSuggestionType(typeMap[type]);
+        }
+      }
+    }
+  }, [router.isReady, router.query, songs]);
 
   const checkAuth = async () => {
     try {
@@ -119,6 +148,8 @@ export default function Suggest() {
     setMediaType('youtube'); setMediaUrl(''); setMediaLabel('');
     setNoteContent(''); setNoteType('history');
     setFieldName('title'); setCurrentValue(''); setSuggestedValue('');
+    setAliasTitle('');
+    setFlagType('content_warning'); setFlagNotes('');
     setReason('');
   };
 
@@ -130,7 +161,7 @@ export default function Suggest() {
       showMsg('❌ Please enter a song title');
       return;
     }
-    if (['new_version', 'media', 'note', 'edit'].includes(suggestionType) && !selectedSongId) {
+    if (['new_version', 'media', 'note', 'edit', 'add_alias', 'add_flag'].includes(suggestionType) && !selectedSongId) {
       showMsg('❌ Please select a song');
       return;
     }
@@ -150,6 +181,14 @@ export default function Suggest() {
       showMsg('❌ Please enter the suggested value');
       return;
     }
+    if (suggestionType === 'add_alias' && !aliasTitle.trim()) {
+      showMsg('❌ Please enter the alternate name');
+      return;
+    }
+    if (suggestionType === 'add_flag' && !flagNotes.trim()) {
+      showMsg('❌ Please describe the flag');
+      return;
+    }
 
     setSubmitting(true);
 
@@ -157,7 +196,7 @@ export default function Suggest() {
       suggestion_type: suggestionType,
       song_id: selectedSongId || null,
       version_id: selectedVersionId || null,
-      title: suggestionType === 'new_song' ? title.trim() : null,
+      title: suggestionType === 'new_song' ? title.trim() : (suggestionType === 'add_alias' ? aliasTitle.trim() : null),
       author: suggestionType === 'new_song' ? author.trim() || null : null,
       composer: suggestionType === 'new_song' ? composer.trim() || null : null,
       lyrics_text: suggestionType === 'new_song' ? lyricsText.trim() || null : null,
@@ -166,8 +205,8 @@ export default function Suggest() {
       media_type: suggestionType === 'media' ? mediaType : null,
       media_url: suggestionType === 'media' ? mediaUrl.trim() : null,
       media_label: suggestionType === 'media' ? mediaLabel.trim() || null : null,
-      note_content: suggestionType === 'note' ? noteContent.trim() : null,
-      note_type: suggestionType === 'note' ? noteType : null,
+      note_content: suggestionType === 'note' ? noteContent.trim() : (suggestionType === 'add_flag' ? flagNotes.trim() : null),
+      note_type: suggestionType === 'note' ? noteType : (suggestionType === 'add_flag' ? flagType : null),
       field_name: suggestionType === 'edit' ? fieldName : null,
       current_value: suggestionType === 'edit' ? currentValue.trim() || null : null,
       suggested_value: suggestionType === 'edit' ? suggestedValue.trim() : null,
@@ -202,7 +241,9 @@ export default function Suggest() {
     new_version: '📝 New Version',
     media: '🎬 Media Link',
     note: '📋 Note',
-    edit: '✏️ Edit'
+    edit: '✏️ Edit',
+    add_alias: '🏷️ Alternate Name',
+    add_flag: '⚠️ Flag'
   };
 
   const statusColors = {
@@ -408,6 +449,43 @@ export default function Suggest() {
               
               <label style={s.label}>Suggested Value *</label>
               <textarea value={suggestedValue} onChange={(e) => setSuggestedValue(e.target.value)} placeholder="What it should say..." style={s.textarea} />
+            </>
+          )}
+
+          {/* ADD ALIAS */}
+          {suggestionType === 'add_alias' && (
+            <>
+              <label style={s.label}>For which song? *</label>
+              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
+                <option value="">Select a song...</option>
+                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+              
+              <label style={s.label}>Alternate Name *</label>
+              <input type="text" value={aliasTitle} onChange={(e) => setAliasTitle(e.target.value)} placeholder="What else is this song called?" style={s.input} />
+            </>
+          )}
+
+          {/* ADD FLAG */}
+          {suggestionType === 'add_flag' && (
+            <>
+              <label style={s.label}>For which song? *</label>
+              <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
+                <option value="">Select a song...</option>
+                {songs.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+              
+              <label style={s.label}>Flag Type</label>
+              <select value={flagType} onChange={(e) => setFlagType(e.target.value)} style={s.select}>
+                <option value="content_warning">Content Warning</option>
+                <option value="cultural_sensitivity">Cultural Sensitivity</option>
+                <option value="outdated_language">Outdated Language</option>
+                <option value="historical_context">Needs Historical Context</option>
+                <option value="other">Other</option>
+              </select>
+              
+              <label style={s.label}>Description *</label>
+              <textarea value={flagNotes} onChange={(e) => setFlagNotes(e.target.value)} placeholder="Describe the issue or concern..." style={s.textarea} />
             </>
           )}
 
