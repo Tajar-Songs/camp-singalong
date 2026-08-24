@@ -40,8 +40,7 @@ export default function Suggest() {
   const [origin, setOrigin] = useState('');
   const [tuneOf, setTuneOf] = useState('');
   
-  const [versionLabel, setVersionLabel] = useState('');
-  const [versionLyrics, setVersionLyrics] = useState('');
+  const [versionItems, setVersionItems] = useState([{ label: '', lyrics: '' }]);
   
   const [mediaItems, setMediaItems] = useState([{ type: 'youtube', url: '', label: '' }]);
   const [noteItems, setNoteItems] = useState([{ type: 'history', content: '' }]);
@@ -131,12 +130,27 @@ export default function Suggest() {
     setIncludeOrigin(false); setIncludeTuneOf(false); setIncludeVersion(false);
     setIncludeMedia(false); setIncludeNote(false); setIncludeAlias(false); setIncludeFlag(false);
     setTitle(''); setAuthor(''); setComposer(''); setYear(''); setOrigin(''); setTuneOf('');
-    setVersionLabel(''); setVersionLyrics('');
+    setVersionItems([{ label: '', lyrics: '' }]);
     setMediaItems([{ type: 'youtube', url: '', label: '' }]);
     setNoteItems([{ type: 'history', content: '' }]);
     setAliasItems([{ title: '' }]);
     setFlagItems([{ type: 'content_warning', notes: '' }]);
     setSourceUrl(''); setReason('');
+  };
+
+  // Version helpers
+  const addVersionItem = () => {
+    setVersionItems([...versionItems, { label: '', lyrics: '' }]);
+  };
+
+  const updateVersionItem = (index, field, value) => {
+    const updated = [...versionItems];
+    updated[index][field] = value;
+    setVersionItems(updated);
+  };
+
+  const removeVersionItem = (index) => {
+    if (versionItems.length > 1) setVersionItems(versionItems.filter((_, i) => i !== index));
   };
 
   // Media helpers
@@ -226,8 +240,8 @@ export default function Suggest() {
     }
 
     // Validate filled fields
-    if (includeVersion && !versionLabel.trim()) {
-      showMsg('❌ Please enter a version label');
+    if (includeVersion && !versionItems.some(v => v.label.trim())) {
+      showMsg('❌ Please enter at least one version label');
       return;
     }
     if (includeMedia && !mediaItems.some(m => m.url.trim())) {
@@ -369,17 +383,21 @@ export default function Suggest() {
       }
     }
 
-    // Version (both modes)
-    if (includeVersion && versionLabel.trim()) {
-      suggestions.push({
-        suggestion_type: 'new_version',
-        song_id: songId,
-        version_label: versionLabel.trim(),
-        lyrics_content: versionLyrics.trim() || null,
-        source_url: sourceUrl.trim() || null,
-        reason: reason.trim() || null,
-        batch_id: batchId,
-        created_by: user.id
+    // Version items (both modes)
+    if (includeVersion) {
+      versionItems.forEach(v => {
+        if (v.label.trim()) {
+          suggestions.push({
+            suggestion_type: 'new_version',
+            song_id: songId,
+            version_label: v.label.trim(),
+            lyrics_content: v.lyrics.trim() || null,
+            source_url: sourceUrl.trim() || null,
+            reason: reason.trim() || null,
+            batch_id: batchId,
+            created_by: user.id
+          });
+        }
       });
     }
 
@@ -685,14 +703,23 @@ export default function Suggest() {
               {/* Version */}
               <label style={includeVersion ? s.checkboxActive : s.checkbox} onClick={() => setIncludeVersion(!includeVersion)}>
                 <input type="checkbox" checked={includeVersion} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>📝 {mode === 'new_song' ? 'Additional Version' : 'Add Version / Lyrics'}</span>
+                <span>📝 {mode === 'new_song' ? 'Additional Version(s)' : 'Add Version(s) / Lyrics'}</span>
               </label>
               {includeVersion && (
                 <div style={s.fieldGroup}>
-                  <label style={{ ...s.label, marginTop: 0 }}>Version Label *</label>
-                  <input type="text" value={versionLabel} onChange={(e) => setVersionLabel(e.target.value)} placeholder="e.g., Camp version, Gender-neutral version" style={s.input} />
-                  <label style={s.label}>Lyrics</label>
-                  <textarea value={versionLyrics} onChange={(e) => setVersionLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.textarea, minHeight: '150px', fontFamily: 'monospace' }} />
+                  {versionItems.map((item, idx) => (
+                    <div key={idx} style={{ marginBottom: idx < versionItems.length - 1 ? '1rem' : 0, paddingBottom: idx < versionItems.length - 1 ? '1rem' : 0, borderBottom: idx < versionItems.length - 1 ? '1px solid #334155' : 'none' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                        <label style={{ ...s.label, marginTop: 0, marginBottom: 0, flex: 'none' }}>Version {idx + 1}</label>
+                        {versionItems.length > 1 && (
+                          <button onClick={() => removeVersionItem(idx)} style={{ ...s.btnSec, padding: '0.3rem 0.6rem', marginLeft: 'auto' }}>×</button>
+                        )}
+                      </div>
+                      <input type="text" value={item.label} onChange={(e) => updateVersionItem(idx, 'label', e.target.value)} placeholder="Version label (e.g., Camp version, Gender-neutral)" style={{ ...s.input, marginBottom: '0.5rem' }} />
+                      <textarea value={item.lyrics} onChange={(e) => updateVersionItem(idx, 'lyrics', e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.textarea, minHeight: '120px', fontFamily: 'monospace' }} />
+                    </div>
+                  ))}
+                  <button onClick={addVersionItem} style={{ ...s.btnSec, marginTop: '0.5rem' }}>+ Add Another Version</button>
                 </div>
               )}
 
