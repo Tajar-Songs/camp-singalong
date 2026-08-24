@@ -20,7 +20,9 @@ export default function Ideas() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newType, setNewType] = useState('feature');
   
+  const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'feature', 'bug', 'improvement'
   const [expandedId, setExpandedId] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [message, setMessage] = useState('');
@@ -150,6 +152,7 @@ export default function Ideas() {
         body: JSON.stringify({
           title: newTitle.trim(),
           description: newDescription.trim() || null,
+          request_type: newType,
           created_by: user.id
         })
       });
@@ -158,6 +161,7 @@ export default function Ideas() {
         setRequests(prev => [data[0], ...prev]);
         setNewTitle('');
         setNewDescription('');
+        setNewType('feature');
         setShowNewForm(false);
         showMessage('✅ Idea submitted!');
       }
@@ -212,10 +216,17 @@ export default function Ideas() {
   // Filter and sort
   const filteredRequests = requests
     .filter(r => statusFilter === 'all' || r.status === statusFilter)
+    .filter(r => typeFilter === 'all' || (r.request_type || 'feature') === typeFilter)
     .sort((a, b) => {
       if (sortBy === 'votes') return getVoteCount(b.id) - getVoteCount(a.id);
       return new Date(b.created_at) - new Date(a.created_at);
     });
+
+  const typeLabels = {
+    feature: { icon: '🌟', label: 'Feature Request', color: '#3b82f6' },
+    bug: { icon: '🐛', label: 'Bug Report', color: '#ef4444' },
+    improvement: { icon: '💡', label: 'Improvement', color: '#f59e0b' }
+  };
 
   const statusColors = {
     open: { bg: '#334155', text: '#94a3b8' },
@@ -258,10 +269,29 @@ export default function Ideas() {
         {user ? (
           showNewForm ? (
             <div style={{ ...s.card, padding: '1rem', marginBottom: '1.5rem' }}>
-              <h3 style={{ fontWeight: 'bold', marginBottom: '0.75rem' }}>Submit an Idea</h3>
+              <h3 style={{ fontWeight: 'bold', marginBottom: '0.75rem' }}>Submit Feedback</h3>
+              
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                {['feature', 'bug', 'improvement'].map(t => (
+                  <button 
+                    key={t} 
+                    onClick={() => setNewType(t)}
+                    style={{
+                      ...s.btnSec,
+                      flex: 1,
+                      background: newType === t ? `${typeLabels[t].color}20` : '#334155',
+                      border: newType === t ? `2px solid ${typeLabels[t].color}` : '2px solid transparent',
+                      color: newType === t ? typeLabels[t].color : '#94a3b8'
+                    }}
+                  >
+                    {typeLabels[t].icon} {typeLabels[t].label.split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+              
               <input
                 type="text"
-                placeholder="What's your idea? (short title)"
+                placeholder={newType === 'bug' ? "What's the bug?" : newType === 'improvement' ? "What could be better?" : "What's your idea?"}
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 style={s.input}
@@ -274,11 +304,11 @@ export default function Ideas() {
               />
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button onClick={submitIdea} disabled={!newTitle.trim()} style={{ ...s.btn, opacity: newTitle.trim() ? 1 : 0.5 }}>Submit</button>
-                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); }} style={s.btnSec}>Cancel</button>
+                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); }} style={s.btnSec}>Cancel</button>
               </div>
             </div>
           ) : (
-            <button onClick={() => setShowNewForm(true)} style={{ ...s.btn, marginBottom: '1.5rem' }}>+ Submit an Idea</button>
+            <button onClick={() => setShowNewForm(true)} style={{ ...s.btn, marginBottom: '1.5rem' }}>+ Submit Feedback</button>
           )
         ) : (
           <div style={{ ...s.card, padding: '1rem', marginBottom: '1.5rem', textAlign: 'center' }}>
@@ -286,10 +316,38 @@ export default function Ideas() {
           </div>
         )}
 
+        {/* Type tabs */}
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <button 
+            onClick={() => setTypeFilter('all')} 
+            style={{ 
+              ...s.btnSec, 
+              background: typeFilter === 'all' ? '#22c55e' : '#334155',
+              fontWeight: typeFilter === 'all' ? '600' : '400'
+            }}
+          >
+            All
+          </button>
+          {['feature', 'bug', 'improvement'].map(t => (
+            <button 
+              key={t} 
+              onClick={() => setTypeFilter(t)}
+              style={{ 
+                ...s.btnSec, 
+                background: typeFilter === t ? `${typeLabels[t].color}` : '#334155',
+                fontWeight: typeFilter === t ? '600' : '400'
+              }}
+            >
+              {typeLabels[t].icon} {typeLabels[t].label.split(' ')[0]}
+              {' '}({requests.filter(r => (r.request_type || 'feature') === t).length})
+            </button>
+          ))}
+        </div>
+
         {/* Filters */}
         <div style={s.filters}>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
-            <option value="all">All</option>
+            <option value="all">All Status</option>
             <option value="open">Open</option>
             <option value="planned">Planned</option>
             <option value="done">Done</option>
@@ -299,7 +357,7 @@ export default function Ideas() {
             <option value="votes">Most Votes</option>
             <option value="recent">Most Recent</option>
           </select>
-          <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{filteredRequests.length} ideas</span>
+          <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
         </div>
 
         {/* Ideas list */}
@@ -309,6 +367,7 @@ export default function Ideas() {
           const reqComments = getComments(req.id);
           const isExpanded = expandedId === req.id;
           const statusColor = statusColors[req.status] || statusColors.open;
+          const reqType = typeLabels[req.request_type] || typeLabels.feature;
 
           return (
             <div key={req.id} style={s.card}>
@@ -343,7 +402,18 @@ export default function Ideas() {
                 {/* Content */}
                 <div style={{ flex: 1, padding: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span style={{ 
+                        fontSize: '0.7rem', 
+                        padding: '0.2rem 0.5rem', 
+                        borderRadius: '0.25rem',
+                        background: `${reqType.color}20`,
+                        color: reqType.color
+                      }}>
+                        {reqType.icon} {reqType.label.split(' ')[0]}
+                      </span>
+                      <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
+                    </div>
                     <span style={{ 
                       fontSize: '0.7rem', 
                       padding: '0.25rem 0.5rem', 
