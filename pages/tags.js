@@ -30,6 +30,8 @@ export default function TagManagement() {
   // Data state
   const [tags, setTags] = useState([]);
   const [songs, setSongs] = useState([]);
+  const [songbooks, setSongbooks] = useState([]);
+  const [songbookEntries, setSongbookEntries] = useState([]);
   const [songTags, setSongTags] = useState([]); // All song-tag relationships
   const [songVersions, setSongVersions] = useState([]); // For lyrics
   const [expandedLyrics, setExpandedLyrics] = useState({}); // { songId: true/false }
@@ -173,7 +175,7 @@ export default function TagManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [tagsRes, songsRes, songTagsRes, versionsRes] = await Promise.all([
+      const [tagsRes, songsRes, songTagsRes, versionsRes, songbooksRes, entriesRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
           headers: getAuthHeaders(false)
         }),
@@ -185,6 +187,12 @@ export default function TagManagement() {
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
           headers: getAuthHeaders(false)
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*`, {
+          headers: getAuthHeaders(false)
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
+          headers: getAuthHeaders(false)
         })
       ]);
       
@@ -193,12 +201,16 @@ export default function TagManagement() {
       const songsData = await songsRes.json();
       const songTagsData = await songTagsRes.json();
       const versionsData = await versionsRes.json();
+      const songbooksData = await songbooksRes.json();
+      const entriesData = await entriesRes.json();
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(tagsData)) setTags(tagsData);
       if (Array.isArray(songsData)) setSongs(songsData);
       if (Array.isArray(songTagsData)) setSongTags(songTagsData);
       if (Array.isArray(versionsData)) setSongVersions(versionsData);
+      if (Array.isArray(songbooksData)) setSongbooks(songbooksData);
+      if (Array.isArray(entriesData)) setSongbookEntries(entriesData);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -208,6 +220,13 @@ export default function TagManagement() {
   const showMessage = (msg) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), 3000);
+  };
+
+  // Get page/section info for a song from songbook entries (primary songbook)
+  const getSongPage = (songId) => {
+    const primarySongbook = songbooks.find(sb => sb.is_primary);
+    const entry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === primarySongbook?.id);
+    return { page: entry?.page || null, section: entry?.section || null };
   };
 
   // Get tags for a specific song
@@ -362,8 +381,9 @@ export default function TagManagement() {
 
   // Filter songs based on section, tag filter, and search
   const filteredSongs = songs.filter(song => {
+    const pageInfo = getSongPage(song.id);
     // Section filter
-    if (!selectedSections.includes(song.section)) return false;
+    if (!selectedSections.includes(pageInfo.section)) return false;
 
     // Tag filter
     if (filterByTag) {
@@ -377,7 +397,7 @@ export default function TagManagement() {
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       const matchesTitle = song.title.toLowerCase().includes(searchLower);
-      const matchesPage = song.page?.toLowerCase().includes(searchLower);
+      const matchesPage = pageInfo.page?.toLowerCase().includes(searchLower);
       if (!matchesTitle && !matchesPage) return false;
     }
 
@@ -593,7 +613,13 @@ export default function TagManagement() {
             </p>
           </div>
           <div className="flex gap-3 items-center flex-wrap">
-            <span className="text-slate-400 text-sm">{tags.length} tags • {songs.length} songs</span>
+            <a href="/" className="text-slate-400 hover:text-slate-300 text-sm">← Singalong</a>
+            <a href="/admin" className="text-slate-400 hover:text-slate-300 text-sm">Songs</a>
+            <a href="/admin/users" className="text-slate-400 hover:text-slate-300 text-sm">Users</a>
+            <a href="/reports" className="text-slate-400 hover:text-slate-300 text-sm">Insights</a>
+            <span className="text-slate-500">|</span>
+            <span className="text-slate-400 text-sm">👋 {userProfile?.display_name}</span>
+            <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-sm">Sign out</button>
           </div>
         </header>
 
@@ -752,7 +778,7 @@ export default function TagManagement() {
                                   <div key={song.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800/50 group">
                                     <div className="flex-1 min-w-0">
                                       <span className="text-white text-sm truncate block">{song.title}</span>
-                                      <span className="text-slate-500 text-xs">Section {song.section}</span>
+                                      <span className="text-slate-500 text-xs">Section {getSongPage(song.id).section}</span>
                                     </div>
                                     <button
                                       onClick={() => removeSongFromTag(song.id, tag.id)}
@@ -947,7 +973,7 @@ export default function TagManagement() {
                                 )}
                               </div>
                               <div className="text-sm text-slate-400">
-                                Section {song.section} • Page {song.page || '—'}
+                                Section {getSongPage(song.id).section} • Page {getSongPage(song.id).page || '—'}
                               </div>
                               {songTagList.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-2">
