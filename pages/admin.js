@@ -57,7 +57,6 @@ export default function Admin() {
   const [allSongs, setAllSongs] = useState([]);
   const [songVersions, setSongVersions] = useState([]);
   const [songNotes, setSongNotes] = useState([]);
-  const [songSections, setSongSections] = useState([]);
   const [songAliases, setSongAliases] = useState([]);
   const [songGroups, setSongGroups] = useState([]);
   const [songGroupMembers, setSongGroupMembers] = useState([]);
@@ -87,8 +86,6 @@ export default function Admin() {
   const [noteType, setNoteType] = useState('round_instruction');
   const [noteContent, setNoteContent] = useState('');
   const [newAlias, setNewAlias] = useState('');
-  const [newSecondarySection, setNewSecondarySection] = useState('');
-  const [newSecondaryPage, setNewSecondaryPage] = useState('');
 
   const [formGroupName, setFormGroupName] = useState('');
   const [formGroupType, setFormGroupType] = useState('round_group');
@@ -354,12 +351,11 @@ export default function Admin() {
   const loadAllData = async () => {
     try {
       const headers = getAuthHeaders(false);
-      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes] = await Promise.all([
+      const [songsRes, versionsRes, versionAttrsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
@@ -378,7 +374,6 @@ export default function Admin() {
       const versions = await versionsRes.json();
       const versionAttrs = await versionAttrsRes.json();
       const notes = await notesRes.json();
-      const sections = await sectionsRes.json();
       const aliases = await aliasesRes.json();
       const groups = await groupsRes.json();
       const members = await membersRes.json();
@@ -396,7 +391,6 @@ export default function Admin() {
       if (Array.isArray(versions)) setSongVersions(versions);
       if (Array.isArray(versionAttrs)) setVersionAttributes(versionAttrs);
       if (Array.isArray(notes)) setSongNotes(notes);
-      if (Array.isArray(sections)) setSongSections(sections);
       if (Array.isArray(aliases)) setSongAliases(aliases);
       if (Array.isArray(groups)) setSongGroups(groups);
       if (Array.isArray(members)) setSongGroupMembers(members);
@@ -471,7 +465,6 @@ export default function Admin() {
   const getSongbookSections = (songbookId) => songbookSections.filter(s => s.songbook_id === songbookId).sort((a, b) => a.display_order - b.display_order);
   
   const getSongNotes = (songId) => songNotes.filter(n => n.song_id === songId);
-  const getSongSections = (songId) => songSections.filter(s => s.song_id === songId);
   const getSongAliases = (songId) => songAliases.filter(a => a.song_id === songId);
   const getSongGroups = (songId) => songGroupMembers.filter(m => m.song_id === songId).map(m => songGroups.find(g => g.id === m.group_id)).filter(Boolean);
   const getGroupMembers = (groupId) => songGroupMembers.filter(m => m.group_id === groupId).sort((a, b) => a.position_in_group - b.position_in_group);
@@ -657,25 +650,6 @@ export default function Admin() {
       await logChange('delete', 'song_aliases', selectedSong.id, selectedSong.title, 'alias', alias.alias_title, null);
       showMessage('✅ Alias removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing alias'); }
-  };
-
-  const addSecondarySection = async () => {
-    if (!newSecondarySection) return;
-    const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_sections`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, section: newSecondarySection, is_primary: false, page: newSecondaryPage.trim() || null }) });
-      await logChange('add', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', null, newSecondarySection);
-      setNewSecondarySection(''); setNewSecondaryPage(''); showMessage('✅ Section added!'); await loadAllData();
-    } catch (error) { showMessage('❌ Error adding section'); }
-  };
-
-  const deleteSecondarySection = async (section) => {
-    if (section.is_primary) { showMessage('❌ Cannot delete primary section'); return; }
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
-      await logChange('delete', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', section.section, null);
-      showMessage('✅ Section removed'); await loadAllData();
-    } catch (error) { showMessage('❌ Error removing section'); }
   };
 
   // Songbook entry management for songs
@@ -1517,29 +1491,13 @@ export default function Admin() {
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
       
-      // 7. Move secondary sections from secondary to primary (skip duplicates)
-      const secondarySections = songSections.filter(s => s.song_id === secondarySongId);
-      const primarySectionCodes = songSections.filter(s => s.song_id === mergePrimarySongId).map(s => s.section);
-      for (const section of secondarySections) {
-        if (!primarySectionCodes.includes(section.section)) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
-            method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
-            body: JSON.stringify({ song_id: mergePrimarySongId }) 
-          });
-        } else {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
-            method: 'DELETE', headers 
-          });
-        }
-      }
-      
-      // 8. Move songbook entries from secondary to primary
+      // 7. Move songbook entries from secondary to primary
       await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
       
-      // 9. Move group memberships from secondary to primary (skip if already in same group)
+      // 8. Move group memberships from secondary to primary (skip if already in same group)
       const secondaryMemberships = songGroupMembers.filter(m => m.song_id === secondarySongId);
       const primaryGroupIds = songGroupMembers.filter(m => m.song_id === mergePrimarySongId).map(m => m.group_id);
       for (const membership of secondaryMemberships) {
@@ -2914,7 +2872,7 @@ export default function Admin() {
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <div style={s.panel}>
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-              <div><label style={s.label}>Table</label><select value={logTableFilter} onChange={(e) => setLogTableFilter(e.target.value)} style={s.select}><option value="all">All</option><option value="songs">Songs</option><option value="song_versions">Versions</option><option value="song_version_attributes">Version Attributes</option><option value="song_notes">Notes</option><option value="song_flags">Flags</option><option value="song_media">Media</option><option value="song_groups">Groups</option><option value="song_group_members">Members</option><option value="song_sections">Sections</option><option value="song_aliases">Aliases</option><option value="songbooks">Songbooks</option><option value="song_songbook_entries">Songbook Entries</option><option value="potential_duplicates">Duplicates</option></select></div>
+              <div><label style={s.label}>Table</label><select value={logTableFilter} onChange={(e) => setLogTableFilter(e.target.value)} style={s.select}><option value="all">All</option><option value="songs">Songs</option><option value="song_versions">Versions</option><option value="song_version_attributes">Version Attributes</option><option value="song_notes">Notes</option><option value="song_flags">Flags</option><option value="song_media">Media</option><option value="song_groups">Groups</option><option value="song_group_members">Members</option><option value="song_aliases">Aliases</option><option value="songbooks">Songbooks</option><option value="song_songbook_entries">Songbook Entries</option><option value="potential_duplicates">Duplicates</option></select></div>
               <div><label style={s.label}>User</label><input type="text" value={logUserFilter} onChange={(e) => setLogUserFilter(e.target.value)} placeholder="Filter..." style={s.input} /></div>
               <div><label style={s.label}>Limit</label><select value={logLimit} onChange={(e) => { setLogLimit(parseInt(e.target.value)); loadAllData(); }} style={s.select}><option value="50">50</option><option value="100">100</option><option value="250">250</option></select></div>
             </div>
