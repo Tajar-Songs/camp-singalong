@@ -29,6 +29,8 @@ export default function Reports() {
 
   const [activeTab, setActiveTab] = useState('songs');
   const [allSongs, setAllSongs] = useState([]);
+  const [songbooks, setSongbooks] = useState([]);
+  const [songbookEntries, setSongbookEntries] = useState([]);
   const [changeLog, setChangeLog] = useState([]);
   const [reportViews, setReportViews] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -123,7 +125,7 @@ export default function Reports() {
       
       if (userFilter) logParams += `&changed_by=ilike.*${userFilter}*`;
 
-      const [songsRes, logRes, viewsRes] = await Promise.all([
+      const [songsRes, logRes, viewsRes, songbooksRes, entriesRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: getAuthHeaders(false)
         }),
@@ -132,6 +134,12 @@ export default function Reports() {
         }),
         fetch(`${SUPABASE_URL}/rest/v1/report_views?select=*&order=created_at.desc`, {
           headers: getAuthHeaders(false)
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*`, {
+          headers: getAuthHeaders(false)
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
+          headers: getAuthHeaders(false)
         })
       ]);
       
@@ -139,10 +147,14 @@ export default function Reports() {
       const songsData = await songsRes.json();
       const logData = await logRes.json();
       const viewsData = await viewsRes.json();
+      const songbooksData = await songbooksRes.json();
+      const entriesData = await entriesRes.json();
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(songsData)) setAllSongs(songsData);
       if (Array.isArray(logData)) setChangeLog(logData);
+      if (Array.isArray(songbooksData)) setSongbooks(songbooksData);
+      if (Array.isArray(entriesData)) setSongbookEntries(entriesData);
       if (Array.isArray(viewsData)) setReportViews(viewsData);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -164,6 +176,16 @@ export default function Reports() {
     }
   };
 
+  // Get page/section info for a song from songbook entries (primary songbook), plus
+  // the pre-2025 book's page as "old page" for reference
+  const getSongPage = (songId) => {
+    const primarySongbook = songbooks.find(sb => sb.is_primary);
+    const entry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === primarySongbook?.id);
+    const oldSongbook = songbooks.find(sb => sb.display_order === 2);
+    const oldEntry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === oldSongbook?.id);
+    return { page: entry?.page || null, section: entry?.section || null, old_page: oldEntry?.page || null };
+  };
+
   const toggleSection = (section) => {
     setSelectedSections(selectedSections.includes(section)
       ? selectedSections.filter(s => s !== section)
@@ -172,7 +194,7 @@ export default function Reports() {
 
   const filteredSongs = allSongs.filter(song =>
     song.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    selectedSections.includes(song.section)
+    selectedSections.includes(getSongPage(song.id).section)
   );
 
   // Note: filteredLog is now handled mostly by the server, 
@@ -189,12 +211,15 @@ export default function Reports() {
 
   const exportSongsCSV = () => {
     const headers = ['Title', 'Section', 'Page', 'Old Page'];
-    const rows = filteredSongs.map(song => [
-      `"${song.title.replace(/"/g, '""')}"`,
-      song.section,
-      song.page || '',
-      song.old_page || ''
-    ]);
+    const rows = filteredSongs.map(song => {
+      const pageInfo = getSongPage(song.id);
+      return [
+        `"${song.title.replace(/"/g, '""')}"`,
+        pageInfo.section,
+        pageInfo.page || '',
+        pageInfo.old_page || ''
+      ];
+    });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     downloadCSV(csv, 'songs-report.csv');
   };
@@ -400,14 +425,17 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSongs.slice(0, rowLimit).map(song => (
-                      <tr key={song.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td style={{ padding: '0.75rem' }}>{song.title}</td>
-                        <td style={{ padding: '0.75rem' }}>{song.section}</td>
-                        <td style={{ padding: '0.75rem' }}>{song.page}</td>
-                        <td style={{ padding: '0.75rem' }}>{song.old_page || '-'}</td>
-                      </tr>
-                    ))}
+                    {filteredSongs.slice(0, rowLimit).map(song => {
+                      const pageInfo = getSongPage(song.id);
+                      return (
+                        <tr key={song.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                          <td style={{ padding: '0.75rem' }}>{song.title}</td>
+                          <td style={{ padding: '0.75rem' }}>{pageInfo.section}</td>
+                          <td style={{ padding: '0.75rem' }}>{pageInfo.page}</td>
+                          <td style={{ padding: '0.75rem' }}>{pageInfo.old_page || '-'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
             </div>
