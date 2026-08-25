@@ -617,11 +617,11 @@ export default function Room() {
           room_id: roomCode,
           song_id: song.id || null,
           song_title: song.title,
-          song_page: pageInfo.page || song.page,
-          song_section: pageInfo.section || song.section,
+          song_page: pageInfo.page,
+          song_section: pageInfo.section,
           requester: requester,
           position: maxPosition + 1,
-          old_page: pageInfo.old_page || song.old_page || null,
+          old_page: pageInfo.old_page || null,
           has_lyrics: !!version?.lyrics_content,
           lyrics_text: version?.lyrics_content || null,
           is_group: false,
@@ -715,7 +715,7 @@ export default function Room() {
       if (songHasAnyTag(song.id, excludeTagIds)) return false;
       
       // Check if song matches section OR has an "include" tag
-      const matchesSection = selectedSections.includes(song.section);
+      const matchesSection = selectedSections.includes(getSongPage(song.id).section);
       const matchesIncludeTag = songHasAnyTag(song.id, includeTagIds);
       
       // Song is eligible if it matches section OR has an include tag
@@ -838,7 +838,8 @@ export default function Room() {
   const filteredSongs = allSongs.filter(song => {
     // First apply section/tag filters (same as random generator)
     if (songHasAnyTag(song.id, excludeTagIds)) return false;
-    const matchesSection = selectedSections.includes(song.section);
+    const pageInfo = getSongPage(song.id);
+    const matchesSection = selectedSections.includes(pageInfo.section);
     const matchesIncludeTag = songHasAnyTag(song.id, includeTagIds);
     if (!matchesSection && !matchesIncludeTag) return false;
     
@@ -849,15 +850,14 @@ export default function Room() {
     const titleNormalized = normalizeForSearch(song.title);
     const matchesTitle = titleNormalized.includes(searchLower) || song.title.toLowerCase().includes(searchTerm.toLowerCase().trim());
     
-    // Get page info from songbook entries (or fall back to song table)
-    const pageInfo = getSongPage(song.id);
-    const page = pageInfo.page || song.page;
-    const oldPage = pageInfo.old_page || song.old_page;
+    // Get page info from songbook entries
+    const page = pageInfo.page;
+    const oldPage = pageInfo.old_page;
     const matchesPage = (page && page.toLowerCase().includes(searchLower)) || 
                         (oldPage && oldPage.toLowerCase().includes(searchLower));
     
-    const sectionName = SECTION_INFO[song.section] || "";
-    const matchesSectionSearch = song.section?.toLowerCase() === searchLower || 
+    const sectionName = SECTION_INFO[pageInfo.section] || "";
+    const matchesSectionSearch = pageInfo.section?.toLowerCase() === searchLower || 
                            sectionName.toLowerCase().includes(searchLower);
     
     // Search in aliases
@@ -1535,7 +1535,7 @@ if (view === 'display' && showLyrics && currentSong) {
                 className={`w-full p-4 rounded-xl text-left border-2 transition-colors ${isDark ? 'border-slate-700 hover:border-slate-500' : 'border-gray-200 hover:border-gray-400'}`}
               >
                 <div className="font-bold">Just this song</div>
-                <div className="text-sm opacity-60">{groupPrompt.song.title} • Page {getSongPage(groupPrompt.song.id).page || groupPrompt.song.page || 'N/A'}</div>
+                <div className="text-sm opacity-60">{groupPrompt.song.title} • Page {getSongPage(groupPrompt.song.id).page || 'N/A'}</div>
               </button>
               
               {/* Option: Add as group(s) */}
@@ -1928,7 +1928,7 @@ if (view === 'display' && showLyrics && currentSong) {
               <div className="max-h-80 overflow-y-auto space-y-2 mb-6">
                 {filteredSongs.map(song => {
                   const pageInfo = getSongPage(song.id);
-                  const displayPage = pageInfo.page || song.page || 'N/A';
+                  const displayPage = pageInfo.page || 'N/A';
                   const flags = getSongFlags(song.id);
                   const hasLyrics = songHasLyrics(song.id);
                   const isExpanded = expandedLyrics.includes(song.id);
@@ -1946,7 +1946,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             {inQueue && <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded">in queue</span>}
                             {alreadySung && <span className="text-[10px] bg-gray-500 text-white px-1.5 py-0.5 rounded">sung</span>}
                           </div>
-                          <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {song.section} • Page {displayPage}</div>
+                          <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {pageInfo.section} • Page {displayPage}</div>
                           {flags.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
                               {flags.map(flag => {
