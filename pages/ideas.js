@@ -94,11 +94,17 @@ export default function Ideas() {
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newType, setNewType] = useState('feature');
+  const [newOptions, setNewOptions] = useState(['', '']); // poll options for 'needs_input' ideas
   
   const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'feature', 'bug', 'improvement'
   const [expandedId, setExpandedId] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [message, setMessage] = useState('');
+  const [pollOptions, setPollOptions] = useState({});   // request_id -> [{id, option_text, display_order}]
+  const [pollVotes, setPollVotes] = useState({});        // option_id -> vote count
+  const [myPollVote, setMyPollVote] = useState({});      // request_id -> option_id I voted for
+  const [pollBreakdown, setPollBreakdown] = useState({}); // request_id -> { [option_id]: { [role]: count } }
+  const [breakdownOpenFor, setBreakdownOpenFor] = useState(null); // request_id currently showing breakdown, or null
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -109,6 +115,19 @@ export default function Ideas() {
 
   useEffect(() => { checkAuth(); }, []);
   useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (!user) { setMyPollVote({}); return; }
+    const loadMyVotes = async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_option_votes?select=request_id,option_id&user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
+        const data = await res.json();
+        const map = {};
+        if (Array.isArray(data)) data.forEach(v => { map[v.request_id] = v.option_id; });
+        setMyPollVote(map);
+      } catch (error) { console.error('Error loading my poll votes:', error); }
+    };
+    loadMyVotes();
+  }, [user]);
 
   const checkAuth = async () => {
     try {
@@ -163,6 +182,30 @@ export default function Ideas() {
       }
       setComments(commentsMap);
 
+      // Load poll options
+      const optRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_options?select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
+      const optData = await optRes.json();
+      const optMap = {};
+      if (Array.isArray(optData)) {
+        optData.forEach(o => {
+          if (!optMap[o.request_id]) optMap[o.request_id] = [];
+          optMap[o.request_id].push(o);
+        });
+      }
+      setPollOptions(optMap);
+
+      // Load poll vote counts - via RPC, not the raw table, since votes are anonymized
+      const pvRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_poll_vote_counts`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      const pvData = await pvRes.json();
+      const countMap = {};
+      if (Array.isArray(pvData)) {
+        pvData.forEach(row => { countMap[row.option_id] = Number(row.vote_count); });
+      }
+      setPollVotes(countMap);
+
       // Load user profiles for display names
       const profilesRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=id,display_name,email`, { headers: getAuthHeaders(false) });
       const profilesData = await profilesRes.json();
@@ -215,6 +258,63 @@ export default function Ideas() {
     }
   };
 
+  const toggleBreakdown = async (requestId) => {
+    if (breakdownOpenFor === requestId) { setBreakdownOpenFor(null); return; }
+    setBreakdownOpenFor(requestId);
+    if (pollBreakdown[requestId]) return; // already loaded
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_poll_vote_breakdown_by_role`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ p_request_id: requestId })
+      });
+      const data = await res.json();
+      const byOption = {};
+      if (Array.isArray(data)) {
+        data.forEach(row => {
+          if (!byOption[row.option_id]) byOption[row.option_id] = {};
+          byOption[row.option_id][row.role] = Number(row.vote_count);
+        });
+      }
+      setPollBreakdown(prev => ({ ...prev, [requestId]: byOption }));
+    } catch (error) {
+      console.error('Error loading vote breakdown:', error);
+      showMessage('❌ Could not load breakdown');
+    }
+  };
+
+  const castPollVote = async (requestId, optionId) => {
+    if (!user) return;
+    const previousOptionId = myPollVote[requestId];
+    try {
+      if (previousOptionId === optionId) return; // already voted for this one
+      if (previousOptionId) {
+        // Changing an existing vote - update the row (matches the UNIQUE(request_id, user_id) constraint)
+        await fetch(`${SUPABASE_URL}/rest/v1/feature_request_option_votes?request_id=eq.${requestId}&user_id=eq.${user.id}`, {
+          method: 'PATCH',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ option_id: optionId })
+        });
+        setPollVotes(prev => ({
+          ...prev,
+          [previousOptionId]: Math.max(0, (prev[previousOptionId] || 1) - 1),
+          [optionId]: (prev[optionId] || 0) + 1
+        }));
+      } else {
+        await fetch(`${SUPABASE_URL}/rest/v1/feature_request_option_votes`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ request_id: requestId, option_id: optionId, user_id: user.id })
+        });
+        setPollVotes(prev => ({ ...prev, [optionId]: (prev[optionId] || 0) + 1 }));
+      }
+      setMyPollVote(prev => ({ ...prev, [requestId]: optionId }));
+    } catch (error) {
+      console.error('Error voting on option:', error);
+      showMessage('❌ Error voting');
+    }
+  };
+
   const submitIdea = async () => {
     if (!user || !newTitle.trim()) return;
     if (ADMIN_ONLY_TYPES.includes(newType) && !isAdmin) {
@@ -236,9 +336,29 @@ export default function Ideas() {
       const data = await res.json();
       if (data[0]) {
         setRequests(prev => [data[0], ...prev]);
+
+        // If this is a poll (needs_input with filled-in options), create the option rows
+        const filledOptions = newOptions.map(o => o.trim()).filter(Boolean);
+        if (newType === 'needs_input' && filledOptions.length > 0) {
+          const optRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_options`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
+            body: JSON.stringify(filledOptions.map((text, i) => ({
+              request_id: data[0].id,
+              option_text: text,
+              display_order: i
+            })))
+          });
+          const optData = await optRes.json();
+          if (Array.isArray(optData)) {
+            setPollOptions(prev => ({ ...prev, [data[0].id]: optData }));
+          }
+        }
+
         setNewTitle('');
         setNewDescription('');
         setNewType('feature');
+        setNewOptions(['', '']);
         setShowNewForm(false);
         showMessage('✅ Idea submitted!');
       }
@@ -393,9 +513,36 @@ export default function Ideas() {
                   <div style={{ color: '#e2e8f0', fontSize: '0.875rem' }}><FormattedText text={newDescription} /></div>
                 </div>
               )}
+              {newType === 'needs_input' && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                    Optional: add options for people to vote on
+                  </div>
+                  {newOptions.map((opt, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <input
+                        type="text"
+                        placeholder={`Option ${i + 1}`}
+                        value={opt}
+                        onChange={(e) => setNewOptions(prev => prev.map((o, idx) => idx === i ? e.target.value : o))}
+                        style={{ ...s.input, marginBottom: 0 }}
+                      />
+                      {newOptions.length > 2 && (
+                        <button
+                          onClick={() => setNewOptions(prev => prev.filter((_, idx) => idx !== i))}
+                          style={{ ...s.btnSec, padding: '0.5rem 0.75rem' }}
+                        >✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <button onClick={() => setNewOptions(prev => [...prev, ''])} style={{ ...s.btnSec, fontSize: '0.8rem' }}>
+                    + Add another option
+                  </button>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button onClick={submitIdea} disabled={!newTitle.trim()} style={{ ...s.btn, opacity: newTitle.trim() ? 1 : 0.5 }}>Submit</button>
-                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); }} style={s.btnSec}>Cancel</button>
+                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); setNewOptions(['', '']); }} style={s.btnSec}>Cancel</button>
               </div>
             </div>
           ) : (
@@ -522,6 +669,72 @@ export default function Ideas() {
                   {req.description && (
                     <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
                   )}
+                  {pollOptions[req.id] && pollOptions[req.id].length > 0 && (() => {
+                    const options = pollOptions[req.id];
+                    const counts = options.map(o => pollVotes[o.id] || 0);
+                    const totalVotes = counts.reduce((a, b) => a + b, 0);
+                    const myVote = myPollVote[req.id];
+                    return (
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        {options.map((opt, i) => {
+                          const count = counts[i];
+                          const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+                          const isMine = myVote === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => castPollVote(req.id, opt.id)}
+                              disabled={!user}
+                              style={{
+                                position: 'relative',
+                                display: 'block',
+                                width: '100%',
+                                textAlign: 'left',
+                                background: '#334155',
+                                border: isMine ? '2px solid #a855f7' : '2px solid transparent',
+                                borderRadius: '0.375rem',
+                                padding: '0.5rem 0.75rem',
+                                marginBottom: '0.375rem',
+                                cursor: user ? 'pointer' : 'default',
+                                overflow: 'hidden'
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute', left: 0, top: 0, bottom: 0,
+                                width: `${pct}%`, background: '#a855f720', zIndex: 0
+                              }} />
+                              <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                                <span>{isMine && '✓ '}{opt.option_text}</span>
+                                <span style={{ color: '#94a3b8' }}>{count} {count === 1 ? 'vote' : 'votes'} ({pct}%)</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {!user && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Log in to vote</div>}
+                        {isAdmin && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <button onClick={() => toggleBreakdown(req.id)} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
+                              {breakdownOpenFor === req.id ? 'Hide' : 'Show'} breakdown by role
+                            </button>
+                            {breakdownOpenFor === req.id && (
+                              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                {!pollBreakdown[req.id] ? 'Loading...' : options.map(opt => {
+                                  const roleCounts = pollBreakdown[req.id][opt.id] || {};
+                                  const roleEntries = Object.entries(roleCounts);
+                                  return (
+                                    <div key={opt.id} style={{ marginBottom: '0.375rem' }}>
+                                      <strong style={{ color: '#e2e8f0' }}>{opt.option_text}:</strong>{' '}
+                                      {roleEntries.length === 0 ? 'no votes' : roleEntries.map(([role, count]) => `${role}: ${count}`).join(', ')}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {req.admin_response && (
                     <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.375rem', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
