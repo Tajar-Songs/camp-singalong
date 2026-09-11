@@ -112,7 +112,7 @@ export default function Admin() {
   // Songbook entry editing (for songs)
   const [editingSongbookEntry, setEditingSongbookEntry] = useState(null);
   const [entrySongbookId, setEntrySongbookId] = useState('');
-  const [entrySection, setEntrySection] = useState('');
+  const [entrySectionId, setEntrySectionId] = useState('');
   const [entryPage, setEntryPage] = useState('');
   
   // Songbook management
@@ -128,7 +128,7 @@ export default function Admin() {
   // Adding songs from songbook page
   const [addingSongToSongbook, setAddingSongToSongbook] = useState(false);
   const [songbookAddSongId, setSongbookAddSongId] = useState('');
-  const [songbookAddSection, setSongbookAddSection] = useState('');
+  const [songbookAddSectionId, setSongbookAddSectionId] = useState('');
   const [songbookAddPage, setSongbookAddPage] = useState('');
   const [songbookSongSearch, setSongbookSongSearch] = useState('');
 
@@ -682,14 +682,14 @@ export default function Admin() {
   const startAddSongbookEntry = () => {
     setEditingSongbookEntry({ isNew: true });
     setEntrySongbookId('');
-    setEntrySection('');
+    setEntrySectionId('');
     setEntryPage('');
   };
 
   const startEditSongbookEntry = (entry) => {
     setEditingSongbookEntry(entry);
     setEntrySongbookId(entry.songbook_id);
-    setEntrySection(entry.section || '');
+    setEntrySectionId(entry.section_id || '');
     setEntryPage(entry.page || '');
   };
 
@@ -701,7 +701,14 @@ export default function Admin() {
     setSaving(true);
     const headers = getAuthHeaders();
     try {
-      const entryData = { song_id: selectedSong.id, songbook_id: entrySongbookId, section: entrySection || null, page: entryPage.trim() };
+      const matchedSection = entrySectionId ? getSongbookSections(entrySongbookId).find(sec => sec.id === entrySectionId) : null;
+      const entryData = {
+        song_id: selectedSong.id,
+        songbook_id: entrySongbookId,
+        section_id: entrySectionId || null,               // real FK - this is what filtering uses
+        section: matchedSection?.section_code || null,     // legacy text mirror, kept for any old display code
+        page: entryPage.trim()
+      };
       if (editingSongbookEntry.isNew) {
         // Check for duplicate
         if (songbookEntries.some(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(entrySongbookId))) {
@@ -830,14 +837,14 @@ export default function Admin() {
   const cancelSongbookSectionEdit = () => setEditingSongbookSection(null);
 
   const saveSongbookSection = async () => {
-    if (!sectionCode.trim()) { showMessage('❌ Section code is required'); return; }
+    if (selectedSongbook?.has_sections && !sectionCode.trim()) { showMessage('❌ Section code is required for this songbook'); return; }
     if (!sectionName.trim()) { showMessage('❌ Section name is required'); return; }
     setSaving(true);
     const headers = getAuthHeaders();
     try {
       const sectionData = {
         songbook_id: selectedSongbook.id,
-        section_code: sectionCode.trim().toUpperCase(),
+        section_code: sectionCode.trim() ? sectionCode.trim().toUpperCase() : null,
         section_name: sectionName.trim(),
         display_order: parseInt(sectionOrder) || 1
       };
@@ -881,7 +888,7 @@ export default function Admin() {
   const startAddSongToSongbook = () => {
     setAddingSongToSongbook(true);
     setSongbookAddSongId('');
-    setSongbookAddSection('');
+    setSongbookAddSectionId('');
     setSongbookAddPage('');
     setSongbookSongSearch('');
   };
@@ -904,10 +911,12 @@ export default function Admin() {
     setSaving(true);
     const headers = getAuthHeaders();
     try {
+      const matchedSection = songbookAddSectionId ? getSongbookSections(selectedSongbook.id).find(sec => sec.id === songbookAddSectionId) : null;
       const entryData = {
         song_id: parseInt(songbookAddSongId),
         songbook_id: selectedSongbook.id,
-        section: songbookAddSection || null,
+        section_id: songbookAddSectionId || null,
+        section: matchedSection?.section_code || null,
         page: songbookAddPage.trim()
       };
       const response = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, {
@@ -2357,10 +2366,10 @@ export default function Admin() {
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div style={s.formGroup}>
                               <label style={s.label}>Section</label>
-                              <select value={entrySection} onChange={(e) => setEntrySection(e.target.value)} style={s.select} disabled={!entrySongbookId}>
+                              <select value={entrySectionId} onChange={(e) => setEntrySectionId(e.target.value)} style={s.select} disabled={!entrySongbookId}>
                                 <option value="">No section</option>
                                 {entrySongbookId && getSongbookSections(entrySongbookId).map(sec => (
-                                  <option key={sec.id} value={sec.section_code}>{sec.section_code} - {sec.section_name}</option>
+                                  <option key={sec.id} value={sec.id}>{sec.section_code ? `${sec.section_code} - ${sec.section_name}` : sec.section_name}</option>
                                 ))}
                                 {entrySongbookId && getSongbookSections(entrySongbookId).length === 0 && (
                                   <option value="" disabled>— No sections defined for this songbook —</option>
@@ -2387,9 +2396,9 @@ export default function Admin() {
                           <div key={sb.id} style={{ marginBottom: '1rem' }}>
                             <div style={{ fontWeight: 'bold', color: '#22c55e', marginBottom: '0.5rem' }}>{sb.name}</div>
                             {entries.map(entry => {
-                              const sectionInfo = sbSections.find(s => s.section_code === entry.section);
-                              const sectionDisplay = sectionInfo 
-                                ? `Section ${sectionInfo.section_code} (${sectionInfo.section_name})`
+                              const sectionInfo = sbSections.find(s => s.id === entry.section_id);
+                              const sectionDisplay = sectionInfo
+                                ? (sectionInfo.section_code ? `Section ${sectionInfo.section_code} (${sectionInfo.section_name})` : `Section: ${sectionInfo.section_name}`)
                                 : entry.section ? `Section ${entry.section}` : null;
                               return (
                                 <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem' }}>
@@ -2403,7 +2412,7 @@ export default function Admin() {
                                 </div>
                               );
                             })}
-                            <button style={{ ...s.btnSmall, marginTop: '0.25rem' }} onClick={() => { setEntrySongbookId(sb.id); setEntrySection(''); setEntryPage(''); setEditingSongbookEntry({ isNew: true }); }}>+ Add another section</button>
+                            <button style={{ ...s.btnSmall, marginTop: '0.25rem' }} onClick={() => { setEntrySongbookId(sb.id); setEntrySectionId(''); setEntryPage(''); setEditingSongbookEntry({ isNew: true }); }}>+ Add another section</button>
                           </div>
                         );
                       })}
@@ -2579,7 +2588,7 @@ export default function Admin() {
                   <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={formSongbookHasSections} onChange={(e) => setFormSongbookHasSections(e.target.checked)} />
-                      <span>Has section letters (A-Z)</span>
+                      <span>Sections use short codes (letters or numbers)</span>
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={formSongbookIsPrimary} onChange={(e) => setFormSongbookIsPrimary(e.target.checked)} />
@@ -2614,11 +2623,13 @@ export default function Admin() {
                           <button style={{ ...s.btnSmall, marginTop: '0.5rem' }} onClick={startAddSongbookSection}>+ Add Section</button>
                         ) : (
                           <div style={{ ...s.card, border: '1px solid #22c55e', marginTop: '0.5rem', padding: '0.75rem' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                              <div>
-                                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Code *</label>
-                                <input type="text" value={sectionCode} onChange={(e) => setSectionCode(e.target.value.toUpperCase())} style={s.input} placeholder="A" maxLength={3} />
-                              </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: selectedSongbook?.has_sections ? '80px 1fr 80px' : '1fr 80px', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                              {selectedSongbook?.has_sections && (
+                                <div>
+                                  <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Code</label>
+                                  <input type="text" value={sectionCode} onChange={(e) => setSectionCode(e.target.value.toUpperCase())} style={s.input} placeholder="e.g. A or RND" maxLength={3} />
+                                </div>
+                              )}
                               <div>
                                 <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Name *</label>
                                 <input type="text" value={sectionName} onChange={(e) => setSectionName(e.target.value)} style={s.input} placeholder="Graces" />
@@ -2628,9 +2639,12 @@ export default function Admin() {
                                 <input type="number" value={sectionOrder} onChange={(e) => setSectionOrder(e.target.value)} style={s.input} />
                               </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                              <button style={s.btn} onClick={saveSongbookSection} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <button style={{ ...s.btn, opacity: (saving || !sectionName.trim()) ? 0.5 : 1 }} onClick={saveSongbookSection} disabled={saving || !sectionName.trim()}>{saving ? 'Saving...' : 'Save'}</button>
                               <button style={s.btnSec} onClick={cancelSongbookSectionEdit}>Cancel</button>
+                              {!sectionName.trim() && (
+                                <span style={{ fontSize: '0.75rem', color: '#f59e0b' }}>Name is required</span>
+                              )}
                             </div>
                           </div>
                         )}
@@ -2680,10 +2694,10 @@ export default function Admin() {
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div style={s.formGroup}>
                               <label style={s.label}>Section</label>
-                              <select value={songbookAddSection} onChange={(e) => setSongbookAddSection(e.target.value)} style={s.select}>
+                              <select value={songbookAddSectionId} onChange={(e) => setSongbookAddSectionId(e.target.value)} style={s.select}>
                                 <option value="">No section</option>
                                 {getSongbookSections(selectedSongbook.id).map(sec => (
-                                  <option key={sec.id} value={sec.section_code}>{sec.section_code} - {sec.section_name}</option>
+                                  <option key={sec.id} value={sec.id}>{sec.section_code ? `${sec.section_code} - ${sec.section_name}` : sec.section_name}</option>
                                 ))}
                               </select>
                             </div>
