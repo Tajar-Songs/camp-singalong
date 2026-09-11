@@ -144,6 +144,10 @@ export default function Ideas() {
 
   const submitIdea = async () => {
     if (!user || !newTitle.trim()) return;
+    if (ADMIN_ONLY_TYPES.includes(newType) && !isAdmin) {
+      showMessage('❌ Only admins can post this type');
+      return;
+    }
     
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests`, {
@@ -225,8 +229,13 @@ export default function Ideas() {
   const typeLabels = {
     feature: { icon: '🌟', label: 'Feature Request', color: '#3b82f6' },
     bug: { icon: '🐛', label: 'Bug Report', color: '#ef4444' },
-    improvement: { icon: '💡', label: 'Improvement', color: '#f59e0b' }
+    improvement: { icon: '💡', label: 'Improvement', color: '#f59e0b' },
+    needs_input: { icon: '🤔', label: 'Needs Input', color: '#a855f7' }
   };
+
+  // Types any logged-in user can post. Admin-only types are added on top of this.
+  const POSTABLE_TYPES = ['feature', 'bug', 'improvement'];
+  const ADMIN_ONLY_TYPES = ['needs_input'];
 
   const statusColors = {
     open: { bg: '#334155', text: '#94a3b8' },
@@ -271,8 +280,8 @@ export default function Ideas() {
             <div style={{ ...s.card, padding: '1rem', marginBottom: '1.5rem' }}>
               <h3 style={{ fontWeight: 'bold', marginBottom: '0.75rem' }}>Submit Feedback</h3>
               
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                {['feature', 'bug', 'improvement'].map(t => (
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                {[...POSTABLE_TYPES, ...(isAdmin ? ADMIN_ONLY_TYPES : [])].map(t => (
                   <button 
                     key={t} 
                     onClick={() => setNewType(t)}
@@ -291,13 +300,13 @@ export default function Ideas() {
               
               <input
                 type="text"
-                placeholder={newType === 'bug' ? "What's the bug?" : newType === 'improvement' ? "What could be better?" : "What's your idea?"}
+                placeholder={newType === 'bug' ? "What's the bug?" : newType === 'improvement' ? "What could be better?" : newType === 'needs_input' ? "What's the idea we need to think through?" : "What's your idea?"}
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 style={s.input}
               />
               <textarea
-                placeholder="Tell us more... (optional)"
+                placeholder={newType === 'needs_input' ? "Describe the idea, the issue it raises, and what input or thoughts you're looking for..." : "Tell us more... (optional)"}
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 style={s.textarea}
@@ -328,7 +337,7 @@ export default function Ideas() {
           >
             All
           </button>
-          {['feature', 'bug', 'improvement'].map(t => (
+          {[...POSTABLE_TYPES, ...ADMIN_ONLY_TYPES].map(t => (
             <button 
               key={t} 
               onClick={() => setTypeFilter(t)}
