@@ -145,15 +145,15 @@ export default function App({ Component, pageProps }) {
     { href: '/', label: 'Sing Together', show: true },
     { href: '/songs', label: 'Songs', show: true },
     { href: '/docs', label: 'Docs', show: true },
-    { href: '/ideas', label: 'Feature Requests', show: true },
-    { href: '/suggest', label: 'Suggest', show: !!user },
+    { href: '/ideas', label: 'Feedback', show: true },
+    { href: '/suggest', label: 'Suggest a Song', show: !!user },
     { href: '/profile', label: 'Profile', show: !!user },
   ];
 
   const adminNavItems = [
     { href: '/admin', label: 'Songs' },
     { href: '/suggestions', label: 'Song Suggestions' },
-    { href: '/ideas', label: 'Feature Requests' },
+    { href: '/ideas', label: 'Feedback' },
     { href: '/tags', label: 'Tags' },
     { href: '/reports', label: 'Reports' },
     { href: '/users', label: 'Users' },
