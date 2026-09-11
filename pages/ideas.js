@@ -4,10 +4,83 @@ import Link from 'next/link';
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
+// Lightweight, dependency-free formatter for idea/feedback descriptions.
+// Supports: **bold**, *italic*, # / ## headers, - or * bullet lists, blank-line paragraphs.
+// Deliberately does NOT support raw HTML - everything renders as React text nodes, so
+// there's no injection risk from user-submitted content.
+function renderInline(text, keyPrefix) {
+  // Split on **bold** and *italic* while keeping the delimiters, then map to elements
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(p => p !== '');
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={`${keyPrefix}-${i}`}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={`${keyPrefix}-${i}`}>{part.slice(1, -1)}</em>;
+    }
+    return part;
+  });
+}
+
+function FormattedText({ text }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  const blocks = [];
+  let currentList = null;
+  let currentParagraph = [];
+
+  const flushParagraph = (key) => {
+    if (currentParagraph.length > 0) {
+      blocks.push(
+        <p key={`p-${key}`} style={{ margin: '0 0 0.5rem 0' }}>
+          {currentParagraph.map((line, i) => (
+            <span key={i}>{renderInline(line, `p-${key}-${i}`)}{i < currentParagraph.length - 1 && <br />}</span>
+          ))}
+        </p>
+      );
+      currentParagraph = [];
+    }
+  };
+  const flushList = (key) => {
+    if (currentList) {
+      blocks.push(<ul key={`ul-${key}`} style={{ margin: '0 0 0.5rem 0', paddingLeft: '1.25rem' }}>{currentList}</ul>);
+      currentList = null;
+    }
+  };
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      flushParagraph(idx);
+      flushList(idx);
+    } else if (trimmed.startsWith('## ')) {
+      flushParagraph(idx);
+      flushList(idx);
+      blocks.push(<h4 key={`h-${idx}`} style={{ margin: '0.75rem 0 0.25rem 0', fontSize: '1rem', fontWeight: 'bold' }}>{renderInline(trimmed.slice(3), `h-${idx}`)}</h4>);
+    } else if (trimmed.startsWith('# ')) {
+      flushParagraph(idx);
+      flushList(idx);
+      blocks.push(<h3 key={`h-${idx}`} style={{ margin: '0.75rem 0 0.25rem 0', fontSize: '1.1rem', fontWeight: 'bold' }}>{renderInline(trimmed.slice(2), `h-${idx}`)}</h3>);
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      flushParagraph(idx);
+      if (!currentList) currentList = [];
+      currentList.push(<li key={`li-${idx}`}>{renderInline(trimmed.slice(2), `li-${idx}`)}</li>);
+    } else {
+      flushList(idx);
+      currentParagraph.push(trimmed);
+    }
+  });
+  flushParagraph('end');
+  flushList('end');
+
+  return <>{blocks}</>;
+}
+
 export default function Ideas() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
   
   const [requests, setRequests] = useState([]);
   const [votes, setVotes] = useState({});
@@ -293,7 +366,7 @@ export default function Ideas() {
                       color: newType === t ? typeLabels[t].color : '#94a3b8'
                     }}
                   >
-                    {typeLabels[t].icon} {typeLabels[t].label.split(' ')[0]}
+                    {typeLabels[t].icon} {typeLabels[t].label}
                   </button>
                 ))}
               </div>
@@ -311,6 +384,15 @@ export default function Ideas() {
                 onChange={(e) => setNewDescription(e.target.value)}
                 style={s.textarea}
               />
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '-0.5rem', marginBottom: '0.75rem' }}>
+                Formatting supported: **bold**, *italic*, # heading, ## subheading, - bullet list
+              </div>
+              {newDescription.trim() && (
+                <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Preview</div>
+                  <div style={{ color: '#e2e8f0', fontSize: '0.875rem' }}><FormattedText text={newDescription} /></div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button onClick={submitIdea} disabled={!newTitle.trim()} style={{ ...s.btn, opacity: newTitle.trim() ? 1 : 0.5 }}>Submit</button>
                 <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); }} style={s.btnSec}>Cancel</button>
@@ -347,7 +429,7 @@ export default function Ideas() {
                 fontWeight: typeFilter === t ? '600' : '400'
               }}
             >
-              {typeLabels[t].icon} {typeLabels[t].label.split(' ')[0]}
+              {typeLabels[t].icon} {typeLabels[t].label}
               {' '}({requests.filter(r => (r.request_type || 'feature') === t).length})
             </button>
           ))}
@@ -419,7 +501,7 @@ export default function Ideas() {
                         background: `${reqType.color}20`,
                         color: reqType.color
                       }}>
-                        {reqType.icon} {reqType.label.split(' ')[0]}
+                        {reqType.icon} {reqType.label}
                       </span>
                       <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
                     </div>
@@ -438,7 +520,7 @@ export default function Ideas() {
                   </div>
                   
                   {req.description && (
-                    <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.5rem' }}>{req.description}</p>
+                    <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
                   )}
 
                   {req.admin_response && (
