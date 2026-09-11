@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { getFilterableSongbooks, getAvailableSections, toggleInArray } from '../../lib/songFilters';
+import { getFilterableSongbooks, getAvailableSections, toggleInArray, sectionLabel } from '../../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -61,6 +61,7 @@ export default function Room() {
   const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
   const [includeMode, setIncludeMode] = useState('any'); // 'any' = OR, 'all' = AND, for includeTagIds
   const [songbookIds, setSongbookIds] = useState([]); // multi-select; [] = no songbook restriction
+  const [sectionDefs, setSectionDefs] = useState([]); // raw songbook_sections rows: {songbook_id, section_code, section_name}
   const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, OR logic
   const [userPreferences, setUserPreferences] = useState({}); // song_id -> preference row (for personal_tags)
   
@@ -329,7 +330,7 @@ export default function Room() {
 
   const loadSongs = async () => {
     try {
-      const [songsRes, versionsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, flagsRes] = await Promise.all([
+      const [songsRes, versionsRes, notesRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, sectionDefsRes, flagsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: getAuthHeaders(false)
         }),
@@ -354,6 +355,9 @@ export default function Room() {
         fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, {
           headers: getAuthHeaders(false)
         }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*`, {
+          headers: getAuthHeaders(false)
+        }),
         fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, {
           headers: getAuthHeaders(false)
         })
@@ -368,6 +372,7 @@ export default function Room() {
       const members = await membersRes.json();
       const entries = await entriesRes.json();
       const books = await songbooksRes.json();
+      const sectionDefsData = await sectionDefsRes.json();
       const flags = await flagsRes.json();
       
       // Only set state if we got arrays (not error objects)
@@ -379,6 +384,7 @@ export default function Room() {
       if (Array.isArray(members)) setSongGroupMembers(members);
       if (Array.isArray(entries)) setSongbookEntries(entries);
       if (Array.isArray(books)) setSongbooks(books);
+      if (Array.isArray(sectionDefsData)) setSectionDefs(sectionDefsData);
       if (Array.isArray(flags)) setSongFlags(flags);
     } catch (error) { console.error('Error loading songs:', error); }
   };
@@ -432,25 +438,36 @@ export default function Room() {
   // Only offer songbooks that actually have songs in them
   const filterableSongbooks = getFilterableSongbooks(songbooks, songbookEntries);
 
-  // Sections available within the currently-selected songbook(s) - or across all
-  // filterable songbooks if none are specifically selected
-  const availableSections = getAvailableSections(songbookEntries, songbookIds);
+  // Sections defined for the currently-selected songbook(s) - real section
+  // records (id, name, optional code), not derived from which songs happen to
+  // occupy them. Empty if no songbook is selected.
+  const availableSections = getAvailableSections(sectionDefs, songbookIds);
 
   // All personal tags currently in use by this user, across any song
   const allPersonalTags = [...new Set(
     Object.values(userPreferences).flatMap(p => p.personal_tags || [])
   )].sort();
 
-  // One-time default: once section data has loaded, select all available sections
-  // by default (matches the old hardcoded "everything on" starting behavior).
-  // Guarded so it only runs once, not every time someone clicks Clear All.
-  const [sectionsInitialized, setSectionsInitialized] = useState(false);
+  // One-time defaults, run once when data first loads:
+  // - auto-select the primary songbook (most rooms run off a single book, and
+  //   sections now require a songbook to be selected to show at all - this keeps
+  //   the common case working the same as before without extra clicks)
+  // - once a songbook is selected (and its sections become available), select
+  //   all of them by default, matching the old "everything on" starting behavior
+  const [defaultsInitialized, setDefaultsInitialized] = useState(false);
   useEffect(() => {
-    if (!sectionsInitialized && availableSections.length > 0) {
-      setSelectedSections(availableSections);
-      setSectionsInitialized(true);
+    if (defaultsInitialized) return;
+    if (songbookIds.length === 0 && filterableSongbooks.length > 0) {
+      const primary = filterableSongbooks.find(sb => sb.is_primary) || filterableSongbooks[0];
+      setSongbookIds([primary.id]);
     }
-  }, [availableSections, sectionsInitialized]);
+  }, [filterableSongbooks, defaultsInitialized]);
+  useEffect(() => {
+    if (!defaultsInitialized && songbookIds.length > 0 && availableSections.length > 0) {
+      setSelectedSections(availableSections.map(s => s.id));
+      setDefaultsInitialized(true);
+    }
+  }, [availableSections, songbookIds, defaultsInitialized]);
 
   // The full song-eligibility check for filtering (random generator + search list).
   // Semantics (matches the original design): a song is eligible if it's in a
@@ -468,7 +485,7 @@ export default function Room() {
     if (songbookIds.length > 0 && relevantEntries.length === 0) return false;
 
     const matchesSection = selectedSections.length > 0
-      ? relevantEntries.some(e => selectedSections.includes(e.section))
+      ? relevantEntries.some(e => selectedSections.includes(e.section_id))
       : false;
 
     const matchesIncludeTags = includeTagIds.length > 0
@@ -1890,7 +1907,7 @@ if (view === 'display' && showLyrics && currentSong) {
               <div>
                 <div className="flex gap-2 mb-4">
                   <button 
-                      onClick={() => setSelectedSections(availableSections)} 
+                      onClick={() => setSelectedSections(availableSections.map(s => s.id))} 
                       className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
                   >
                       Select All
@@ -1902,14 +1919,38 @@ if (view === 'display' && showLyrics && currentSong) {
                       Clear All
                   </button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
-                  {availableSections.map(sec => (
-                    <label key={sec} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
-                      <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(sec)} onChange={() => toggleSection(sec)} />
-                      <span className="text-xs font-medium leading-tight">{sec}: {SECTION_INFO[sec] || sec}</span>
-                    </label>
-                  ))}
-                </div>
+                {songbookIds.length === 0 && (
+                  <p className="text-xs opacity-50">Select a songbook above to see its sections.</p>
+                )}
+                {songbookIds.length > 1 ? (
+                  songbookIds.map(sbId => {
+                    const sb = filterableSongbooks.find(b => b.id === sbId);
+                    const theseSections = availableSections.filter(s2 => s2.songbook_id === sbId);
+                    if (theseSections.length === 0) return null;
+                    return (
+                      <div key={sbId} className="mb-3">
+                        <div className="text-xs opacity-50 mb-1">{sb?.name}</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
+                          {theseSections.map(s2 => (
+                            <label key={s2.id} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
+                              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(s2.id)} onChange={() => toggleSection(s2.id)} />
+                              <span className="text-xs font-medium leading-tight">{sectionLabel(s2)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
+                    {availableSections.map(s2 => (
+                      <label key={s2.id} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
+                        <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(s2.id)} onChange={() => toggleSection(s2.id)} />
+                        <span className="text-xs font-medium leading-tight">{sectionLabel(s2)}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Tag Filters - Only show if tags exist */}
