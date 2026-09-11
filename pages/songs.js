@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { getFilterableSongbooks, getAvailableSections, songMatchesFilters, toggleInArray } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -28,11 +29,11 @@ export default function Songs() {
   const [selectedSong, setSelectedSong] = useState(null);
   const [search, setSearch] = useState('');
   const [searchLyrics, setSearchLyrics] = useState(true); // true = include lyrics, false = names only
-  const [songbookFilter, setSongbookFilter] = useState('');
-  const [sectionFilter, setSectionFilter] = useState('');
-  const [tagFilter, setTagFilter] = useState('');
+  const [songbookIds, setSongbookIds] = useState([]);       // multi-select, [] = any songbook
+  const [sections, setSections] = useState([]);              // multi-select, [] = any section
+  const [systemTagFilter, setSystemTagFilter] = useState([]); // multi-select, [] = any tag
+  const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, [] = any tag
   const [statusFilter, setStatusFilter] = useState(''); // '', 'favorite', 'known', 'want_to_learn'
-  const [personalTagFilter, setPersonalTagFilter] = useState('');
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState('lyrics'); // 'lyrics', 'info', 'media', 'notes'
   const [personalTagInput, setPersonalTagInput] = useState('');
@@ -283,17 +284,19 @@ export default function Songs() {
 
   const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
 
-  // Get unique sections for current songbook filter
-  const availableSections = useMemo(() => {
-    if (!songbookFilter) return [];
-    const sections = new Set();
-    songs.forEach(song => {
-      song.songbooks?.forEach(sb => {
-        if (sb.name === songbookFilter && sb.section) sections.add(sb.section);
-      });
-    });
-    return [...sections].sort();
-  }, [songs, songbookFilter]);
+  // All songbook placements across all songs, in the {songbook_id, section} shape
+  // the shared filter module expects - derived from the already-loaded, enriched
+  // `songs` data rather than a separate fetch.
+  const allEntries = useMemo(() => {
+    return songs.flatMap(song => (song.songbooks || []).map(sb => ({ songbook_id: sb.id, section: sb.section })));
+  }, [songs]);
+
+  // Only offer songbooks that actually have songs in them
+  const filterableSongbooks = useMemo(() => getFilterableSongbooks(songbooks, allEntries), [songbooks, allEntries]);
+
+  // Sections available within the currently-selected songbook(s). Only meaningful
+  // (and only shown in the UI) if at least one of the selected songbooks has sections.
+  const availableSections = useMemo(() => getAvailableSections(allEntries, songbookIds), [allEntries, songbookIds]);
 
   // Get all personal tags
   const allPersonalTags = useMemo(() => {
@@ -325,14 +328,20 @@ export default function Songs() {
           if (!matchesBasic) return false;
         }
       }
-      // Songbook filter
-      if (songbookFilter && !song.songbooks?.some(sb => sb.name === songbookFilter)) return false;
-      // Section filter
-      if (sectionFilter && !song.songbooks?.some(sb => sb.name === songbookFilter && sb.section === sectionFilter)) return false;
-      // Tag filter
-      if (tagFilter && !song.tags?.includes(tagFilter)) return false;
-      // Status filters
+      // Songbook / section / tag filters - shared logic, same as room, admin songs, and admin tags
+      const songEntries = (song.songbooks || []).map(sb => ({ songbook_id: sb.id, section: sb.section }));
       const pref = userPrefs[song.id];
+      if (!songMatchesFilters(
+        songEntries,
+        song.tags || [],           // using tag NAMES here (not ids) - this page already works by name throughout
+        pref?.personal_tags || [],
+        { songbookIds, sections, includeTagIds: systemTagFilter, personalTagValues }
+        // includeMode defaults to 'any' and excludeTagIds defaults to [] - this
+        // page intentionally keeps tag filtering simple (OR-only, include-only).
+        // Room queue filtering needs the fuller include/exclude/AND-OR version.
+      )) return false;
+      // Status filters (unchanged - favorite/dislike/known/want-to-learn filtering
+      // is intentionally left as-is pending the song-vs-version familiarity decision)
       if (statusFilter === 'favorite' && !pref?.is_favorite) return false;
       if (statusFilter === 'dislike' && !pref?.is_dislike) return false;
       if (statusFilter === 'known' && pref?.status !== 'known') return false;
@@ -349,11 +358,9 @@ export default function Songs() {
         const hasFamiliarity = songVers.some(v => versionPrefs[v.id]?.familiarity);
         if (hasFamiliarity) return false;
       }
-      // Personal tag filter
-      if (personalTagFilter && !pref?.personal_tags?.includes(personalTagFilter)) return false;
       return true;
     });
-  }, [songs, search, searchLyrics, songbookFilter, sectionFilter, tagFilter, statusFilter, personalTagFilter, userPrefs, allVersions, versionPrefs]);
+  }, [songs, search, searchLyrics, songbookIds, sections, systemTagFilter, personalTagValues, statusFilter, userPrefs, allVersions, versionPrefs]);
 
   // Save user preference
   const savePreference = async (songId, updates) => {
@@ -574,10 +581,11 @@ export default function Songs() {
     };
   }, [isResizing]);
 
-  // Get page for selected songbook
+  // Get page for selected songbook - only meaningful when exactly one songbook
+  // is selected; otherwise falls back to the song's first known placement.
   const getPageForSongbook = (song) => {
-    if (!songbookFilter) return song.songbooks?.[0]?.page || '';
-    const entry = song.songbooks?.find(sb => sb.name === songbookFilter);
+    if (songbookIds.length !== 1) return song.songbooks?.[0]?.page || '';
+    const entry = song.songbooks?.find(sb => sb.id === songbookIds[0]);
     return entry?.page || '';
   };
 
@@ -747,31 +755,78 @@ export default function Songs() {
 
           {/* Filters */}
           <div style={s.filters}>
-            <div style={s.filterGroup}>
-              <span style={s.filterLabel}>Songbook</span>
-              <select value={songbookFilter} onChange={(e) => { setSongbookFilter(e.target.value); setSectionFilter(''); }} style={s.select}>
-                <option value="">All</option>
-                {songbooks.map(sb => <option key={sb.id} value={sb.name}>{sb.name}</option>)}
-              </select>
-            </div>
-
-            {songbookFilter && availableSections.length > 0 && (
+            {filterableSongbooks.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>Section</span>
-                <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={s.select}>
-                  <option value="">All</option>
-                  {availableSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
-                </select>
+                <span style={s.filterLabel}>Songbook{songbookIds.length > 0 ? ` (${songbookIds.length})` : ''}</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {filterableSongbooks.map(sb => {
+                    const selected = songbookIds.includes(sb.id);
+                    return (
+                      <button
+                        key={sb.id}
+                        onClick={() => {
+                          setSongbookIds(prev => toggleInArray(prev, sb.id));
+                          setSections([]); // selected songbook(s) changed - old section selections may no longer apply
+                        }}
+                        style={{
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
+                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                        }}
+                      >
+                        {sb.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {availableSections.length > 0 && (
+              <div style={s.filterGroup}>
+                <span style={s.filterLabel}>Section{sections.length > 0 ? ` (${sections.length})` : ''}</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {availableSections.map(sec => {
+                    const selected = sections.includes(sec);
+                    return (
+                      <button
+                        key={sec}
+                        onClick={() => setSections(prev => toggleInArray(prev, sec))}
+                        style={{
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
+                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                        }}
+                      >
+                        {sec}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
             {allTags.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>Tag</span>
-                <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={s.select}>
-                  <option value="">All</option>
-                  {allTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
-                </select>
+                <span style={s.filterLabel}>Tag{systemTagFilter.length > 0 ? ` (${systemTagFilter.length})` : ''}</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {allTags.map(tag => {
+                    const selected = systemTagFilter.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => setSystemTagFilter(prev => toggleInArray(prev, tag))}
+                        style={{
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
+                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -792,12 +847,35 @@ export default function Songs() {
 
             {user && allPersonalTags.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>My Tags</span>
-                <select value={personalTagFilter} onChange={(e) => setPersonalTagFilter(e.target.value)} style={s.select}>
-                  <option value="">All</option>
-                  {allPersonalTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
-                </select>
+                <span style={s.filterLabel}>My Tags{personalTagValues.length > 0 ? ` (${personalTagValues.length})` : ''}</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {allPersonalTags.map(tag => {
+                    const selected = personalTagValues.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => setPersonalTagValues(prev => toggleInArray(prev, tag))}
+                        style={{
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
+                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+            )}
+
+            {(songbookIds.length > 0 || sections.length > 0 || systemTagFilter.length > 0 || personalTagValues.length > 0) && (
+              <button
+                onClick={() => { setSongbookIds([]); setSections([]); setSystemTagFilter([]); setPersonalTagValues([]); }}
+                style={{ ...s.select, cursor: 'pointer', color: '#94a3b8' }}
+              >
+                Clear filters
+              </button>
             )}
           </div>
 
