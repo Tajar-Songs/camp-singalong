@@ -463,8 +463,8 @@ export default function Ideas() {
       
       <div style={s.wrapper}>
         <div style={s.header}>
-          <h1 style={s.title}>💡 Ideas & Feedback</h1>
-          <p style={s.subtitle}>Suggest features, vote on what matters to you</p>
+          <h1 style={s.title}>💬 Feedback</h1>
+          <p style={s.subtitle}>Share feedback, vote on ideas, and weigh in when we need your input</p>
         </div>
 
         {/* New idea button / form */}
