@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { getFilterableSongbooks, getAvailableSections, toggleInArray } from '../../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -24,7 +25,7 @@ export default function Room() {
   const [currentSong, setCurrentSong] = useState(null);
   const [sungSongs, setSungSongs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSections, setSelectedSections] = useState(Object.keys(SECTION_INFO));
+  const [selectedSections, setSelectedSections] = useState([]);
   const [showSectionFilter, setShowSectionFilter] = useState(false);
   const [customSongInput, setCustomSongInput] = useState('');
   const [allSongs, setAllSongs] = useState([]);
@@ -58,6 +59,10 @@ export default function Room() {
   const [songAliases, setSongAliases] = useState([]);
   const [includeTagIds, setIncludeTagIds] = useState([]); // "Also include" tags
   const [excludeTagIds, setExcludeTagIds] = useState([]); // "Exclude" tags
+  const [includeMode, setIncludeMode] = useState('any'); // 'any' = OR, 'all' = AND, for includeTagIds
+  const [songbookIds, setSongbookIds] = useState([]); // multi-select; [] = no songbook restriction
+  const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, OR logic
+  const [userPreferences, setUserPreferences] = useState({}); // song_id -> preference row (for personal_tags)
   
   // Expanded notes tracking (which note types are currently shown)
   const [expandedNotes, setExpandedNotes] = useState([]);
@@ -123,6 +128,7 @@ export default function Room() {
   }, []);
 
   useEffect(() => { loadSongs(); loadTags(); }, []);
+  useEffect(() => { loadUserPreferences(); }, [user]);
 
   // Load session history when user changes
   useEffect(() => {
@@ -421,6 +427,63 @@ export default function Room() {
     return entry ? { page: entry.page, section: entry.section } : null;
   };
 
+  // ---------- Filtering (songbook / section / include-exclude tags / personal tags) ----------
+
+  // Only offer songbooks that actually have songs in them
+  const filterableSongbooks = getFilterableSongbooks(songbooks, songbookEntries);
+
+  // Sections available within the currently-selected songbook(s) - or across all
+  // filterable songbooks if none are specifically selected
+  const availableSections = getAvailableSections(songbookEntries, songbookIds);
+
+  // All personal tags currently in use by this user, across any song
+  const allPersonalTags = [...new Set(
+    Object.values(userPreferences).flatMap(p => p.personal_tags || [])
+  )].sort();
+
+  // One-time default: once section data has loaded, select all available sections
+  // by default (matches the old hardcoded "everything on" starting behavior).
+  // Guarded so it only runs once, not every time someone clicks Clear All.
+  const [sectionsInitialized, setSectionsInitialized] = useState(false);
+  useEffect(() => {
+    if (!sectionsInitialized && availableSections.length > 0) {
+      setSelectedSections(availableSections);
+      setSectionsInitialized(true);
+    }
+  }, [availableSections, sectionsInitialized]);
+
+  // The full song-eligibility check for filtering (random generator + search list).
+  // Semantics (matches the original design): a song is eligible if it's in a
+  // selected section, OR it matches the include-tag/personal-tag criteria -
+  // include criteria surface a song even outside the selected sections. Exclude
+  // always wins regardless of anything else. Songbook selection, if any, is a
+  // hard restriction applied before section/tag logic.
+  const songMatchesRoomFilters = (song) => {
+    if (songHasAnyTag(song.id, excludeTagIds)) return false;
+
+    const entries = songbookEntries.filter(e => e.song_id === song.id);
+    const relevantEntries = songbookIds.length > 0
+      ? entries.filter(e => songbookIds.includes(e.songbook_id))
+      : entries;
+    if (songbookIds.length > 0 && relevantEntries.length === 0) return false;
+
+    const matchesSection = selectedSections.length > 0
+      ? relevantEntries.some(e => selectedSections.includes(e.section))
+      : false;
+
+    const matchesIncludeTags = includeTagIds.length > 0
+      ? (includeMode === 'all' ? songHasAllTags(song.id, includeTagIds) : songHasAnyTag(song.id, includeTagIds))
+      : false;
+
+    const myPersonalTags = userPreferences[song.id]?.personal_tags || [];
+    const matchesPersonalTags = personalTagValues.length > 0
+      ? personalTagValues.some(t => myPersonalTags.includes(t))
+      : false;
+
+    return matchesSection || matchesIncludeTags || matchesPersonalTags;
+  };
+
+
   // Get page info for a song from songbook entries
   const getSongPage = (songId) => {
     // Get primary songbook entry
@@ -503,6 +566,20 @@ export default function Room() {
     } catch (error) { console.error('Error loading tags:', error); }
   };
 
+  // Load this user's personal preferences (used here only for personal tags filtering)
+  const loadUserPreferences = async () => {
+    if (!user) { setUserPreferences({}); return; }
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_song_preferences?user_id=eq.${user.id}&select=song_id,personal_tags`, {
+        headers: getAuthHeaders(false)
+      });
+      const data = await res.json();
+      const map = {};
+      if (Array.isArray(data)) data.forEach(p => { map[p.song_id] = p; });
+      setUserPreferences(map);
+    } catch (error) { console.error('Error loading user preferences:', error); }
+  };
+
   // Helper: Check if song has a specific tag
   const songHasTag = (songId, tagId) => {
     return songTags.some(st => st.song_id === songId && st.tag_id === tagId);
@@ -512,6 +589,12 @@ export default function Room() {
   const songHasAnyTag = (songId, tagIds) => {
     if (!tagIds || tagIds.length === 0) return false;
     return tagIds.some(tagId => songHasTag(songId, tagId));
+  };
+
+  // Helper: Check if song has ALL of the given tags
+  const songHasAllTags = (songId, tagIds) => {
+    if (!tagIds || tagIds.length === 0) return false;
+    return tagIds.every(tagId => songHasTag(songId, tagId));
   };
 
   const createRoom = async () => {
@@ -711,15 +794,7 @@ export default function Room() {
       // Already in queue? Skip
       if (queue.some(s => s.song_title === song.title)) return false;
       
-      // Check if song should be EXCLUDED (exclude tags take priority)
-      if (songHasAnyTag(song.id, excludeTagIds)) return false;
-      
-      // Check if song matches section OR has an "include" tag
-      const matchesSection = selectedSections.includes(getSongPage(song.id).section);
-      const matchesIncludeTag = songHasAnyTag(song.id, includeTagIds);
-      
-      // Song is eligible if it matches section OR has an include tag
-      return matchesSection || matchesIncludeTag;
+      return songMatchesRoomFilters(song);
     });
     if (availableSongs.length === 0) { alert('No songs available with current filters!'); return; }
     
@@ -836,12 +911,9 @@ export default function Room() {
   };
 
   const filteredSongs = allSongs.filter(song => {
-    // First apply section/tag filters (same as random generator)
-    if (songHasAnyTag(song.id, excludeTagIds)) return false;
+    // First apply songbook/section/tag filters (same logic as random generator)
+    if (!songMatchesRoomFilters(song)) return false;
     const pageInfo = getSongPage(song.id);
-    const matchesSection = selectedSections.includes(pageInfo.section);
-    const matchesIncludeTag = songHasAnyTag(song.id, includeTagIds);
-    if (!matchesSection && !matchesIncludeTag) return false;
     
     // Then apply search filter
     const searchLower = normalizeForSearch(searchTerm);
@@ -1765,11 +1837,13 @@ if (view === 'display' && showLyrics && currentSong) {
             <div className="flex items-center gap-3">
               {!showSectionFilter && (
                 <span className="text-xs opacity-50">
-                  {selectedSections.length === Object.keys(SECTION_INFO).length 
+                  {selectedSections.length === availableSections.length 
                     ? 'All sections' 
                     : `${selectedSections.length} sections`}
-                  {includeTagIds.length > 0 && ` • +${includeTagIds.length} tags`}
+                  {songbookIds.length > 0 && ` • ${songbookIds.length} songbook${songbookIds.length !== 1 ? 's' : ''}`}
+                  {includeTagIds.length > 0 && ` • +${includeTagIds.length} tags (${includeMode === 'all' ? 'all' : 'any'})`}
                   {excludeTagIds.length > 0 && ` • -${excludeTagIds.length} excluded`}
+                  {personalTagValues.length > 0 && ` • ${personalTagValues.length} my tags`}
                 </span>
               )}
               <span className="text-xl opacity-50">{showSectionFilter ? '▼' : '▶'}</span>
@@ -1783,12 +1857,40 @@ if (view === 'display' && showLyrics && currentSong) {
           {showSectionFilter && (
             <div className="mt-6 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
               <p className="text-xs opacity-50 -mt-2">These filters apply to both random song generation and song search below</p>
-              
+
+              {/* Songbook Filter - only shown if there's more than one populated songbook to choose from */}
+              {filterableSongbooks.length > 1 && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider opacity-60">Songbook{songbookIds.length > 0 ? ` (${songbookIds.length})` : ''}</span>
+                    {songbookIds.length > 0 && (
+                      <button onClick={() => setSongbookIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {filterableSongbooks.map(sb => {
+                      const isSelected = songbookIds.includes(sb.id);
+                      return (
+                        <button
+                          key={sb.id}
+                          onClick={() => setSongbookIds(prev => toggleInArray(prev, sb.id))}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
+                            isSelected ? 'bg-blue-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : ''}{sb.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Section Filters */}
               <div>
                 <div className="flex gap-2 mb-4">
                   <button 
-                      onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
+                      onClick={() => setSelectedSections(availableSections)} 
                       className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
                   >
                       Select All
@@ -1801,10 +1903,10 @@ if (view === 'display' && showLyrics && currentSong) {
                   </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
-                  {Object.keys(SECTION_INFO).map(sec => (
+                  {availableSections.map(sec => (
                     <label key={sec} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
                       <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(sec)} onChange={() => toggleSection(sec)} />
-                      <span className="text-xs font-medium leading-tight">{sec}: {SECTION_INFO[sec]}</span>
+                      <span className="text-xs font-medium leading-tight">{sec}: {SECTION_INFO[sec] || sec}</span>
                     </label>
                   ))}
                 </div>
@@ -1820,9 +1922,25 @@ if (view === 'display' && showLyrics && currentSong) {
                         <span className="hidden sm:inline">Also Include (even if section not selected)</span>
                         <span className="sm:hidden">Also Include</span>
                       </span>
-                      {includeTagIds.length > 0 && (
-                        <button onClick={() => setIncludeTagIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {includeTagIds.length > 1 && (
+                          <div className="flex rounded-full overflow-hidden border border-slate-600 text-[10px] font-black uppercase">
+                            <button
+                              onClick={() => setIncludeMode('any')}
+                              className={`px-2 py-1 ${includeMode === 'any' ? 'bg-green-600 text-white' : isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                              title="Song matches if it has ANY of the selected tags"
+                            >Any</button>
+                            <button
+                              onClick={() => setIncludeMode('all')}
+                              className={`px-2 py-1 ${includeMode === 'all' ? 'bg-green-600 text-white' : isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                              title="Song matches only if it has ALL of the selected tags"
+                            >All</button>
+                          </div>
+                        )}
+                        {includeTagIds.length > 0 && (
+                          <button onClick={() => setIncludeTagIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {tags.map(tag => {
@@ -1883,6 +2001,34 @@ if (view === 'display' && showLyrics && currentSong) {
                     </div>
                   </div>
                 </>
+              )}
+
+              {/* Personal Tags - only shown if logged in and has used any */}
+              {user && allPersonalTags.length > 0 && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider opacity-60">My Tags</span>
+                    {personalTagValues.length > 0 && (
+                      <button onClick={() => setPersonalTagValues([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {allPersonalTags.map(tag => {
+                      const isSelected = personalTagValues.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => setPersonalTagValues(prev => toggleInArray(prev, tag))}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
+                            isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : '+ '}{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
           )}
