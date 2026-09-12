@@ -3,6 +3,7 @@ import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { useState, useEffect } from 'react'
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles'
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -11,6 +12,7 @@ export default function App({ Component, pageProps }) {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
   const [checking, setChecking] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
@@ -124,6 +126,8 @@ export default function App({ Component, pageProps }) {
           setUserProfile(data[0]);
         }
       }
+      const roleKeys = await fetchUserRoleKeys(userId, { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` });
+      setUserRoleKeys(roleKeys);
     } catch (error) {
       console.error('Error loading profile:', error);
     }
@@ -134,10 +138,11 @@ export default function App({ Component, pageProps }) {
     localStorage.removeItem('supabase_refresh_token');
     setUser(null);
     setUserProfile(null);
+    setUserRoleKeys([]);
     window.location.href = '/';
   };
 
-  const isAdmin = userProfile?.role === 'admin';
+  const isAdmin = hasAnyRole(userRoleKeys);
   const currentPath = router.pathname;
 
   // Navigation items - split into user and admin
