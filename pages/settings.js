@@ -5,10 +5,12 @@ import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
+const SCOPE_LABELS = { personal: 'Personal', group: 'Group', platform: 'Platform' };
+const SCOPE_ORDER = ['personal', 'group', 'platform'];
+
 const CATEGORY_LABELS = {
-  platform_stewardship: 'Platform',
-  song_stewardship: 'Songs',
-  general: 'General'
+  access_safety: 'Access & Safety',
+  song_tracking: 'Song Tracking'
 };
 
 export default function Settings() {
@@ -105,12 +107,21 @@ export default function Settings() {
     setSavingKey(null);
   };
 
-  const groupedSettings = settings.reduce((acc, s) => {
+  const groupedByScope = settings.reduce((acc, s) => {
+    const scope = s.scope || 'platform';
     const cat = s.category || 'general';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(s);
+    if (!acc[scope]) acc[scope] = {};
+    if (!acc[scope][cat]) acc[scope][cat] = [];
+    acc[scope][cat].push(s);
     return acc;
   }, {});
+  // The option-lists editor isn't a real setting row (it's a link to another
+  // page), but it belongs conceptually under Personal > Song Tracking - added
+  // by hand here rather than trying to make navigation links schema-driven.
+  if (!groupedByScope.personal) groupedByScope.personal = {};
+  if (!groupedByScope.personal.song_tracking) groupedByScope.personal.song_tracking = [];
+  const optionListsLinkCard = { __isLinkCard: true, label: 'Global song tags and familiarity settings', description: 'Add, rename, reorder, or remove the options people can tag songs with (favorite, dislike, known, want to learn) and the familiarity levels used per version.' };
+  groupedByScope.personal.song_tracking = [optionListsLinkCard, ...groupedByScope.personal.song_tracking];
 
   const inputStyle = { background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem 0.75rem', color: '#fff', fontSize: '0.875rem', width: '100%', maxWidth: '300px' };
   const cardStyle = { background: '#0f172a', border: '1px solid #1e293b', borderRadius: '0.75rem', padding: '1rem', marginBottom: '0.75rem' };
@@ -133,98 +144,111 @@ export default function Settings() {
           </div>
         )}
 
-        <Link href="/option-lists" style={{ textDecoration: 'none' }}>
-          <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.75rem', padding: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-            <div>
-              <div style={{ fontWeight: 'bold', color: '#fff' }}>📋 Manage Option Lists</div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Add, rename, reorder, or remove song status options and familiarity levels</div>
-            </div>
-            <span style={{ color: '#64748b' }}>→</span>
-          </div>
-        </Link>
-
         {settings.length === 0 && (
           <p style={{ color: '#64748b' }}>No settings configured yet.</p>
         )}
 
-        {Object.entries(groupedSettings).map(([category, items]) => (
-          <div key={category} style={{ marginBottom: '1.5rem' }}>
-            <h2 style={{ fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: '0.5rem' }}>
-              {CATEGORY_LABELS[category] || category}
-            </h2>
-            {items.map(setting => {
-              const isExpanded = expandedDescriptions[setting.key];
-              const isSaving = savingKey === setting.key;
-              const hasChanged = drafts[setting.key] !== setting.value;
-              return (
-                <div key={setting.key} style={cardStyle}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontWeight: 'bold' }}>{setting.label || setting.key}</span>
-                        <button
-                          onClick={() => setExpandedDescriptions(prev => ({ ...prev, [setting.key]: !prev[setting.key] }))}
-                          style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem' }}
-                        >
-                          {isExpanded ? '▲ Hide details' : 'ⓘ What does this do?'}
-                        </button>
+        {SCOPE_ORDER.filter(scope => groupedByScope[scope] && Object.values(groupedByScope[scope]).some(items => items.length > 0)).map(scope => (
+          <div key={scope} style={{ marginBottom: '2rem' }}>
+            <h1 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.75rem', paddingBottom: '0.375rem', borderBottom: '1px solid #1e293b' }}>
+              {SCOPE_LABELS[scope] || scope}
+            </h1>
+            {Object.entries(groupedByScope[scope]).filter(([, items]) => items.length > 0).map(([category, items]) => (
+              <div key={category} style={{ marginBottom: '1.5rem' }}>
+                <h2 style={{ fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: '0.5rem' }}>
+                  {CATEGORY_LABELS[category] || category}
+                </h2>
+                {items.map(setting => {
+                  if (setting.__isLinkCard) {
+                    return (
+                      <Link key="option-lists-link" href="/option-lists" style={{ textDecoration: 'none' }}>
+                        <div style={cardStyle}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ fontWeight: 'bold', color: '#fff' }}>{setting.label}</div>
+                              <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>{setting.description}</div>
+                            </div>
+                            <span style={{ color: '#64748b' }}>→</span>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  }
+                  const isExpanded = expandedDescriptions[setting.key];
+                  const isSaving = savingKey === setting.key;
+                  const hasChanged = drafts[setting.key] !== setting.value;
+                  return (
+                    <div key={setting.key} style={cardStyle}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontWeight: 'bold' }}>{setting.label || setting.key}</span>
+                            <button
+                              onClick={() => setExpandedDescriptions(prev => ({ ...prev, [setting.key]: !prev[setting.key] }))}
+                              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem' }}
+                            >
+                              {isExpanded ? '▲ Hide details' : 'ⓘ What does this do?'}
+                            </button>
+                          </div>
+                          {isExpanded && (
+                            <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.375rem', maxWidth: '500px' }}>
+                              {setting.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      {isExpanded && (
-                        <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.375rem', maxWidth: '500px' }}>
-                          {setting.description}
-                        </p>
-                      )}
+
+                      <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {setting.value_type === 'boolean' ? (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: isAdmin ? 'pointer' : 'default' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!drafts[setting.key]}
+                              disabled={!isAdmin}
+                              onChange={(e) => setDrafts(prev => ({ ...prev, [setting.key]: e.target.checked }))}
+                            />
+                            <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>{drafts[setting.key] ? 'On' : 'Off'}</span>
+                          </label>
+                        ) : setting.value_type === 'select' ? (
+                          <select
+                            value={drafts[setting.key] || ''}
+                            disabled={!isAdmin}
+                            onChange={(e) => setDrafts(prev => ({ ...prev, [setting.key]: e.target.value }))}
+                            style={inputStyle}
+                          >
+                            {(setting.constraints?.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            type={setting.value_type === 'number' ? 'number' : 'text'}
+                            value={drafts[setting.key] ?? ''}
+                            disabled={!isAdmin}
+                            min={setting.constraints?.min}
+                            max={setting.constraints?.max}
+                            onChange={(e) => setDrafts(prev => ({ ...prev, [setting.key]: e.target.value }))}
+                            style={inputStyle}
+                          />
+                        )}
+
+                        {isAdmin && hasChanged && (
+                          <button
+                            onClick={() => saveSetting(setting)}
+                            disabled={isSaving}
+                            style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 'bold', cursor: 'pointer', opacity: isSaving ? 0.6 : 1 }}
+                          >
+                            {isSaving ? 'Saving...' : 'Save'}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-
-                  <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {setting.value_type === 'boolean' ? (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: isAdmin ? 'pointer' : 'default' }}>
-                        <input
-                          type="checkbox"
-                          checked={!!drafts[setting.key]}
-                          disabled={!isAdmin}
-                          onChange={(e) => setDrafts(prev => ({ ...prev, [setting.key]: e.target.checked }))}
-                        />
-                        <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>{drafts[setting.key] ? 'On' : 'Off'}</span>
-                      </label>
-                    ) : setting.value_type === 'select' ? (
-                      <select
-                        value={drafts[setting.key] || ''}
-                        disabled={!isAdmin}
-                        onChange={(e) => setDrafts(prev => ({ ...prev, [setting.key]: e.target.value }))}
-                        style={inputStyle}
-                      >
-                        {(setting.constraints?.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
-                    ) : (
-                      <input
-                        type={setting.value_type === 'number' ? 'number' : 'text'}
-                        value={drafts[setting.key] ?? ''}
-                        disabled={!isAdmin}
-                        min={setting.constraints?.min}
-                        max={setting.constraints?.max}
-                        onChange={(e) => setDrafts(prev => ({ ...prev, [setting.key]: e.target.value }))}
-                        style={inputStyle}
-                      />
-                    )}
-
-                    {isAdmin && hasChanged && (
-                      <button
-                        onClick={() => saveSetting(setting)}
-                        disabled={isSaving}
-                        style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 'bold', cursor: 'pointer', opacity: isSaving ? 0.6 : 1 }}
-                      >
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            ))}
           </div>
         ))}
       </div>
     </div>
   );
+
 }
