@@ -165,28 +165,40 @@ export default function UserManagement() {
         const grant = allGrants.find(g => g.user_id === targetUserId && g.role_id === role.id);
         if (!grant) return;
 
-        // Self-lockout guard: block if this is the last role-grant in the
-        // whole system (excluding the one being removed).
-        const remainingElsewhere = allGrants.filter(g => g.id !== grant.id);
-        if (remainingElsewhere.length === 0) {
-          showMessage('❌ Cannot remove the last remaining role in the system - someone needs to keep access.');
+        // Self-lockout guard: block if this would leave THIS SPECIFIC ROLE
+        // with zero holders anywhere in the system - not just "any role at all".
+        const othersWithThisRole = allGrants.filter(g => g.role_id === role.id && g.id !== grant.id);
+        if (othersWithThisRole.length === 0) {
+          showMessage(`❌ Cannot remove the last "${role.label}" in the system - nobody would be able to grant it back.`);
           return;
         }
         if (targetUserId === user.id && !confirm(`Remove your own "${role.label}" access? You may lose the ability to undo this yourself.`)) {
           return;
         }
 
-        await fetch(`${SUPABASE_URL}/rest/v1/user_roles?id=eq.${grant.id}`, { method: 'DELETE', headers });
+        const delRes = await fetch(`${SUPABASE_URL}/rest/v1/user_roles?id=eq.${grant.id}`, { method: 'DELETE', headers });
+        if (!delRes.ok) {
+          const errText = await delRes.text();
+          console.error('Role removal failed:', errText);
+          showMessage(`❌ Could not remove ${role.label} - you may no longer hold the permission needed to do this.`);
+          return;
+        }
         await fetch(`${SUPABASE_URL}/rest/v1/role_change_log`, {
           method: 'POST', headers,
           body: JSON.stringify({ user_id: targetUserId, role_id: role.id, action: 'revoked', scope_type: 'platform', changed_by: user.id })
         });
         showMessage(`✅ Removed ${role.label}`);
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/user_roles`, {
+        const insRes = await fetch(`${SUPABASE_URL}/rest/v1/user_roles`, {
           method: 'POST', headers,
           body: JSON.stringify({ user_id: targetUserId, role_id: role.id, scope_type: 'platform', granted_by: user.id })
         });
+        if (!insRes.ok) {
+          const errText = await insRes.text();
+          console.error('Role grant failed:', errText);
+          showMessage(`❌ Could not grant ${role.label} - you may not hold the permission needed to do this.`);
+          return;
+        }
         await fetch(`${SUPABASE_URL}/rest/v1/role_change_log`, {
           method: 'POST', headers,
           body: JSON.stringify({ user_id: targetUserId, role_id: role.id, action: 'granted', scope_type: 'platform', changed_by: user.id })
