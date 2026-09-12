@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
@@ -131,6 +132,16 @@ export default function Settings() {
             {message}
           </div>
         )}
+
+        <Link href="/option-lists" style={{ textDecoration: 'none' }}>
+          <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.75rem', padding: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+            <div>
+              <div style={{ fontWeight: 'bold', color: '#fff' }}>📋 Manage Option Lists</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Add, rename, reorder, or remove song status options and familiarity levels</div>
+            </div>
+            <span style={{ color: '#64748b' }}>→</span>
+          </div>
+        </Link>
 
         {settings.length === 0 && (
           <p style={{ color: '#64748b' }}>No settings configured yet.</p>
