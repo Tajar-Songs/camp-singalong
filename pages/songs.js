@@ -36,6 +36,9 @@ export default function Songs() {
   const [excludeTagFilter, setExcludeTagFilter] = useState([]); // multi-select exclude, [] = no exclusions
   const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, [] = any tag
   const [statusFilter, setStatusFilter] = useState([]); // multi-select array now, e.g. ['favorite','want_to_learn']
+  const [filtersExpanded, setFiltersExpanded] = useState(true); // master collapse - filters stay applied either way
+  const [collapsedGroups, setCollapsedGroups] = useState({}); // per-group collapse, e.g. { songbook: true }
+  const toggleGroupCollapsed = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState('lyrics'); // 'lyrics', 'info', 'media', 'notes'
   const [personalTagInput, setPersonalTagInput] = useState('');
@@ -763,10 +766,29 @@ export default function Songs() {
           </div>
 
           {/* Filters */}
+          {(() => {
+            const activeFilterCount = songbookIds.length + sections.length + systemTagFilter.length + excludeTagFilter.length + personalTagValues.length + statusFilter.length;
+            return (
+              <div
+                onClick={() => setFiltersExpanded(prev => !prev)}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.5rem 0', userSelect: 'none' }}
+              >
+                <span style={{ fontWeight: 'bold', color: '#94a3b8', fontSize: '0.875rem' }}>
+                  🎯 Filters{activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
+                </span>
+                <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{filtersExpanded ? '▲ Collapse' : '▼ Expand'}</span>
+              </div>
+            );
+          })()}
+          {filtersExpanded && (
           <div style={s.filters}>
             {filterableSongbooks.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>Songbook{songbookIds.length > 0 ? ` (${songbookIds.length})` : ''}</span>
+                <div onClick={() => toggleGroupCollapsed('songbook')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>Songbook{songbookIds.length > 0 ? ` (${songbookIds.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.songbook ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.songbook && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                   {filterableSongbooks.map(sb => {
                     const selected = songbookIds.includes(sb.id);
@@ -788,6 +810,7 @@ export default function Songs() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
@@ -799,7 +822,12 @@ export default function Songs() {
 
             {availableSections.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>Section{sections.length > 0 ? ` (${sections.length})` : ''}</span>
+                <div onClick={() => toggleGroupCollapsed('section')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>Section{sections.length > 0 ? ` (${sections.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.section ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.section && (
+                <>
                 {songbookIds.length > 1 ? (
                   // Multiple songbooks selected - group sections under a label for each
                   songbookIds.map(sbId => {
@@ -850,12 +878,18 @@ export default function Songs() {
                     })}
                   </div>
                 )}
+                </>
+                )}
               </div>
             )}
 
             {allTags.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>Tag{systemTagFilter.length > 0 ? ` (${systemTagFilter.length})` : ''}</span>
+                <div onClick={() => toggleGroupCollapsed('tag')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>Tag{systemTagFilter.length > 0 ? ` (${systemTagFilter.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.tag ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.tag && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                   {allTags.map(tag => {
                     const selected = systemTagFilter.includes(tag);
@@ -874,12 +908,17 @@ export default function Songs() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
             {allTags.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>Exclude Tag{excludeTagFilter.length > 0 ? ` (${excludeTagFilter.length})` : ''}</span>
+                <div onClick={() => toggleGroupCollapsed('excludeTag')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>Exclude Tag{excludeTagFilter.length > 0 ? ` (${excludeTagFilter.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.excludeTag ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.excludeTag && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                   {allTags.map(tag => {
                     const selected = excludeTagFilter.includes(tag);
@@ -898,12 +937,17 @@ export default function Songs() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
             {user && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>My Songs{statusFilter.length > 0 ? ` (${statusFilter.length})` : ''}</span>
+                <div onClick={() => toggleGroupCollapsed('mySongs')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>My Songs{statusFilter.length > 0 ? ` (${statusFilter.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.mySongs ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.mySongs && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                   {[
                     { value: 'favorite', label: '⭐ Favorites' },
@@ -929,12 +973,17 @@ export default function Songs() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
             {user && allPersonalTags.length > 0 && (
               <div style={s.filterGroup}>
-                <span style={s.filterLabel}>My Tags{personalTagValues.length > 0 ? ` (${personalTagValues.length})` : ''}</span>
+                <div onClick={() => toggleGroupCollapsed('myTags')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>My Tags{personalTagValues.length > 0 ? ` (${personalTagValues.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.myTags ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.myTags && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                   {allPersonalTags.map(tag => {
                     const selected = personalTagValues.includes(tag);
@@ -953,6 +1002,7 @@ export default function Songs() {
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
@@ -965,6 +1015,7 @@ export default function Songs() {
               </button>
             )}
           </div>
+          )}
 
           {/* Song List */}
           <div style={s.card}>
