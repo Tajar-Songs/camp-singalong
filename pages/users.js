@@ -20,6 +20,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [allRoles, setAllRoles] = useState([]); // rows from the roles table - dynamic, not hardcoded
   const [allGrants, setAllGrants] = useState([]); // rows from user_roles, each { id, user_id, role_id, roles: {key,label,stream} }
+  const [minRoleHolders, setMinRoleHolders] = useState(1); // from system_settings; 1 is just a safe fallback before it loads
   const [userRoleKeys, setUserRoleKeys] = useState([]); // current logged-in user's own role keys, for the access gate
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -92,15 +93,20 @@ export default function UserManagement() {
     setLoading(true);
     try {
       const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` };
-      const [usersRes, rolesRes, grantsRes] = await Promise.all([
+      const [usersRes, rolesRes, grantsRes, settingRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=*&order=created_at.desc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/roles?select=*&order=label.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/user_roles?select=id,user_id,role_id,roles(key,label,stream)`, { headers })
+        fetch(`${SUPABASE_URL}/rest/v1/user_roles?select=id,user_id,role_id,roles(key,label,stream)`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/system_settings?key=eq.min_role_holders_before_lockout_block&select=value`, { headers })
       ]);
       setUsers(await usersRes.json());
       setAllRoles(await rolesRes.json());
       const grantsData = await grantsRes.json();
       setAllGrants(Array.isArray(grantsData) ? grantsData : []);
+      const settingData = await settingRes.json();
+      if (Array.isArray(settingData) && settingData.length > 0) {
+        setMinRoleHolders(Number(settingData[0].value));
+      }
     } catch (error) { console.error('Error loading users:', error); }
     setLoading(false);
   };
@@ -165,11 +171,11 @@ export default function UserManagement() {
         const grant = allGrants.find(g => g.user_id === targetUserId && g.role_id === role.id);
         if (!grant) return;
 
-        // Self-lockout guard: block if this would leave THIS SPECIFIC ROLE
-        // with zero holders anywhere in the system - not just "any role at all".
+        // Self-lockout guard: block if this would leave fewer than the
+        // configured minimum number of people holding this specific role.
         const othersWithThisRole = allGrants.filter(g => g.role_id === role.id && g.id !== grant.id);
-        if (othersWithThisRole.length === 0) {
-          showMessage(`❌ Cannot remove the last "${role.label}" in the system - nobody would be able to grant it back.`);
+        if (othersWithThisRole.length < minRoleHolders) {
+          showMessage(`❌ Cannot remove this "${role.label}" - at least ${minRoleHolders} ${minRoleHolders === 1 ? 'person' : 'people'} must hold it (configurable in Settings).`);
           return;
         }
         if (targetUserId === user.id && !confirm(`Remove your own "${role.label}" access? You may lose the ability to undo this yourself.`)) {
