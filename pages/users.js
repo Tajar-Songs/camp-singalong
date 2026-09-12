@@ -171,12 +171,15 @@ export default function UserManagement() {
         const grant = allGrants.find(g => g.user_id === targetUserId && g.role_id === role.id);
         if (!grant) return;
 
-        // Self-lockout guard: block if this would leave fewer than the
-        // configured minimum number of people holding this specific role.
-        const othersWithThisRole = allGrants.filter(g => g.role_id === role.id && g.id !== grant.id);
-        if (othersWithThisRole.length < minRoleHolders) {
-          showMessage(`❌ Cannot remove this "${role.label}" - at least ${minRoleHolders} ${minRoleHolders === 1 ? 'person' : 'people'} must hold it (configurable in Settings).`);
-          return;
+        // Self-lockout guard: only applies to roles explicitly flagged as
+        // requiring a minimum (currently the top role in each stream) -
+        // lower-tier roles, if/when they exist, can drop to zero holders.
+        if (role.enforce_minimum_holders) {
+          const othersWithThisRole = allGrants.filter(g => g.role_id === role.id && g.id !== grant.id);
+          if (othersWithThisRole.length < minRoleHolders) {
+            showMessage(`❌ Cannot remove this "${role.label}" - at least ${minRoleHolders} ${minRoleHolders === 1 ? 'person' : 'people'} must hold it (configurable in Settings).`);
+            return;
+          }
         }
         if (targetUserId === user.id && !confirm(`Remove your own "${role.label}" access? You may lose the ability to undo this yourself.`)) {
           return;
