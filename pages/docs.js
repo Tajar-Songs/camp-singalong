@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -73,6 +74,7 @@ const markdownToHtml = (md) => {
 export default function Docs() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
   const [docs, setDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -122,9 +124,12 @@ export default function Docs() {
 
   const loadUserProfile = async (userId) => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers: getAuthHeaders(false) });
+      const headers = getAuthHeaders(false);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) setUserProfile(data[0]);
+      const roleKeys = await fetchUserRoleKeys(userId, headers);
+      setUserRoleKeys(roleKeys);
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
@@ -133,7 +138,7 @@ export default function Docs() {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers: getAuthHeaders(false) });
       const data = await res.json();
       if (Array.isArray(data)) {
-        const isAdmin = userProfile?.role === 'admin';
+        const isAdmin = hasAnyRole(userRoleKeys);
         const visibleDocs = isAdmin ? data : data.filter(doc => doc.visibility === 'user');
         setDocs(visibleDocs);
       }
@@ -141,7 +146,7 @@ export default function Docs() {
   };
 
   const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
-  const isAdmin = userProfile?.role === 'admin';
+  const isAdmin = hasAnyRole(userRoleKeys);
   const folders = [...new Set(docs.map(d => d.folder).filter(f => f))].sort();
   
   const allExistingTags = useMemo(() => {
