@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -9,6 +10,7 @@ export default function AdminSuggestions() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -42,11 +44,13 @@ export default function AdminSuggestions() {
       
       const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userData.id}`, { headers: getAuthHeaders(false) });
       const profileData = await profileRes.json();
-      if (!profileData[0] || profileData[0].role !== 'admin') {
+      const roleKeys = await fetchUserRoleKeys(userData.id, getAuthHeaders(false));
+      if (!profileData[0] || !hasAnyRole(roleKeys)) {
         router.push('/');
         return;
       }
       setUserProfile(profileData[0]);
+      setUserRoleKeys(roleKeys);
       
       await loadData();
     } catch (error) {
@@ -351,7 +355,7 @@ export default function AdminSuggestions() {
     return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
   }
 
-  if (!userProfile || userProfile.role !== 'admin') {
+  if (!userProfile || !hasAnyRole(userRoleKeys)) {
     return <div style={s.container}><div style={s.wrapper}>Access denied</div></div>;
   }
 
