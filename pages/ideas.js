@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -79,6 +80,7 @@ function FormattedText({ text }) {
 export default function Ideas() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
   const [loading, setLoading] = useState(true);
 
   
@@ -145,9 +147,12 @@ export default function Ideas() {
 
   const loadUserProfile = async (userId) => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers: getAuthHeaders(false) });
+      const headers = getAuthHeaders(false);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) setUserProfile(data[0]);
+      const roleKeys = await fetchUserRoleKeys(userId, headers);
+      setUserRoleKeys(roleKeys);
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
@@ -224,7 +229,7 @@ export default function Ideas() {
   const hasVoted = (requestId) => user && votes[requestId]?.includes(user.id);
   const getComments = (requestId) => comments[requestId] || [];
   const getUserName = (userId) => userProfiles[userId]?.display_name || userProfiles[userId]?.email?.split('@')[0] || 'Anonymous';
-  const isAdmin = userProfile?.role === 'admin';
+  const isAdmin = hasAnyRole(userRoleKeys);
 
   const toggleVote = async (requestId) => {
     if (!user) return;
