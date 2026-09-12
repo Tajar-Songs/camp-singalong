@@ -162,6 +162,7 @@ export default function App({ Component, pageProps }) {
     { href: '/tags', label: 'Tags' },
     { href: '/reports', label: 'Reports' },
     { href: '/users', label: 'Users' },
+    { href: '/settings', label: 'Settings' },
   ];
 
   const visibleUserItems = userNavItems.filter(item => item.show);
