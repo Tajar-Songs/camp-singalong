@@ -398,12 +398,15 @@ export default function UserManagement() {
             {allRoles.map(r => (
               <div key={r.id} className="flex items-start gap-2">
                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-purple-600">
-                  {r.label}
+                  {r.enforce_minimum_holders && '🔒 '}{r.label}
                 </span>
                 <span className="text-sm text-slate-400">{r.stream ? `${r.stream.replace('_', ' ')} access` : 'Platform-wide role'}</span>
               </div>
             ))}
           </div>
+          {allRoles.some(r => r.enforce_minimum_holders) && (
+            <p className="text-xs text-slate-500 mt-2">🔒 = protected - at least {minRoleHolders} {minRoleHolders === 1 ? 'person' : 'people'} must always hold this role (set in Settings)</p>
+          )}
         </div>
 
         {/* User List */}
@@ -450,7 +453,7 @@ export default function UserManagement() {
                               : 'bg-slate-700 border-slate-600 text-slate-400 hover:text-slate-200'
                           }`}
                         >
-                          {held ? '✓ ' : '+ '}{r.label}
+                          {held ? '✓ ' : '+ '}{r.enforce_minimum_holders && '🔒 '}{r.label}
                         </button>
                       );
                     })}
