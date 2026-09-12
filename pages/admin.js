@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -196,6 +197,7 @@ export default function Admin() {
   const [mergePrimarySongId, setMergePrimarySongId] = useState(null);
 
   const [userProfile, setUserProfile] = useState(null);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
 
   // Helper function to get auth headers with user's token
   const getAuthHeaders = (includeContentType = true) => {
@@ -222,7 +224,7 @@ export default function Admin() {
       }
     }
   }, [router.query.tab]);
-  useEffect(() => { if (userProfile?.role === 'admin') loadAllData(); }, [userProfile]);
+  useEffect(() => { if (hasAnyRole(userRoleKeys)) loadAllData(); }, [userRoleKeys]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -290,6 +292,8 @@ export default function Admin() {
       } else {
         console.warn('Profile fetch returned no results for UID:', userId);
       }
+      const roleKeys = await fetchUserRoleKeys(userId, { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` });
+      setUserRoleKeys(roleKeys);
     } catch (error) { 
       console.error('Error loading profile:', error); 
     }
@@ -1971,8 +1975,8 @@ export default function Admin() {
     );
   }
 
-  // 2. YOUR ORIGINAL CHECK: Now we only show this if the profile is loaded and isn't 'admin'.
-  if (userProfile?.role !== 'admin') {
+  // 2. Access check: only show the page if the person holds at least one role.
+  if (!hasAnyRole(userRoleKeys)) {
     return (
       <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
         <div style={{ background: '#1e293b', borderRadius: '1rem', padding: '2rem', maxWidth: '400px', width: '100%', textAlign: 'center' }}>
