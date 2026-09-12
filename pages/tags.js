@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -19,6 +20,7 @@ export default function TagManagement() {
   // Auth state
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
   const [authChecked, setAuthChecked] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authEmail, setAuthEmail] = useState('');
@@ -70,7 +72,7 @@ export default function TagManagement() {
 
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
-  useEffect(() => { if (userProfile?.role === 'admin') loadData(); }, [userProfile]);
+  useEffect(() => { if (hasAnyRole(userRoleKeys)) loadData(); }, [userRoleKeys]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -121,11 +123,12 @@ export default function TagManagement() {
 
   const loadUserProfile = async (userId) => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
-      });
+      const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (data.length > 0) setUserProfile(data[0]);
+      const roleKeys = await fetchUserRoleKeys(userId, headers);
+      setUserRoleKeys(roleKeys);
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
@@ -569,7 +572,7 @@ export default function TagManagement() {
     );
   }
 
-  if (userProfile?.role !== 'admin') {
+  if (!hasAnyRole(userRoleKeys)) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full text-center">
