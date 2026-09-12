@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
-
-const ROLES = [
-  { value: 'user', label: 'User', description: 'Can use main app and track personal history' },
-  { value: 'admin', label: 'Admin', description: 'Full access to admin, tags, and user management' }
-];
 
 export default function UserManagement() {
   // Auth state
@@ -22,6 +18,9 @@ export default function UserManagement() {
 
   // Data state
   const [users, setUsers] = useState([]);
+  const [allRoles, setAllRoles] = useState([]); // rows from the roles table - dynamic, not hardcoded
+  const [allGrants, setAllGrants] = useState([]); // rows from user_roles, each { id, user_id, role_id, roles: {key,label,stream} }
+  const [userRoleKeys, setUserRoleKeys] = useState([]); // current logged-in user's own role keys, for the access gate
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,7 +28,7 @@ export default function UserManagement() {
 
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
-  useEffect(() => { if (userProfile?.role === 'admin') loadUsers(); }, [userProfile]);
+  useEffect(() => { if (hasAnyRole(userRoleKeys)) loadUsers(); }, [userRoleKeys]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -80,24 +79,34 @@ export default function UserManagement() {
 
   const loadUserProfile = async (userId) => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
-      });
+      const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (data.length > 0) setUserProfile(data[0]);
+      const roleKeys = await fetchUserRoleKeys(userId, headers);
+      setUserRoleKeys(roleKeys);
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=*&order=created_at.desc`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` }
-      });
-      setUsers(await res.json());
+      const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` };
+      const [usersRes, rolesRes, grantsRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=*&order=created_at.desc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/roles?select=*&order=label.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/user_roles?select=id,user_id,role_id,roles(key,label,stream)`, { headers })
+      ]);
+      setUsers(await usersRes.json());
+      setAllRoles(await rolesRes.json());
+      const grantsData = await grantsRes.json();
+      setAllGrants(Array.isArray(grantsData) ? grantsData : []);
     } catch (error) { console.error('Error loading users:', error); }
     setLoading(false);
   };
+
+  // Which role keys does a given user currently hold?
+  const roleKeysForUser = (userId) => allGrants.filter(g => g.user_id === userId).map(g => g.roles?.key).filter(Boolean);
 
   const handleLogin = async () => {
     setAuthLoading(true);
@@ -143,25 +152,53 @@ export default function UserManagement() {
     setUserProfile(null);
   };
 
-  const updateUserRole = async (userId, newRole) => {
-    if (userId === user.id && newRole !== 'admin') {
-      if (!confirm('Are you sure you want to remove your own admin access? You will lose access to this page.')) return;
-    }
+  const toggleUserRole = async (targetUserId, role, currentlyHeld) => {
+    const headers = {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    };
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
-        method: 'PATCH',
-        headers: { 
-          'apikey': SUPABASE_KEY, 
-          'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({ role: newRole, updated_at: new Date().toISOString() })
-      });
-      showMessage(`✅ Role updated to ${newRole}`);
-      loadUsers();
-      if (userId === user.id) loadUserProfile(user.id);
-    } catch (error) { showMessage('❌ Error updating role'); }
+      if (currentlyHeld) {
+        // Revoking - find the specific grant row to remove
+        const grant = allGrants.find(g => g.user_id === targetUserId && g.role_id === role.id);
+        if (!grant) return;
+
+        // Self-lockout guard: block if this is the last role-grant in the
+        // whole system (excluding the one being removed).
+        const remainingElsewhere = allGrants.filter(g => g.id !== grant.id);
+        if (remainingElsewhere.length === 0) {
+          showMessage('❌ Cannot remove the last remaining role in the system - someone needs to keep access.');
+          return;
+        }
+        if (targetUserId === user.id && !confirm(`Remove your own "${role.label}" access? You may lose the ability to undo this yourself.`)) {
+          return;
+        }
+
+        await fetch(`${SUPABASE_URL}/rest/v1/user_roles?id=eq.${grant.id}`, { method: 'DELETE', headers });
+        await fetch(`${SUPABASE_URL}/rest/v1/role_change_log`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ user_id: targetUserId, role_id: role.id, action: 'revoked', scope_type: 'platform', changed_by: user.id })
+        });
+        showMessage(`✅ Removed ${role.label}`);
+      } else {
+        await fetch(`${SUPABASE_URL}/rest/v1/user_roles`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ user_id: targetUserId, role_id: role.id, scope_type: 'platform', granted_by: user.id })
+        });
+        await fetch(`${SUPABASE_URL}/rest/v1/role_change_log`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ user_id: targetUserId, role_id: role.id, action: 'granted', scope_type: 'platform', changed_by: user.id })
+        });
+        showMessage(`✅ Granted ${role.label}`);
+      }
+      await loadUsers();
+      if (targetUserId === user.id) await loadUserProfile(user.id);
+    } catch (error) {
+      console.error('Error updating role:', error);
+      showMessage('❌ Error updating role - this may be blocked by permissions (you may not hold the required role to grant/revoke this)');
+    }
   };
 
   const updateDisplayName = async (userId, newName) => {
@@ -187,7 +224,11 @@ export default function UserManagement() {
   };
 
   const filteredUsers = users.filter(u => {
-    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+    if (roleFilter !== 'all') {
+      const keys = roleKeysForUser(u.id);
+      if (roleFilter === 'none') { if (keys.length > 0) return false; }
+      else if (!keys.includes(roleFilter)) return false;
+    }
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
     return u.display_name?.toLowerCase().includes(search) || u.id.toLowerCase().includes(search);
@@ -267,7 +308,7 @@ export default function UserManagement() {
   }
 
   // Admin check
-  if (userProfile?.role !== 'admin') {
+  if (!hasAnyRole(userRoleKeys)) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full text-center">
@@ -297,7 +338,7 @@ export default function UserManagement() {
               <span>👥</span> User Management
             </h1>
             <p className="text-slate-400 mt-1">
-              {users.length} users • {users.filter(u => u.role === 'admin').length} admins
+              {users.length} users • {allRoles.map(r => `${allGrants.filter(g => g.role_id === r.id).length} ${r.label}`).join(' • ')}
             </p>
           </div>
         </header>
@@ -323,21 +364,22 @@ export default function UserManagement() {
             onChange={(e) => setRoleFilter(e.target.value)}
             className="p-3 rounded-lg border border-slate-700 bg-slate-800 text-white outline-none"
           >
-            <option value="all">All Roles</option>
-            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            <option value="all">All</option>
+            <option value="none">No roles</option>
+            {allRoles.map(r => <option key={r.id} value={r.key}>{r.label}</option>)}
           </select>
         </div>
 
         {/* Role Legend */}
         <div className="bg-slate-800 rounded-lg p-4 mb-6">
-          <h3 className="font-bold mb-2 text-sm text-slate-400">Role Permissions</h3>
+          <h3 className="font-bold mb-2 text-sm text-slate-400">Roles</h3>
           <div className="grid sm:grid-cols-2 gap-2">
-            {ROLES.map(r => (
-              <div key={r.value} className="flex items-start gap-2">
-                <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.value === 'admin' ? 'bg-purple-600' : 'bg-slate-600'}`}>
+            {allRoles.map(r => (
+              <div key={r.id} className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded text-xs font-bold bg-purple-600">
                   {r.label}
                 </span>
-                <span className="text-sm text-slate-400">{r.description}</span>
+                <span className="text-sm text-slate-400">{r.stream ? `${r.stream.replace('_', ' ')} access` : 'Platform-wide role'}</span>
               </div>
             ))}
           </div>
@@ -374,18 +416,23 @@ export default function UserManagement() {
                       Joined {new Date(u.created_at).toLocaleDateString()}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={u.role || 'user'}
-                      onChange={(e) => updateUserRole(u.id, e.target.value)}
-                      className={`p-2 rounded-lg border outline-none font-bold text-sm ${
-                        u.role === 'admin' 
-                          ? 'bg-purple-900 border-purple-700 text-purple-200' 
-                          : 'bg-slate-700 border-slate-600 text-slate-200'
-                      }`}
-                    >
-                      {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                    </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {allRoles.map(r => {
+                      const held = roleKeysForUser(u.id).includes(r.key);
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => toggleUserRole(u.id, r, held)}
+                          className={`px-3 py-2 rounded-lg border outline-none font-bold text-sm transition-all ${
+                            held
+                              ? 'bg-purple-900 border-purple-700 text-purple-200'
+                              : 'bg-slate-700 border-slate-600 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {held ? '✓ ' : '+ '}{r.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
