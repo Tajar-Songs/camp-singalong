@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -14,6 +16,10 @@ const SECTION_INFO = {
 };
 
 export default function Reports() {
+  const router = useRouter();
+  const [authChecked, setAuthChecked] = useState(false);
+  const [userRoleKeys, setUserRoleKeys] = useState([]);
+
   // Helper function to get auth headers (uses user token if available, otherwise anon key)
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -25,6 +31,27 @@ export default function Reports() {
       headers['Content-Type'] = 'application/json';
     }
     return headers;
+  };
+
+  useEffect(() => { checkAuth(); }, []);
+
+  const checkAuth = async () => {
+    try {
+      const token = localStorage.getItem('supabase_access_token');
+      if (!token) { router.push('/?login=true'); return; }
+
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: getAuthHeaders(false) });
+      if (!res.ok) { router.push('/?login=true'); return; }
+
+      const userData = await res.json();
+      const roleKeys = await fetchUserRoleKeys(userData.id, getAuthHeaders(false));
+      if (!hasAnyRole(roleKeys)) { router.push('/'); return; }
+      setUserRoleKeys(roleKeys);
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      router.push('/?login=true');
+    }
+    setAuthChecked(true);
   };
 
   const [activeTab, setActiveTab] = useState('songs');
@@ -92,8 +119,8 @@ export default function Reports() {
   // 1. Only reload data when actual REPORT filters change
   // We REMOVED lastViewDate and viewerName from the brackets below
   useEffect(() => {
-    loadData();
-  }, [activeTab, startDate, endDate, userFilter, rowLimit, showSinceLastView]); 
+    if (authChecked && hasAnyRole(userRoleKeys)) loadData();
+  }, [activeTab, startDate, endDate, userFilter, rowLimit, showSinceLastView, authChecked, userRoleKeys]); 
 
   // 2. Separate logic to find the last view date when viewerName changes
   // This stays local and doesn't trigger a database reload
@@ -272,6 +299,27 @@ export default function Reports() {
     };
     return mapping[tableName] || tableName || '-';
   };
+
+  if (!authChecked) {
+    return (
+      <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (!hasAnyRole(userRoleKeys)) {
+    return (
+      <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Access Denied</h1>
+          <p style={{ opacity: 0.7, marginBottom: '1.5rem' }}>You need admin privileges to access this page.</p>
+          <a href="/" style={{ color: '#22c55e' }}>← Back to Singalong</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, padding: '2rem' }}>
