@@ -1,13 +1,14 @@
 // GET /api/docs/[slug] - Get a specific doc by slug
-// Returns markdown-converted content, always derived from the live `content`
-// field - not `content_md`, which was a one-time snapshot that never gets
-// updated when a doc is edited through the app, and was silently shadowing
-// every subsequent edit.
+// content_md is the field docs.js actually writes to on save (confirmed by
+// reading the save function directly) - it is the live field. content is a
+// legacy/fallback field for docs that predate content_md, or were never
+// re-saved since. Prefer content_md; fall back to content only if empty.
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
-// Convert HTML to simple markdown for AI readability
+// Convert HTML to simple markdown for AI readability (only used for the
+// content fallback, since content_md is already markdown)
 const htmlToMarkdown = (html) => {
   if (!html) return '';
   return html
@@ -66,10 +67,7 @@ export default async function handler(req, res) {
     }
 
     const doc = docs[0];
-
-    // Always derive from the live `content` field - this is what the app's
-    // editor actually writes to, so it's the only field guaranteed current.
-    const content = htmlToMarkdown(doc.content);
+    const content = doc.content_md || htmlToMarkdown(doc.content);
 
     res.status(200).json({
       title: doc.title,
