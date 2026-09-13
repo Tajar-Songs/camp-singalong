@@ -69,6 +69,10 @@ export default async function handler(req, res) {
     const doc = docs[0];
     const content = doc.content_md || htmlToMarkdown(doc.content);
 
+    // Explicit no-cache: nothing between this server and the client should
+    // ever serve a cached copy of this response.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+
     res.status(200).json({
       title: doc.title,
       slug: doc.slug,
