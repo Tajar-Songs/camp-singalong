@@ -16,6 +16,9 @@ export default function Songs() {
   const [songbooks, setSongbooks] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [userPrefs, setUserPrefs] = useState({});
+  const [userStatusMap, setUserStatusMap] = useState({}); // songId -> [value_key, ...] from user_song_status
+  const [statusOptions, setStatusOptions] = useState([]); // from option_lists, list_key='status_options'
+  const [familiarityOptions, setFamiliarityOptions] = useState([]); // from option_lists, list_key='familiarity_levels'
   const [versions, setVersions] = useState([]);
   const [allVersions, setAllVersions] = useState([]);
   const [songNotes, setSongNotes] = useState([]);
@@ -82,12 +85,6 @@ export default function Songs() {
     'other': 'Other'
   };
 
-  const FAMILIARITY_OPTIONS = [
-    { value: 'teach', label: '🎓 Can teach', color: '#22c55e' },
-    { value: 'sing_along', label: '🎤 Sing along', color: '#3b82f6' },
-    { value: 'heard_it', label: '👂 Heard it', color: '#f59e0b' },
-    { value: 'dont_know', label: '❓ Don\'t know', color: '#64748b' }
-  ];
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -132,6 +129,18 @@ export default function Songs() {
         prefsData.forEach(p => { prefsMap[p.song_id] = p; });
       }
       setUserPrefs(prefsMap);
+
+      // Load status selections (favorite/dislike/known/want-to-learn/etc - multi-select)
+      const statusRes = await fetch(`${SUPABASE_URL}/rest/v1/user_song_status?user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
+      const statusData = await statusRes.json();
+      const statusMap = {};
+      if (Array.isArray(statusData)) {
+        statusData.forEach(s => {
+          if (!statusMap[s.song_id]) statusMap[s.song_id] = [];
+          statusMap[s.song_id].push(s.value_key);
+        });
+      }
+      setUserStatusMap(statusMap);
       
       // Load version preferences
       const vPrefsRes = await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
@@ -149,6 +158,14 @@ export default function Songs() {
       // Load songs
       const songsRes = await fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers: getAuthHeaders(false) });
       const songsData = await songsRes.json();
+
+      // Load configurable option lists (status options, familiarity levels)
+      const optionListsRes = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
+      const optionListsData = await optionListsRes.json();
+      if (Array.isArray(optionListsData)) {
+        setStatusOptions(optionListsData.filter(o => o.list_key === 'status_options'));
+        setFamiliarityOptions(optionListsData.filter(o => o.list_key === 'familiarity_levels'));
+      }
       
       // Load songbooks
       const songbooksRes = await fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*`, { headers: getAuthHeaders(false) });
@@ -358,21 +375,18 @@ export default function Songs() {
       if (statusFilter.length > 0) {
         const songVers = allVersions.filter(v => v.song_id === song.id);
         const hasFamiliarity = songVers.some(v => versionPrefs[v.id]?.familiarity);
-        const isUntagged = !(pref && (pref.is_favorite || pref.is_dislike || pref.status || (pref.personal_tags && pref.personal_tags.length > 0)));
+        const myStatuses = userStatusMap[song.id] || [];
+        const isUntagged = myStatuses.length === 0 && !(pref?.personal_tags && pref.personal_tags.length > 0);
         const matchesAny = statusFilter.some(s => {
-          if (s === 'favorite') return !!pref?.is_favorite;
-          if (s === 'dislike') return !!pref?.is_dislike;
-          if (s === 'known') return pref?.status === 'known';
-          if (s === 'want_to_learn') return pref?.status === 'want_to_learn';
           if (s === 'untagged') return isUntagged;
           if (s === 'no_familiarity') return !hasFamiliarity;
-          return false;
+          return myStatuses.includes(s);
         });
         if (!matchesAny) return false;
       }
       return true;
     });
-  }, [songs, search, searchLyrics, songbookIds, sections, systemTagFilter, excludeTagFilter, personalTagValues, statusFilter, userPrefs, allVersions, versionPrefs]);
+  }, [songs, search, searchLyrics, songbookIds, sections, systemTagFilter, excludeTagFilter, personalTagValues, statusFilter, userPrefs, userStatusMap, allVersions, versionPrefs]);
 
   // Save user preference
   const savePreference = async (songId, updates) => {
@@ -406,20 +420,33 @@ export default function Songs() {
     }
   };
 
-  const toggleFavorite = (songId) => {
-    const current = userPrefs[songId]?.is_favorite || false;
-    savePreference(songId, { is_favorite: !current });
-  };
-
-  const toggleDislike = (songId) => {
-    const current = userPrefs[songId]?.is_dislike || false;
-    savePreference(songId, { is_dislike: !current });
-  };
-
-  const setStatus = (songId, status) => {
-    const current = userPrefs[songId]?.status;
-    // Toggle off if clicking same status
-    savePreference(songId, { status: current === status ? null : status });
+  // Toggle a status option (favorite/dislike/known/want-to-learn/etc.) on or
+  // off for a song. Multi-select - toggling one doesn't affect the others,
+  // so "favorite" and "want to learn" can both be set at once.
+  const toggleStatus = async (songId, valueKey) => {
+    if (!user) return;
+    const current = userStatusMap[songId] || [];
+    const isSet = current.includes(valueKey);
+    try {
+      if (isSet) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/user_song_status?user_id=eq.${user.id}&song_id=eq.${songId}&value_key=eq.${valueKey}`, {
+          method: 'DELETE', headers: getAuthHeaders(false)
+        });
+        if (!res.ok) { showMessage('❌ Could not update'); return; }
+        setUserStatusMap(prev => ({ ...prev, [songId]: current.filter(v => v !== valueKey) }));
+      } else {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/user_song_status`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ user_id: user.id, song_id: songId, value_key: valueKey })
+        });
+        if (!res.ok) { showMessage('❌ Could not update'); return; }
+        setUserStatusMap(prev => ({ ...prev, [songId]: [...current, valueKey] }));
+      }
+    } catch (error) {
+      console.error('Error toggling status:', error);
+      showMessage('❌ Error saving');
+    }
   };
 
   const addPersonalTag = (songId, tag) => {
@@ -950,10 +977,7 @@ export default function Songs() {
                 {!collapsedGroups.mySongs && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                   {[
-                    { value: 'favorite', label: '⭐ Favorites' },
-                    { value: 'dislike', label: '👎 Dislikes' },
-                    { value: 'known', label: '✓ Known' },
-                    { value: 'want_to_learn', label: '📚 Want to Learn' },
+                    ...statusOptions.map(opt => ({ value: opt.value_key, label: `${opt.icon ? opt.icon + ' ' : ''}${opt.label}` })),
                     { value: 'untagged', label: '🔍 Untagged (no prefs)' },
                     { value: 'no_familiarity', label: '🔍 No familiarity set' }
                   ].map(opt => {
@@ -1021,15 +1045,16 @@ export default function Songs() {
           <div style={s.card}>
             <div style={s.songList}>
               {filteredSongs.map(song => {
-                const songPref = userPrefs[song.id];
                 return (
                   <div key={song.id} onClick={() => setSelectedSong(song)} style={s.songItem(selectedSong?.id === song.id)}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={s.songTitle}>
-                        {songPref?.is_favorite && <span style={{ marginRight: '0.25rem' }}>⭐</span>}
+                        {(userStatusMap[song.id] || []).map(valueKey => {
+                          const opt = statusOptions.find(o => o.value_key === valueKey);
+                          if (!opt?.icon) return null;
+                          return <span key={valueKey} style={{ marginRight: '0.25rem', color: opt.color || undefined }}>{opt.icon}</span>;
+                        })}
                         {song.title}
-                        {songPref?.status === 'known' && <span style={{ marginLeft: '0.5rem', color: '#22c55e', fontSize: '0.75rem' }}>✓</span>}
-                        {songPref?.status === 'want_to_learn' && <span style={{ marginLeft: '0.5rem', color: '#f59e0b', fontSize: '0.75rem' }}>📚</span>}
                       </div>
                       <div style={s.songMeta}>
                         {song.author && <span>{song.author}</span>}
@@ -1165,30 +1190,18 @@ export default function Songs() {
             {/* Personal Actions - only for logged in users */}
             {user ? (
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem' }}>
-                <button 
-                  onClick={() => toggleFavorite(selectedSong.id)} 
-                  style={s.statusBtn(pref?.is_favorite, '#f59e0b')}
-                >
-                  ⭐ Favorite
-                </button>
-                <button 
-                  onClick={() => toggleDislike(selectedSong.id)} 
-                  style={s.statusBtn(pref?.is_dislike, '#ef4444')}
-                >
-                  👎 Dislike
-                </button>
-                <button 
-                  onClick={() => setStatus(selectedSong.id, 'known')} 
-                  style={s.statusBtn(pref?.status === 'known', '#22c55e')}
-                >
-                  ✓ Known
-                </button>
-                <button 
-                  onClick={() => setStatus(selectedSong.id, 'want_to_learn')} 
-                  style={s.statusBtn(pref?.status === 'want_to_learn', '#6366f1')}
-                >
-                  📚 Want to Learn
-                </button>
+                {statusOptions.map(opt => {
+                  const isSet = (userStatusMap[selectedSong.id] || []).includes(opt.value_key);
+                  return (
+                    <button
+                      key={opt.value_key}
+                      onClick={() => toggleStatus(selectedSong.id, opt.value_key)}
+                      style={s.statusBtn(isSet, opt.color || '#64748b')}
+                    >
+                      {opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
@@ -1345,8 +1358,8 @@ export default function Songs() {
                                   style={{ ...s.select, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
                                 >
                                   <option value="">Not set</option>
-                                  {FAMILIARITY_OPTIONS.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  {familiarityOptions.map(opt => (
+                                    <option key={opt.value_key} value={opt.value_key}>{opt.icon ? `${opt.icon} ` : ''}{opt.label}</option>
                                   ))}
                                 </select>
                                 {versionPrefs[v.id]?.familiarity && (
@@ -1354,10 +1367,10 @@ export default function Songs() {
                                     fontSize: '0.7rem', 
                                     padding: '0.2rem 0.5rem', 
                                     borderRadius: '0.25rem',
-                                    background: `${FAMILIARITY_OPTIONS.find(o => o.value === versionPrefs[v.id]?.familiarity)?.color}20`,
-                                    color: FAMILIARITY_OPTIONS.find(o => o.value === versionPrefs[v.id]?.familiarity)?.color
+                                    background: `${familiarityOptions.find(o => o.value_key === versionPrefs[v.id]?.familiarity)?.color}20`,
+                                    color: familiarityOptions.find(o => o.value_key === versionPrefs[v.id]?.familiarity)?.color
                                   }}>
-                                    {FAMILIARITY_OPTIONS.find(o => o.value === versionPrefs[v.id]?.familiarity)?.label}
+                                    {familiarityOptions.find(o => o.value_key === versionPrefs[v.id]?.familiarity)?.icon} {familiarityOptions.find(o => o.value_key === versionPrefs[v.id]?.familiarity)?.label}
                                   </span>
                                 )}
                               </div>
@@ -1418,8 +1431,8 @@ export default function Songs() {
                                   style={{ ...s.select, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
                                 >
                                   <option value="">Not set</option>
-                                  {FAMILIARITY_OPTIONS.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  {familiarityOptions.map(opt => (
+                                    <option key={opt.value_key} value={opt.value_key}>{opt.icon ? `${opt.icon} ` : ''}{opt.label}</option>
                                   ))}
                                 </select>
                               </div>
