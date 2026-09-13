@@ -8,13 +8,24 @@ const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 const ICON_CHOICES = ['⭐', '🌟', '✨', '💫', '❤️', '💔', '👍', '👎', '✅', '❌', '✓', '🔥', '🎯', '🎓', '🎤', '👂', '📚', '📖', '🔖', '✏️', '❓', '🎵', '🎶', '💡', '🏆', '⏳'];
 const COLOR_PRESETS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7', '#64748b', '#ec4899', '#14b8a6'];
 
+const LIST_TITLES = {
+  status_options: 'Song Status Options (favorite, dislike, etc.)',
+  familiarity_levels: 'Familiarity Levels (per version)',
+  version_types: 'Song Version Types',
+  flag_types: 'Song Flags',
+  note_types: 'Song Note Types',
+  group_types: 'Song Group Types',
+  member_roles: 'Group Member Roles',
+  room_code_words: 'Room Name Words'
+};
+
+const prettifyKey = (key) => key.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 const slugify = (label) => label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
 export default function OptionLists() {
   const [authChecked, setAuthChecked] = useState(false);
   const [userRoleKeys, setUserRoleKeys] = useState([]);
-  const [statusOptions, setStatusOptions] = useState([]);
-  const [familiarityLevels, setFamiliarityLevels] = useState([]);
+  const [allOptions, setAllOptions] = useState([]);
   const [message, setMessage] = useState('');
 
   const getAuthHeaders = (includeContentType = true) => {
@@ -41,110 +52,116 @@ export default function OptionLists() {
       }
     } catch (error) { console.error('Auth check failed:', error); }
     setAuthChecked(true);
-    loadLists();
+    loadOptions();
   };
 
-  const loadLists = async () => {
+  const loadOptions = async () => {
     try {
-      const headers = getAuthHeaders(false);
-      const [statusRes, familiarityRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/status_options?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/familiarity_levels?select=*&order=display_order.asc`, { headers })
-      ]);
-      setStatusOptions(await statusRes.json());
-      setFamiliarityLevels(await familiarityRes.json());
-    } catch (error) { console.error('Error loading lists:', error); }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=list_key.asc,display_order.asc`, { headers: getAuthHeaders(false) });
+      const data = await res.json();
+      setAllOptions(Array.isArray(data) ? data : []);
+    } catch (error) { console.error('Error loading option lists:', error); }
   };
 
   const isAdmin = hasAnyRole(userRoleKeys);
 
-  // ---------- Generic list operations, shared by both tables ----------
+  const listKeys = [...new Set(allOptions.map(o => o.list_key))].sort((a, b) => {
+    const knownKeys = Object.keys(LIST_TITLES);
+    const ai = knownKeys.indexOf(a), bi = knownKeys.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 
-  const addOption = async (table, label, icon, color, items, setItems) => {
+  const addOption = async (listKey, label, description, icon, color) => {
     if (!label.trim()) return;
     const valueKey = slugify(label);
-    if (items.some(i => i.value_key === valueKey)) {
-      showMessage('❌ An option with that name already exists');
+    const existing = allOptions.filter(o => o.list_key === listKey);
+    if (existing.some(o => o.value_key === valueKey)) {
+      showMessage('❌ An option with that name already exists in this list');
       return;
     }
-    const maxOrder = items.length > 0 ? Math.max(...items.map(i => i.display_order || 0)) : 0;
+    const maxOrder = existing.length > 0 ? Math.max(...existing.map(o => o.display_order || 0)) : 0;
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/option_lists`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
-        body: JSON.stringify({ value_key: valueKey, label: label.trim(), icon, color, display_order: maxOrder + 1 })
+        body: JSON.stringify({ list_key: listKey, value_key: valueKey, label: label.trim(), description: description.trim() || null, icon: icon || null, color: color || null, display_order: maxOrder + 1 })
       });
       if (!res.ok) { showMessage('❌ Could not add option'); return; }
       const [newItem] = await res.json();
-      setItems([...items, newItem]);
+      setAllOptions(prev => [...prev, newItem]);
       showMessage(`✅ Added ${label}`);
     } catch (error) { console.error(error); showMessage('❌ Error adding option'); }
   };
 
-  const updateOption = async (table, item, updates, items, setItems) => {
+  const updateOption = async (item, updates) => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${item.id}`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?id=eq.${item.id}`, {
         method: 'PATCH',
         headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify(updates)
       });
       if (!res.ok) { showMessage('❌ Could not save change'); return; }
-      setItems(items.map(i => i.id === item.id ? { ...i, ...updates } : i));
+      setAllOptions(prev => prev.map(o => o.id === item.id ? { ...o, ...updates } : o));
     } catch (error) { console.error(error); showMessage('❌ Error saving change'); }
   };
 
-  const deleteOption = async (table, item, items, setItems) => {
+  const deleteOption = async (item) => {
     if (!confirm(`Remove "${item.label}"? This can't be undone.`)) return;
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${item.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?id=eq.${item.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       if (!res.ok) { showMessage('❌ Could not remove option'); return; }
-      setItems(items.filter(i => i.id !== item.id));
+      setAllOptions(prev => prev.filter(o => o.id !== item.id));
       showMessage(`✅ Removed ${item.label}`);
     } catch (error) { console.error(error); showMessage('❌ Error removing option'); }
   };
 
-  const moveOption = async (table, item, direction, items, setItems) => {
-    const sorted = [...items].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
-    const idx = sorted.findIndex(i => i.id === item.id);
+  const moveOption = async (listKey, item, direction) => {
+    const sorted = allOptions.filter(o => o.list_key === listKey).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const idx = sorted.findIndex(o => o.id === item.id);
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= sorted.length) return;
     const other = sorted[swapIdx];
     try {
       await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${item.id}`, { method: 'PATCH', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' }, body: JSON.stringify({ display_order: other.display_order }) }),
-        fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${other.id}`, { method: 'PATCH', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' }, body: JSON.stringify({ display_order: item.display_order }) })
+        fetch(`${SUPABASE_URL}/rest/v1/option_lists?id=eq.${item.id}`, { method: 'PATCH', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' }, body: JSON.stringify({ display_order: other.display_order }) }),
+        fetch(`${SUPABASE_URL}/rest/v1/option_lists?id=eq.${other.id}`, { method: 'PATCH', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' }, body: JSON.stringify({ display_order: item.display_order }) })
       ]);
-      setItems(items.map(i => {
-        if (i.id === item.id) return { ...i, display_order: other.display_order };
-        if (i.id === other.id) return { ...i, display_order: item.display_order };
-        return i;
+      setAllOptions(prev => prev.map(o => {
+        if (o.id === item.id) return { ...o, display_order: other.display_order };
+        if (o.id === other.id) return { ...o, display_order: item.display_order };
+        return o;
       }));
     } catch (error) { console.error(error); showMessage('❌ Error reordering'); }
   };
 
-  // ---------- Reusable section renderer for one list ----------
+  const OptionListSection = ({ listKey }) => {
+    const items = allOptions.filter(o => o.list_key === listKey);
+    const sorted = [...items].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
-  const OptionListSection = ({ title, table, items, setItems }) => {
     const [newLabel, setNewLabel] = useState('');
-    const [newIcon, setNewIcon] = useState(ICON_CHOICES[0]);
-    const [newColor, setNewColor] = useState(COLOR_PRESETS[0]);
+    const [newDescription, setNewDescription] = useState('');
+    const [newIcon, setNewIcon] = useState('');
+    const [newColor, setNewColor] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [editLabel, setEditLabel] = useState('');
+    const [editDescription, setEditDescription] = useState('');
     const [editIcon, setEditIcon] = useState('');
     const [editColor, setEditColor] = useState('');
-    const [pickerOpenFor, setPickerOpenFor] = useState(null); // 'new' | item.id | null
-
-    const sorted = [...items].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const [pickerOpenFor, setPickerOpenFor] = useState(null);
 
     const startEdit = (item) => {
       setEditingId(item.id);
       setEditLabel(item.label);
+      setEditDescription(item.description || '');
       setEditIcon(item.icon || '');
-      setEditColor(item.color || COLOR_PRESETS[0]);
+      setEditColor(item.color || '');
     };
 
     const saveEdit = async (item) => {
-      await updateOption(table, item, { label: editLabel.trim(), icon: editIcon, color: editColor }, items, setItems);
+      await updateOption(item, { label: editLabel.trim(), description: editDescription.trim() || null, icon: editIcon || null, color: editColor || null });
       setEditingId(null);
       setPickerOpenFor(null);
     };
@@ -165,7 +182,7 @@ export default function OptionLists() {
 
     return (
       <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>{title}</h2>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>{LIST_TITLES[listKey] || prettifyKey(listKey)}</h2>
 
         {sorted.map((item, idx) => (
           <div key={item.id} style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.5rem' }}>
@@ -174,14 +191,20 @@ export default function OptionLists() {
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <button
                     onClick={() => setPickerOpenFor(pickerOpenFor === item.id ? null : item.id)}
-                    style={{ fontSize: '1.25rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.375rem 0.5rem', cursor: 'pointer' }}
+                    style={{ fontSize: '1.25rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.375rem 0.5rem', cursor: 'pointer', minWidth: '2.5rem' }}
                   >
-                    {editIcon || '?'}
+                    {editIcon || '—'}
                   </button>
                   <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} style={{ flex: 1, background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem', color: '#fff' }} />
-                  <input type="color" value={editColor} onChange={(e) => setEditColor(e.target.value)} style={{ width: '2.5rem', height: '2.5rem', border: 'none', background: 'none', cursor: 'pointer' }} />
+                  <input type="color" value={editColor || '#334155'} onChange={(e) => setEditColor(e.target.value)} style={{ width: '2.5rem', height: '2.5rem', border: 'none', background: 'none', cursor: 'pointer' }} />
                 </div>
                 {pickerOpenFor === item.id && <IconPicker current={editIcon} onPick={(ic) => { setEditIcon(ic); setPickerOpenFor(null); }} />}
+                <input
+                  placeholder="Description (optional)"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem', color: '#fff', fontSize: '0.85rem', marginTop: '0.5rem' }}
+                />
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                   <button onClick={() => saveEdit(item)} style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.375rem 0.75rem', cursor: 'pointer', fontSize: '0.8rem' }}>Save</button>
                   <button onClick={() => { setEditingId(null); setPickerOpenFor(null); }} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.375rem 0.75rem', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
@@ -189,17 +212,20 @@ export default function OptionLists() {
               </div>
             ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '1.25rem' }}>{item.icon}</span>
-                  <span style={{ fontWeight: 'bold', color: item.color || '#fff' }}>{item.label}</span>
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({item.value_key})</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {item.icon && <span style={{ fontSize: '1.25rem' }}>{item.icon}</span>}
+                    <span style={{ fontWeight: 'bold', color: item.color || '#fff' }}>{item.label}</span>
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({item.value_key})</span>
+                  </div>
+                  {item.description && <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>{item.description}</div>}
                 </div>
                 {isAdmin && (
-                  <div style={{ display: 'flex', gap: '0.375rem' }}>
-                    <button onClick={() => moveOption(table, item, -1, items, setItems)} disabled={idx === 0} style={{ background: 'none', border: 'none', color: idx === 0 ? '#334155' : '#94a3b8', cursor: idx === 0 ? 'default' : 'pointer' }}>▲</button>
-                    <button onClick={() => moveOption(table, item, 1, items, setItems)} disabled={idx === sorted.length - 1} style={{ background: 'none', border: 'none', color: idx === sorted.length - 1 ? '#334155' : '#94a3b8', cursor: idx === sorted.length - 1 ? 'default' : 'pointer' }}>▼</button>
+                  <div style={{ display: 'flex', gap: '0.375rem', flexShrink: 0 }}>
+                    <button onClick={() => moveOption(listKey, item, -1)} disabled={idx === 0} style={{ background: 'none', border: 'none', color: idx === 0 ? '#334155' : '#94a3b8', cursor: idx === 0 ? 'default' : 'pointer' }}>▲</button>
+                    <button onClick={() => moveOption(listKey, item, 1)} disabled={idx === sorted.length - 1} style={{ background: 'none', border: 'none', color: idx === sorted.length - 1 ? '#334155' : '#94a3b8', cursor: idx === sorted.length - 1 ? 'default' : 'pointer' }}>▼</button>
                     <button onClick={() => startEdit(item)} style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '0.8rem' }}>Edit</button>
-                    <button onClick={() => deleteOption(table, item, items, setItems)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}>Remove</button>
+                    <button onClick={() => deleteOption(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}>Remove</button>
                   </div>
                 )}
               </div>
@@ -212,9 +238,9 @@ export default function OptionLists() {
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <button
                 onClick={() => setPickerOpenFor(pickerOpenFor === 'new' ? null : 'new')}
-                style={{ fontSize: '1.25rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.375rem 0.5rem', cursor: 'pointer' }}
+                style={{ fontSize: '1.25rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.375rem 0.5rem', cursor: 'pointer', minWidth: '2.5rem' }}
               >
-                {newIcon}
+                {newIcon || '—'}
               </button>
               <input
                 placeholder="New option label..."
@@ -222,9 +248,9 @@ export default function OptionLists() {
                 onChange={(e) => setNewLabel(e.target.value)}
                 style={{ flex: 1, background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem', color: '#fff' }}
               />
-              <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} style={{ width: '2.5rem', height: '2.5rem', border: 'none', background: 'none', cursor: 'pointer' }} />
+              <input type="color" value={newColor || '#334155'} onChange={(e) => setNewColor(e.target.value)} style={{ width: '2.5rem', height: '2.5rem', border: 'none', background: 'none', cursor: 'pointer' }} />
               <button
-                onClick={async () => { await addOption(table, newLabel, newIcon, newColor, items, setItems); setNewLabel(''); }}
+                onClick={async () => { await addOption(listKey, newLabel, newDescription, newIcon, newColor); setNewLabel(''); setNewDescription(''); setNewIcon(''); setNewColor(''); }}
                 disabled={!newLabel.trim()}
                 style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.5rem 1rem', cursor: 'pointer', opacity: newLabel.trim() ? 1 : 0.5 }}
               >
@@ -232,6 +258,12 @@ export default function OptionLists() {
               </button>
             </div>
             {pickerOpenFor === 'new' && <IconPicker current={newIcon} onPick={(ic) => { setNewIcon(ic); setPickerOpenFor(null); }} />}
+            <input
+              placeholder="Description (optional)"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem', color: '#fff', fontSize: '0.85rem', marginTop: '0.5rem' }}
+            />
           </div>
         )}
       </div>
@@ -261,7 +293,7 @@ export default function OptionLists() {
         <Link href="/settings" style={{ color: '#64748b', fontSize: '0.8rem' }}>← Back to Settings</Link>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: '0.5rem 0 0.25rem' }}>📋 Manage Option Lists</h1>
         <p style={{ color: '#94a3b8', marginBottom: '1.5rem', fontSize: '0.875rem' }}>
-          Add, rename, reorder, or remove the options people can tag songs with. Changes here don't affect anything live yet - this is a preview area until the rest of the app is wired up to use it.
+          Add, rename, reorder, or remove the options used throughout the app. Changes to some lists (like media types) update the list shown, but adding a genuinely new option there may still need matching code to actually work correctly - ask if you're not sure.
         </p>
 
         {message && (
@@ -270,8 +302,13 @@ export default function OptionLists() {
           </div>
         )}
 
-        <OptionListSection title="Song Status Options (favorite, dislike, etc.)" table="status_options" items={statusOptions} setItems={setStatusOptions} />
-        <OptionListSection title="Familiarity Levels (per version)" table="familiarity_levels" items={familiarityLevels} setItems={setFamiliarityLevels} />
+        {listKeys.length === 0 && (
+          <p style={{ color: '#64748b' }}>No option lists configured yet.</p>
+        )}
+
+        {listKeys.map(listKey => (
+          <OptionListSection key={listKey} listKey={listKey} />
+        ))}
       </div>
     </div>
   );
