@@ -581,18 +581,34 @@ export default function Songs() {
       if (existing) {
         if (familiarity === null || familiarity === '') {
           // Remove
-          await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?id=eq.${existing.id}`, {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?id=eq.${existing.id}`, {
             method: 'DELETE',
             headers: getAuthHeaders()
           });
+          if (!res.ok) {
+            const errorText = await res.text();
+            console.error('Familiarity delete failed:', res.status, errorText);
+            showMessage(`❌ Could not clear: ${errorText.substring(0, 150)}`);
+            return;
+          }
           setVersionPrefs(prev => { const n = {...prev}; delete n[versionId]; return n; });
         } else {
           // Update
-          await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?id=eq.${existing.id}`, {
+          // NOTE: this fetch's response is now checked before updating local state.
+          // Previously a failed write (e.g. rejected by a DB constraint) was silently
+          // ignored, and the dropdown would appear to reset to "Not set" with no
+          // explanation - it wasn't resetting, it just never actually changed.
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/user_version_preferences?id=eq.${existing.id}`, {
             method: 'PATCH',
             headers: getAuthHeaders(),
             body: JSON.stringify({ familiarity, updated_at: new Date().toISOString() })
           });
+          if (!res.ok) {
+            const errorText = await res.text();
+            console.error('Familiarity update failed:', res.status, errorText);
+            showMessage(`❌ Could not save: ${errorText.substring(0, 150)}`);
+            return; // leave versionPrefs untouched so the dropdown doesn't lie about what saved
+          }
           setVersionPrefs(prev => ({ ...prev, [versionId]: { ...existing, familiarity } }));
         }
       } else if (familiarity) {
@@ -602,6 +618,12 @@ export default function Songs() {
           headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
           body: JSON.stringify({ user_id: user.id, version_id: versionId, familiarity })
         });
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('Familiarity create failed:', res.status, errorText);
+          showMessage(`❌ Could not save: ${errorText.substring(0, 150)}`);
+          return;
+        }
         const data = await res.json();
         if (data[0]) {
           setVersionPrefs(prev => ({ ...prev, [versionId]: data[0] }));
