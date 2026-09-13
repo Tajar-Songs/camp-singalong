@@ -1,5 +1,8 @@
 // GET /api/docs/[slug] - Get a specific doc by slug
-// Returns markdown content (content_md) if available, otherwise converts HTML
+// Returns markdown-converted content, always derived from the live `content`
+// field - not `content_md`, which was a one-time snapshot that never gets
+// updated when a doc is edited through the app, and was silently shadowing
+// every subsequent edit.
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -63,9 +66,10 @@ export default async function handler(req, res) {
     }
 
     const doc = docs[0];
-    
-    // Prefer markdown content, fall back to converted HTML
-    const content = doc.content_md || htmlToMarkdown(doc.content);
+
+    // Always derive from the live `content` field - this is what the app's
+    // editor actually writes to, so it's the only field guaranteed current.
+    const content = htmlToMarkdown(doc.content);
 
     res.status(200).json({
       title: doc.title,
