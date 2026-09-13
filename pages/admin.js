@@ -44,6 +44,10 @@ export default function Admin() {
   const [changeLog, setChangeLog] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [browseSongbookIds, setBrowseSongbookIds] = useState([]); // multi-select, for the song browse/list filter
+  const [allTags, setAllTags] = useState([]); // system tags
+  const [songTagLinks, setSongTagLinks] = useState([]); // song_id <-> tag_id rows
+  const [browseTagFilter, setBrowseTagFilter] = useState([]); // multi-select tag ids
+  const [browseFiltersExpanded, setBrowseFiltersExpanded] = useState(true); // collapse state - selections persist either way
   const [browseSections, setBrowseSections] = useState([]); // multi-select, real section ids
   const [selectedSong, setSelectedSong] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -341,7 +345,7 @@ export default function Admin() {
   const loadAllData = async () => {
     try {
       const headers = getAuthHeaders(false);
-      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes, optionListsRes] = await Promise.all([
+      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes, optionListsRes, tagsRes, songTagsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
@@ -358,7 +362,9 @@ export default function Admin() {
         fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers })
+        fetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers })
       ]);
       
       // Parse responses
@@ -387,6 +393,10 @@ export default function Admin() {
         setVersionAttributeTypes(optionListsData.filter(o => o.list_key === 'version_attribute_types'));
         setFlagTypes(optionListsData.filter(o => o.list_key === 'flag_types'));
       }
+      const tagsData = await tagsRes.json();
+      const songTagsData = await songTagsRes.json();
+      if (Array.isArray(tagsData)) setAllTags(tagsData);
+      if (Array.isArray(songTagsData)) setSongTagLinks(songTagsData);
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(songs)) setAllSongs(songs);
@@ -1830,6 +1840,11 @@ export default function Admin() {
       if (browseSongbookIds.length > 0 && relevant.length === 0) return false;
       if (browseSections.length > 0 && !relevant.some(e => browseSections.includes(e.section_id))) return false;
     }
+    // Tag filter - multi-select, OR logic (song needs at least one of the selected tags)
+    if (browseTagFilter.length > 0) {
+      const songTagIds = songTagLinks.filter(st => st.song_id === song.id).map(st => st.tag_id);
+      if (!browseTagFilter.some(t => songTagIds.includes(t))) return false;
+    }
     const search = searchTerm.toLowerCase(); 
     if (!search) return true;
     const page = pageInfo.page;
@@ -1990,7 +2005,23 @@ export default function Admin() {
         <div style={s.content}>
           <div style={s.panel}>
             <input type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={s.searchInput} />
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            {(() => {
+              const activeCount = browseSongbookIds.length + browseSections.length + browseTagFilter.length;
+              return (
+                <div
+                  onClick={() => setBrowseFiltersExpanded(prev => !prev)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.25rem 0', marginBottom: '0.375rem', userSelect: 'none' }}
+                >
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8' }}>
+                    🎯 Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{browseFiltersExpanded ? '▲ Collapse' : '▼ Expand'}</span>
+                </div>
+              );
+            })()}
+            {browseFiltersExpanded && (
+            <>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <select
                 value={browseSongbookIds[0] || ''}
                 onChange={(e) => { setBrowseSongbookIds(e.target.value ? [e.target.value] : []); setBrowseSections([]); }}
@@ -2009,6 +2040,27 @@ export default function Admin() {
                 {getAvailableSections(songbookSections, browseSongbookIds).map(sec => <option key={sec.id} value={sec.id}>{sectionLabel(sec)}</option>)}
               </select>
             </div>
+            {allTags.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.75rem' }}>
+                {allTags.map(tag => {
+                  const isSelected = browseTagFilter.includes(tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      onClick={() => setBrowseTagFilter(prev => toggleInArray(prev, tag.id))}
+                      style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', border: isSelected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'), background: isSelected ? '#22c55e20' : (s.select.background || '#1e293b'), color: isSelected ? '#22c55e' : (s.select.color || '#fff') }}
+                    >
+                      {isSelected ? '✓ ' : ''}{tag.name}
+                    </button>
+                  );
+                })}
+                {browseTagFilter.length > 0 && (
+                  <button onClick={() => setBrowseTagFilter([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: '#94a3b8' }}>Clear</button>
+                )}
+              </div>
+            )}
+            </>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <button style={s.btn} onClick={startAddNewSong}>+ Add Song</button>
             </div>
