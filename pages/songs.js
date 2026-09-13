@@ -38,7 +38,9 @@ export default function Songs() {
   const [systemTagFilter, setSystemTagFilter] = useState([]); // multi-select include, [] = any tag
   const [excludeTagFilter, setExcludeTagFilter] = useState([]); // multi-select exclude, [] = no exclusions
   const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, [] = any tag
+  const [excludePersonalTagValues, setExcludePersonalTagValues] = useState([]);
   const [statusFilter, setStatusFilter] = useState([]); // multi-select array now, e.g. ['favorite','want_to_learn']
+  const [excludeStatusFilter, setExcludeStatusFilter] = useState([]);
   const [filtersExpanded, setFiltersExpanded] = useState(true); // master collapse - filters stay applied either way
   const [collapsedGroups, setCollapsedGroups] = useState({}); // per-group collapse, e.g. { songbook: true }
   const toggleGroupCollapsed = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
@@ -369,13 +371,28 @@ export default function Songs() {
         // includeMode defaults to 'any' - this page doesn't expose the AND/OR
         // toggle room has, just simple OR-match include plus exclude.
       )) return false;
+
+      // Exclude by personal tag - handled locally rather than in the shared
+      // module, since exclude-by-personal-tag is specific to this page.
+      if (excludePersonalTagValues.length > 0) {
+        const myTags = pref?.personal_tags || [];
+        if (excludePersonalTagValues.some(t => myTags.includes(t))) return false;
+      }
+
+      const myStatuses = userStatusMap[song.id] || [];
+
+      // Exclude by status (favorite/dislike/known/etc.) - always wins,
+      // checked before the include-side status filter below.
+      if (excludeStatusFilter.length > 0) {
+        if (excludeStatusFilter.some(s => myStatuses.includes(s))) return false;
+      }
+
       // Status filters - multi-select, OR logic: song passes if it matches ANY
       // selected status (so picking Favorite + Want to Learn shows songs that
       // are either one, not only songs that are both).
       if (statusFilter.length > 0) {
         const songVers = allVersions.filter(v => v.song_id === song.id);
         const hasFamiliarity = songVers.some(v => versionPrefs[v.id]?.familiarity);
-        const myStatuses = userStatusMap[song.id] || [];
         const isUntagged = myStatuses.length === 0 && !(pref?.personal_tags && pref.personal_tags.length > 0);
         const matchesAny = statusFilter.some(s => {
           if (s === 'untagged') return isUntagged;
@@ -386,7 +403,7 @@ export default function Songs() {
       }
       return true;
     });
-  }, [songs, search, searchLyrics, songbookIds, sections, systemTagFilter, excludeTagFilter, personalTagValues, statusFilter, userPrefs, userStatusMap, allVersions, versionPrefs]);
+  }, [songs, search, searchLyrics, songbookIds, sections, systemTagFilter, excludeTagFilter, personalTagValues, excludePersonalTagValues, statusFilter, excludeStatusFilter, userPrefs, userStatusMap, allVersions, versionPrefs]);
 
   // Save user preference
   const savePreference = async (songId, updates) => {
@@ -794,7 +811,7 @@ export default function Songs() {
 
           {/* Filters */}
           {(() => {
-            const activeFilterCount = songbookIds.length + sections.length + systemTagFilter.length + excludeTagFilter.length + personalTagValues.length + statusFilter.length;
+            const activeFilterCount = songbookIds.length + sections.length + systemTagFilter.length + excludeTagFilter.length + personalTagValues.length + excludePersonalTagValues.length + statusFilter.length + excludeStatusFilter.length;
             return (
               <div
                 onClick={() => setFiltersExpanded(prev => !prev)}
@@ -1001,6 +1018,35 @@ export default function Songs() {
               </div>
             )}
 
+            {user && statusOptions.length > 0 && (
+              <div style={s.filterGroup}>
+                <div onClick={() => toggleGroupCollapsed('excludeMySongs')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>Exclude My Songs{excludeStatusFilter.length > 0 ? ` (${excludeStatusFilter.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.excludeMySongs ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.excludeMySongs && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {statusOptions.map(opt => {
+                    const selected = excludeStatusFilter.includes(opt.value_key);
+                    return (
+                      <button
+                        key={opt.value_key}
+                        onClick={() => setExcludeStatusFilter(prev => toggleInArray(prev, opt.value_key))}
+                        style={{
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #ef4444' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#ef444420' : (s.select.background || '#1e293b'),
+                          color: selected ? '#ef4444' : (s.select.color || '#fff')
+                        }}
+                      >
+                        {selected ? '✗ ' : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                )}
+              </div>
+            )}
+
             {user && allPersonalTags.length > 0 && (
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('myTags')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
@@ -1030,9 +1076,38 @@ export default function Songs() {
               </div>
             )}
 
-            {(songbookIds.length > 0 || sections.length > 0 || systemTagFilter.length > 0 || excludeTagFilter.length > 0 || personalTagValues.length > 0 || statusFilter.length > 0) && (
+            {user && allPersonalTags.length > 0 && (
+              <div style={s.filterGroup}>
+                <div onClick={() => toggleGroupCollapsed('excludeMyTags')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={s.filterLabel}>Exclude My Tags{excludePersonalTagValues.length > 0 ? ` (${excludePersonalTagValues.length})` : ''}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.excludeMyTags ? '▼' : '▲'}</span>
+                </div>
+                {!collapsedGroups.excludeMyTags && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {allPersonalTags.map(tag => {
+                    const selected = excludePersonalTagValues.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => setExcludePersonalTagValues(prev => toggleInArray(prev, tag))}
+                        style={{
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #ef4444' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#ef444420' : (s.select.background || '#1e293b'),
+                          color: selected ? '#ef4444' : (s.select.color || '#fff')
+                        }}
+                      >
+                        {selected ? '✗ ' : '− '}{tag}
+                      </button>
+                    );
+                  })}
+                </div>
+                )}
+              </div>
+            )}
+
+            {(songbookIds.length > 0 || sections.length > 0 || systemTagFilter.length > 0 || excludeTagFilter.length > 0 || personalTagValues.length > 0 || excludePersonalTagValues.length > 0 || statusFilter.length > 0 || excludeStatusFilter.length > 0) && (
               <button
-                onClick={() => { setSongbookIds([]); setSections([]); setSystemTagFilter([]); setExcludeTagFilter([]); setPersonalTagValues([]); setStatusFilter([]); }}
+                onClick={() => { setSongbookIds([]); setSections([]); setSystemTagFilter([]); setExcludeTagFilter([]); setPersonalTagValues([]); setExcludePersonalTagValues([]); setStatusFilter([]); setExcludeStatusFilter([]); }}
                 style={{ ...s.select, cursor: 'pointer', color: '#94a3b8' }}
               >
                 Clear filters
