@@ -1,19 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
-
-const SECTION_INFO = {
-  A: "Graces", B: "Girl Scout Standards", C: "Camp Arrowhead Songs", D: "Patriotic Songs",
-  E: "Traditional & Folk Songs", F: "Morning Songs", G: "Animal Songs", H: "Action Songs",
-  I: "Silly Songs", J: "Food Songs", K: "Echo/Repeat Songs", L: "Campfire Songs",
-  M: "Lullabies", N: "Friendship Songs", O: "Happiness, Fun & Laughter", P: "Love Songs",
-  Q: "Peace Songs", R: "Outdoor Songs", S: "Songs to be Sung Together",
-  T: "Rounds that need Translation", U: "Rounds & Canons", V: "Contemporary Folk Songs",
-  W: "Kids' Movies & Musicals"
-};
 
 export default function Reports() {
   const router = useRouter();
@@ -61,7 +52,10 @@ export default function Reports() {
   const [changeLog, setChangeLog] = useState([]);
   const [reportViews, setReportViews] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSections, setSelectedSections] = useState(Object.keys(SECTION_INFO));
+  const [songbookIds, setSongbookIds] = useState([]);
+  const [sectionDefs, setSectionDefs] = useState([]);
+  const [selectedSections, setSelectedSections] = useState([]);
+  const [sectionsInitialized, setSectionsInitialized] = useState(false);
   const [showSectionFilter, setShowSectionFilter] = useState(false);
   
   // New Filter States
@@ -152,7 +146,7 @@ export default function Reports() {
       
       if (userFilter) logParams += `&changed_by=ilike.*${userFilter}*`;
 
-      const [songsRes, logRes, viewsRes, songbooksRes, entriesRes] = await Promise.all([
+      const [songsRes, logRes, viewsRes, songbooksRes, entriesRes, sectionDefsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: getAuthHeaders(false)
         }),
@@ -167,6 +161,9 @@ export default function Reports() {
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
           headers: getAuthHeaders(false)
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, {
+          headers: getAuthHeaders(false)
         })
       ]);
       
@@ -176,6 +173,8 @@ export default function Reports() {
       const viewsData = await viewsRes.json();
       const songbooksData = await songbooksRes.json();
       const entriesData = await entriesRes.json();
+      const sectionDefsData = await sectionDefsRes.json();
+      if (Array.isArray(sectionDefsData)) setSectionDefs(sectionDefsData);
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(songsData)) setAllSongs(songsData);
@@ -219,10 +218,35 @@ export default function Reports() {
       : [...selectedSections, section]);
   };
 
-  const filteredSongs = allSongs.filter(song =>
-    song.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    selectedSections.includes(getSongPage(song.id).section)
-  );
+  // Filterable songbooks and their real sections (replaces the old hardcoded,
+  // single-songbook SECTION_INFO map, which broke for any book beyond the
+  // original one - especially books with no letter/number codes at all).
+  const filterableSongbooks = getFilterableSongbooks(songbooks, songbookEntries);
+  const availableSections = getAvailableSections(sectionDefs, songbookIds);
+
+  useEffect(() => {
+    if (sectionsInitialized) return;
+    if (songbookIds.length === 0 && filterableSongbooks.length > 0) {
+      const primary = filterableSongbooks.find(sb => sb.is_primary) || filterableSongbooks[0];
+      setSongbookIds([primary.id]);
+    }
+  }, [filterableSongbooks, sectionsInitialized]);
+  useEffect(() => {
+    if (!sectionsInitialized && songbookIds.length > 0 && availableSections.length > 0) {
+      setSelectedSections(availableSections.map(s => s.id));
+      setSectionsInitialized(true);
+    }
+  }, [availableSections, songbookIds, sectionsInitialized]);
+
+  const filteredSongs = allSongs.filter(song => {
+    if (!song.title.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    if (songbookIds.length === 0 && selectedSections.length === 0) return true;
+    const entries = songbookEntries.filter(e => e.song_id === song.id);
+    const relevant = songbookIds.length > 0 ? entries.filter(e => songbookIds.includes(e.songbook_id)) : entries;
+    if (songbookIds.length > 0 && relevant.length === 0) return false;
+    if (selectedSections.length > 0 && !relevant.some(e => selectedSections.includes(e.section_id))) return false;
+    return true;
+  });
 
   // Note: filteredLog is now handled mostly by the server, 
   // but we keep the search filter for song titles here for "instant" feel.
