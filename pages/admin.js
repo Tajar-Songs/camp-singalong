@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -42,7 +43,8 @@ export default function Admin() {
   const [songbookSections, setSongbookSections] = useState([]);
   const [changeLog, setChangeLog] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sectionFilter, setSectionFilter] = useState('all');
+  const [browseSongbookIds, setBrowseSongbookIds] = useState([]); // multi-select, for the song browse/list filter
+  const [browseSections, setBrowseSections] = useState([]); // multi-select, real section ids
   const [selectedSong, setSelectedSong] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [songEditTab, setSongEditTab] = useState('basic');
@@ -456,7 +458,7 @@ export default function Admin() {
     const primaryEntry = songbookEntries.find(e => String(e.song_id) === String(songId) && String(e.songbook_id) === String(primarySongbook?.id));
     const oldSongbook = songbooks.find(sb => sb.display_order === 2);
     const oldEntry = songbookEntries.find(e => String(e.song_id) === String(songId) && String(e.songbook_id) === String(oldSongbook?.id));
-    return { page: primaryEntry?.page || null, section: primaryEntry?.section || null, old_page: oldEntry?.page || null };
+    return { page: primaryEntry?.page || null, section: primaryEntry?.section || null, section_id: primaryEntry?.section_id || null, old_page: oldEntry?.page || null };
   };
   
   // Get all songbook entries for a song (use == for type coercion since song_id can be number or string)
@@ -1819,10 +1821,14 @@ export default function Admin() {
 
   const filteredSongs = allSongs.filter(song => { 
     const pageInfo = getSongPage(song.id);
-    // Check section filter - include if primary OR any songbook entry has matching section
-    if (sectionFilter !== 'all') {
-      const entrySections = getSongSongbookEntries(song.id).map(e => e.section).filter(Boolean);
-      if (pageInfo.section !== sectionFilter && !entrySections.includes(sectionFilter)) return false;
+    // Section filter - checks the song's entries in whichever songbook(s) are
+    // selected, using real section ids (works for any songbook, including
+    // ones with no letter/number codes, unlike the old hardcoded version).
+    if (browseSongbookIds.length > 0 || browseSections.length > 0) {
+      const entries = getSongSongbookEntries(song.id);
+      const relevant = browseSongbookIds.length > 0 ? entries.filter(e => browseSongbookIds.includes(e.songbook_id)) : entries;
+      if (browseSongbookIds.length > 0 && relevant.length === 0) return false;
+      if (browseSections.length > 0 && !relevant.some(e => browseSections.includes(e.section_id))) return false;
     }
     const search = searchTerm.toLowerCase(); 
     if (!search) return true;
@@ -1984,11 +1990,47 @@ export default function Admin() {
         <div style={s.content}>
           <div style={s.panel}>
             <input type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={s.searchInput} />
+            <div style={{ marginBottom: '0.75rem' }}>
+              {getFilterableSongbooks(songbooks, songbookEntries).length > 1 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem' }}>
+                  {getFilterableSongbooks(songbooks, songbookEntries).map(sb => {
+                    const isSelected = browseSongbookIds.includes(sb.id);
+                    return (
+                      <button
+                        key={sb.id}
+                        onClick={() => setBrowseSongbookIds(prev => toggleInArray(prev, sb.id))}
+                        style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', border: isSelected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'), background: isSelected ? '#22c55e20' : (s.select.background || '#1e293b'), color: isSelected ? '#22c55e' : (s.select.color || '#fff') }}
+                      >
+                        {isSelected ? '✓ ' : ''}{sb.name}
+                      </button>
+                    );
+                  })}
+                  {browseSongbookIds.length > 0 && (
+                    <button onClick={() => { setBrowseSongbookIds([]); setBrowseSections([]); }} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', color: '#94a3b8' }}>Clear</button>
+                  )}
+                </div>
+              )}
+              {browseSongbookIds.length > 0 && getAvailableSections(songbookSections, browseSongbookIds).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {getAvailableSections(songbookSections, browseSongbookIds).map(sec => {
+                    const isSelected = browseSections.includes(sec.id);
+                    return (
+                      <button
+                        key={sec.id}
+                        onClick={() => setBrowseSections(prev => toggleInArray(prev, sec.id))}
+                        style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', border: isSelected ? '2px solid #3b82f6' : (s.select.border || '1px solid #334155'), background: isSelected ? '#3b82f620' : (s.select.background || '#1e293b'), color: isSelected ? '#3b82f6' : (s.select.color || '#fff') }}
+                      >
+                        {isSelected ? '✓ ' : ''}{sectionLabel(sec)}
+                      </button>
+                    );
+                  })}
+                  {browseSections.length > 0 && (
+                    <button onClick={() => setBrowseSections([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', color: '#94a3b8' }}>Clear</button>
+                  )}
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <select value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} style={{ ...s.select, flex: 1 }}>
-                <option value="all">All Sections</option>
-                {Object.entries(SECTION_INFO).map(([k, n]) => <option key={k} value={k}>{k} - {n}</option>)}
-              </select>
               <button style={s.btn} onClick={startAddNewSong}>+ Add Song</button>
             </div>
             <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem' }}>📄 lyrics 📝 notes 🎵 media ⚠️ flags 🏷️ aliases 👥 groups 📑 versions 📍 multi-section</div>
@@ -2008,18 +2050,24 @@ export default function Admin() {
                 const songbookEntrySections = getSongSongbookEntries(song.id).map(e => e.section).filter(Boolean);
                 const uniqueSections = [...new Set([pageInfo.section, ...songbookEntrySections])];
                 const hasMultipleSections = uniqueSections.length > 1;
-                // If filtering by a different section, find the matching entry
-                const matchedEntry = sectionFilter !== 'all' && pageInfo.section !== sectionFilter 
-                  ? getSongSongbookEntries(song.id).find(e => e.section === sectionFilter) 
+                // If the primary entry doesn't match the current section filter,
+                // but some other entry for this song does, show that instead -
+                // same "also appears elsewhere" behavior as before, now working
+                // correctly across any songbook (not just the original one).
+                const primaryMatchesFilter = browseSections.length === 0 || browseSections.includes(pageInfo.section_id);
+                const matchedEntry = !primaryMatchesFilter
+                  ? getSongSongbookEntries(song.id).find(e => browseSections.includes(e.section_id))
                   : null;
+                const primarySectionDef = songbookSections.find(d => d.id === pageInfo.section_id);
+                const matchedSectionDef = matchedEntry ? songbookSections.find(d => d.id === matchedEntry.section_id) : null;
                 return (
                   <div key={song.id} style={s.songItem(selectedSong?.id === song.id)} onClick={() => selectSong(song)}>
                     <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{song.title}</div>
                     <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                       {matchedEntry ? (
-                        <>Section {matchedEntry.section} • Page {matchedEntry.page || 'N/A'} <span style={{ color: '#64748b' }}>(also {pageInfo.section})</span></>
+                        <>Section {matchedSectionDef ? sectionLabel(matchedSectionDef) : matchedEntry.section} • Page {matchedEntry.page || 'N/A'} <span style={{ color: '#64748b' }}>(also {primarySectionDef ? sectionLabel(primarySectionDef) : pageInfo.section})</span></>
                       ) : (
-                        <>Section {pageInfo.section} • Page {displayPage}</>
+                        <>Section {primarySectionDef ? sectionLabel(primarySectionDef) : pageInfo.section} • Page {displayPage}</>
                       )}
                       {hasLyrics && ' 📄'}{hasNotes && ' 📝'}{hasMedia && ' 🎵'}{hasFlags && ' ⚠️'}{hasAliases && ' 🏷️'}{inGroups && ' 👥'}{multipleVersions && ' 📑'}{hasMultipleSections && ' 📍'}
                     </div>
