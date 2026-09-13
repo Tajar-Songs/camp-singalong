@@ -532,7 +532,12 @@ export default function Admin() {
       
       if (isAddingNew) {
         // Create the song first
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify({ ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null }) });
+        // NOTE: section/page/old_page are NOT columns on `songs` anymore (that data
+        // now lives in song_songbook_entries, written just below). Sending them here
+        // makes PostgREST reject the whole request with a schema-cache error, since
+        // it can't find those columns - this was silently breaking every save until
+        // the .ok check above started surfacing it.
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(songData) });
         if (response.ok) { 
           const created = await response.json(); 
           const newSongId = created[0].id;
@@ -572,7 +577,10 @@ export default function Admin() {
         // NOTE: this fetch's response is now checked before proceeding - previously a failed
         // write here (RLS, bad payload, etc.) would be silently ignored and the UI would show
         // a false "success" message while the database kept the old value.
-        const songUpdateRes = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null }) });
+        // NOTE: section/page/old_page removed from this payload - see comment on the
+        // POST above. These fields still exist as *form state* (formSection etc.) and
+        // are still used correctly a few lines down when writing to song_songbook_entries.
+        const songUpdateRes = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(songData) });
         if (!songUpdateRes.ok) {
           const errorText = await songUpdateRes.text();
           console.error('Song update failed:', songUpdateRes.status, errorText);
