@@ -106,7 +106,7 @@ export default function Docs() {
   };
 
   useEffect(() => { checkAuth(); loadDocs(); }, []);
-  useEffect(() => { if (user) loadDocs(); }, [user, userProfile]); // Reload when user changes to get admin-only docs
+  useEffect(() => { if (user) loadDocs(); }, [user, userRoleKeys]); // Reload when roles are known, to get admin-only docs
 
   const checkAuth = async () => {
     try {
