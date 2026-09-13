@@ -53,7 +53,12 @@ export default function Room() {
   const [songbookIds, setSongbookIds] = useState([]); // multi-select; [] = no songbook restriction
   const [sectionDefs, setSectionDefs] = useState([]); // raw songbook_sections rows: {songbook_id, section_code, section_name}
   const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, OR logic
+  const [excludePersonalTagValues, setExcludePersonalTagValues] = useState([]);
   const [userPreferences, setUserPreferences] = useState({}); // song_id -> preference row (for personal_tags)
+  const [statusOptions, setStatusOptions] = useState([]); // from option_lists, list_key='status_options'
+  const [userStatusMap, setUserStatusMap] = useState({}); // song_id -> [value_key, ...]
+  const [statusFilter, setStatusFilter] = useState([]);
+  const [excludeStatusFilter, setExcludeStatusFilter] = useState([]);
   
   // Expanded notes tracking (which note types are currently shown)
   const [expandedNotes, setExpandedNotes] = useState([]);
@@ -118,7 +123,7 @@ export default function Room() {
     checkAuthSession();
   }, []);
 
-  useEffect(() => { loadSongs(); loadTags(); }, []);
+  useEffect(() => { loadSongs(); loadTags(); loadStatusOptions(); }, []);
   useEffect(() => { loadUserPreferences(); }, [user]);
 
   // Load session history when user changes
@@ -438,35 +443,25 @@ export default function Room() {
     Object.values(userPreferences).flatMap(p => p.personal_tags || [])
   )].sort();
 
-  // One-time defaults, run once when data first loads:
-  // - auto-select the primary songbook (most rooms run off a single book, and
-  //   sections now require a songbook to be selected to show at all - this keeps
-  //   the common case working the same as before without extra clicks)
-  // - once a songbook is selected (and its sections become available), select
-  //   all of them by default, matching the old "everything on" starting behavior
-  const [defaultsInitialized, setDefaultsInitialized] = useState(false);
-  useEffect(() => {
-    if (defaultsInitialized) return;
-    if (songbookIds.length === 0 && filterableSongbooks.length > 0) {
-      const primary = filterableSongbooks.find(sb => sb.is_primary) || filterableSongbooks[0];
-      setSongbookIds([primary.id]);
-    }
-  }, [filterableSongbooks, defaultsInitialized]);
-  useEffect(() => {
-    if (!defaultsInitialized && songbookIds.length > 0 && availableSections.length > 0) {
-      setSelectedSections(availableSections.map(s => s.id));
-      setDefaultsInitialized(true);
-    }
-  }, [availableSections, songbookIds, defaultsInitialized]);
+  // No auto-selected defaults - starts fully unfiltered, matching how the
+  // songs page works. A "default songbook" is a personal/group preference
+  // concept we haven't built yet; nothing should be silently pre-chosen for
+  // everyone until that actually exists.
 
   // The full song-eligibility check for filtering (random generator + search list).
-  // Semantics (matches the original design): a song is eligible if it's in a
-  // selected section, OR it matches the include-tag/personal-tag criteria -
-  // include criteria surface a song even outside the selected sections. Exclude
-  // always wins regardless of anything else. Songbook selection, if any, is a
-  // hard restriction applied before section/tag logic.
+  // Empty songbook/section selections mean "no restriction on this axis" -
+  // same semantics as the songs page - not "show nothing". Include-tag,
+  // personal-tag, and status criteria can all surface a song even when
+  // sections ARE restricted, same treatment as tags. Exclude (of any kind)
+  // always wins regardless of anything else.
   const songMatchesRoomFilters = (song) => {
     if (songHasAnyTag(song.id, excludeTagIds)) return false;
+
+    const myPersonalTags = userPreferences[song.id]?.personal_tags || [];
+    if (excludePersonalTagValues.length > 0 && excludePersonalTagValues.some(t => myPersonalTags.includes(t))) return false;
+
+    const myStatuses = userStatusMap[song.id] || [];
+    if (excludeStatusFilter.length > 0 && excludeStatusFilter.some(s => myStatuses.includes(s))) return false;
 
     const entries = songbookEntries.filter(e => e.song_id === song.id);
     const relevantEntries = songbookIds.length > 0
@@ -476,18 +471,21 @@ export default function Room() {
 
     const matchesSection = selectedSections.length > 0
       ? relevantEntries.some(e => selectedSections.includes(e.section_id))
-      : false;
+      : true;
 
     const matchesIncludeTags = includeTagIds.length > 0
       ? (includeMode === 'all' ? songHasAllTags(song.id, includeTagIds) : songHasAnyTag(song.id, includeTagIds))
       : false;
 
-    const myPersonalTags = userPreferences[song.id]?.personal_tags || [];
     const matchesPersonalTags = personalTagValues.length > 0
       ? personalTagValues.some(t => myPersonalTags.includes(t))
       : false;
 
-    return matchesSection || matchesIncludeTags || matchesPersonalTags;
+    const matchesStatus = statusFilter.length > 0
+      ? statusFilter.some(s => myStatuses.includes(s))
+      : false;
+
+    return matchesSection || matchesIncludeTags || matchesPersonalTags || matchesStatus;
   };
 
 
@@ -576,7 +574,7 @@ export default function Room() {
 
   // Load this user's personal preferences (used here only for personal tags filtering)
   const loadUserPreferences = async () => {
-    if (!user) { setUserPreferences({}); return; }
+    if (!user) { setUserPreferences({}); setUserStatusMap({}); return; }
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/user_song_preferences?user_id=eq.${user.id}&select=song_id,personal_tags`, {
         headers: getAuthHeaders(false)
@@ -585,7 +583,26 @@ export default function Room() {
       const map = {};
       if (Array.isArray(data)) data.forEach(p => { map[p.song_id] = p; });
       setUserPreferences(map);
+
+      const statusRes = await fetch(`${SUPABASE_URL}/rest/v1/user_song_status?user_id=eq.${user.id}`, { headers: getAuthHeaders(false) });
+      const statusData = await statusRes.json();
+      const statusMap = {};
+      if (Array.isArray(statusData)) {
+        statusData.forEach(s => {
+          if (!statusMap[s.song_id]) statusMap[s.song_id] = [];
+          statusMap[s.song_id].push(s.value_key);
+        });
+      }
+      setUserStatusMap(statusMap);
     } catch (error) { console.error('Error loading user preferences:', error); }
+  };
+
+  const loadStatusOptions = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?list_key=eq.status_options&select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
+      const data = await res.json();
+      if (Array.isArray(data)) setStatusOptions(data);
+    } catch (error) { console.error('Error loading status options:', error); }
   };
 
   // Helper: Check if song has a specific tag
@@ -1853,6 +1870,9 @@ if (view === 'display' && showLyrics && currentSong) {
                   {includeTagIds.length > 0 && ` • +${includeTagIds.length} tags (${includeMode === 'all' ? 'all' : 'any'})`}
                   {excludeTagIds.length > 0 && ` • -${excludeTagIds.length} excluded`}
                   {personalTagValues.length > 0 && ` • ${personalTagValues.length} my tags`}
+                  {excludePersonalTagValues.length > 0 && ` • -${excludePersonalTagValues.length} my tags excluded`}
+                  {statusFilter.length > 0 && ` • ${statusFilter.length} my songs`}
+                  {excludeStatusFilter.length > 0 && ` • -${excludeStatusFilter.length} my songs excluded`}
                 </span>
               )}
               <span className="text-xl opacity-50">{showSectionFilter ? '▼' : '▶'}</span>
@@ -2057,6 +2077,90 @@ if (view === 'display' && showLyrics && currentSong) {
                           }`}
                         >
                           {isSelected ? '✓ ' : '+ '}{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Exclude My Tags */}
+              {user && allPersonalTags.length > 0 && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider opacity-60">Exclude My Tags</span>
+                    {excludePersonalTagValues.length > 0 && (
+                      <button onClick={() => setExcludePersonalTagValues([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {allPersonalTags.map(tag => {
+                      const isSelected = excludePersonalTagValues.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => setExcludePersonalTagValues(prev => toggleInArray(prev, tag))}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
+                            isSelected ? 'bg-red-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {isSelected ? '✗ ' : '− '}{tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* My Songs (favorite/dislike/known/want-to-learn/etc) */}
+              {user && statusOptions.length > 0 && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider opacity-60">My Songs</span>
+                    {statusFilter.length > 0 && (
+                      <button onClick={() => setStatusFilter([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {statusOptions.map(opt => {
+                      const isSelected = statusFilter.includes(opt.value_key);
+                      return (
+                        <button
+                          key={opt.value_key}
+                          onClick={() => setStatusFilter(prev => toggleInArray(prev, opt.value_key))}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
+                            isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : ''}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Exclude My Songs */}
+              {user && statusOptions.length > 0 && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider opacity-60">Exclude My Songs</span>
+                    {excludeStatusFilter.length > 0 && (
+                      <button onClick={() => setExcludeStatusFilter([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {statusOptions.map(opt => {
+                      const isSelected = excludeStatusFilter.includes(opt.value_key);
+                      return (
+                        <button
+                          key={opt.value_key}
+                          onClick={() => setExcludeStatusFilter(prev => toggleInArray(prev, opt.value_key))}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
+                            isSelected ? 'bg-red-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {isSelected ? '✗ ' : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
                         </button>
                       );
                     })}
