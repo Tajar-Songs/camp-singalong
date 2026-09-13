@@ -133,10 +133,17 @@ export default function Docs() {
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
+  const loadDocsRequestId = useRef(0);
+
   const loadDocs = async () => {
+    // Guard against out-of-order responses: if an earlier-fired request
+    // resolves after a later one (normal network timing variance), it must
+    // not be allowed to overwrite the more current result.
+    const thisRequestId = ++loadDocsRequestId.current;
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers: getAuthHeaders(false) });
       const data = await res.json();
+      if (thisRequestId !== loadDocsRequestId.current) return; // a newer request has since started; discard this one
       if (Array.isArray(data)) {
         const isAdmin = hasAnyRole(userRoleKeys);
         const visibleDocs = isAdmin ? data : data.filter(doc => doc.visibility === 'user');
