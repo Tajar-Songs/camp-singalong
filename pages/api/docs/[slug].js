@@ -53,7 +53,8 @@ export default async function handler(req, res) {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
-      }
+      },
+      cache: 'no-store'
     });
 
     if (!response.ok) {
