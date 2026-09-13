@@ -15,31 +15,6 @@ const SECTION_INFO = {
   W: "Kids' Movies & Musicals"
 };
 
-const NOTE_TYPES = [
-  { value: 'round_instruction', label: 'Round Instructions' },
-  { value: 'performance_instruction', label: 'Performance Tips' },
-  { value: 'history', label: 'History' },
-  { value: 'pronunciation', label: 'Pronunciation' },
-  { value: 'call_response_structure', label: 'Call & Response' },
-  { value: 'accompaniment', label: 'Accompaniment' },
-  { value: 'fill_in_blank', label: 'Fill in the Blank' },
-  { value: 'alternate_verse_info', label: 'Alternate Verses' },
-  { value: 'other', label: 'Other Notes' }
-];
-
-const GROUP_TYPES = [
-  { value: 'round_group', label: 'Round Group' },
-  { value: 'medley', label: 'Medley' },
-  { value: 'mashup', label: 'Mashup' },
-  { value: 'other', label: 'Other' }
-];
-
-const MEMBER_ROLES = [
-  { value: 'default', label: 'Default' },
-  { value: 'optional', label: 'Optional' },
-  { value: 'alternate', label: 'Alternate' }
-];
-
 export default function Admin() {
   const router = useRouter();
   
@@ -198,6 +173,12 @@ export default function Admin() {
 
   const [userProfile, setUserProfile] = useState(null);
   const [userRoleKeys, setUserRoleKeys] = useState([]);
+  const [noteTypes, setNoteTypes] = useState([]);
+  const [groupTypes, setGroupTypes] = useState([]);
+  const [memberRoles, setMemberRoles] = useState([]);
+  const [versionTypes, setVersionTypes] = useState([]);
+  const [versionAttributeTypes, setVersionAttributeTypes] = useState([]);
+  const [flagTypes, setFlagTypes] = useState([]);
 
   // Helper function to get auth headers with user's token
   const getAuthHeaders = (includeContentType = true) => {
@@ -358,7 +339,7 @@ export default function Admin() {
   const loadAllData = async () => {
     try {
       const headers = getAuthHeaders(false);
-      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes] = await Promise.all([
+      const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes, optionListsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
@@ -374,7 +355,8 @@ export default function Admin() {
         fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
         fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers })
+        fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers })
       ]);
       
       // Parse responses
@@ -394,6 +376,15 @@ export default function Admin() {
       const duplicates = await duplicatesRes.json();
       const log = await logRes.json();
       const docsData = await docsRes.json();
+      const optionListsData = await optionListsRes.json();
+      if (Array.isArray(optionListsData)) {
+        setNoteTypes(optionListsData.filter(o => o.list_key === 'note_types'));
+        setGroupTypes(optionListsData.filter(o => o.list_key === 'group_types'));
+        setMemberRoles(optionListsData.filter(o => o.list_key === 'member_roles'));
+        setVersionTypes(optionListsData.filter(o => o.list_key === 'version_types'));
+        setVersionAttributeTypes(optionListsData.filter(o => o.list_key === 'version_attribute_types'));
+        setFlagTypes(optionListsData.filter(o => o.list_key === 'flag_types'));
+      }
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(songs)) setAllSongs(songs);
@@ -1145,19 +1136,6 @@ export default function Admin() {
   };
 
   // Version management
-  const VERSION_TYPES = [
-    { value: 'canonical', label: 'Original/Canonical' },
-    { value: 'alternate', label: 'Alternate Version' }
-  ];
-
-  const VERSION_ATTRIBUTE_TYPES = [
-    { value: 'gender_neutral', label: 'Gender Neutral' },
-    { value: 'secular', label: 'Secular (religious references removed)' },
-    { value: 'kid_friendly', label: 'Kid Friendly' },
-    { value: 'addresses_sensitivity', label: 'Addresses Sensitivity Issues' },
-    { value: 'camp_specific', label: 'Camp-Specific Names/References' },
-    { value: 'other', label: 'Other' }
-  ];
 
   const getSongVersions = (songId) => songVersions.filter(v => v.song_id === songId);
   const getVersionAttributes = (versionId) => versionAttributes.filter(a => a.song_version_id === versionId);
@@ -1337,13 +1315,6 @@ export default function Admin() {
   };
 
   // Song flags management
-  const FLAG_TYPES = [
-    { value: 'problematic_content', label: 'Problematic Content', description: 'Racism, offensive language, slurs' },
-    { value: 'cultural_sensitivity', label: 'Cultural Sensitivity', description: 'Appropriation concerns' },
-    { value: 'religious_content', label: 'Religious Content', description: 'References God/religion' },
-    { value: 'adult_content', label: 'Adult Content', description: 'Themes or words not camp-appropriate' },
-    { value: 'other', label: 'Other', description: 'Other concerns' }
-  ];
 
   const getSongFlags = (songId) => songFlags.filter(f => f.song_id === songId);
 
@@ -2126,7 +2097,7 @@ export default function Admin() {
                             <div style={s.formGroup}>
                               <label style={s.label}>Type</label>
                               <select value={versionType} onChange={(e) => setVersionType(e.target.value)} style={s.select}>
-                                {VERSION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                {versionTypes.map(t => <option key={t.value_key} value={t.value_key}>{t.label}</option>)}
                               </select>
                             </div>
                           </div>
@@ -2141,9 +2112,9 @@ export default function Admin() {
                           <div style={{ marginBottom: '1rem' }}>
                             <label style={s.label}>Attributes</label>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.25rem' }}>
-                              {VERSION_ATTRIBUTE_TYPES.map(attr => (
-                                <label key={attr.value} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.5rem', background: versionSelectedAttributes.includes(attr.value) ? '#22c55e33' : '#1e293b', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>
-                                  <input type="checkbox" checked={versionSelectedAttributes.includes(attr.value)} onChange={() => toggleVersionAttribute(attr.value)} />
+                              {versionAttributeTypes.map(attr => (
+                                <label key={attr.value_key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.5rem', background: versionSelectedAttributes.includes(attr.value_key) ? '#22c55e33' : '#1e293b', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>
+                                  <input type="checkbox" checked={versionSelectedAttributes.includes(attr.value_key)} onChange={() => toggleVersionAttribute(attr.value_key)} />
                                   {attr.label}
                                 </label>
                               ))}
@@ -2173,7 +2144,7 @@ export default function Admin() {
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                   <span style={{ fontWeight: 'bold' }}>{version.label || 'Untitled Version'}</span>
-                                  <span style={{ fontSize: '0.7rem', padding: '0.125rem 0.375rem', background: '#3b82f633', color: '#3b82f6', borderRadius: '0.25rem' }}>{VERSION_TYPES.find(t => t.value === version.version_type)?.label || version.version_type}</span>
+                                  <span style={{ fontSize: '0.7rem', padding: '0.125rem 0.375rem', background: '#3b82f633', color: '#3b82f6', borderRadius: '0.25rem' }}>{versionTypes.find(t => t.value_key === version.version_type)?.label || version.version_type}</span>
                                   {version.is_default_singalong && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#22c55e33', color: '#22c55e', borderRadius: '0.25rem' }}>★ Singalong</span>}
                                   {version.is_default_explore && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#a855f733', color: '#a855f7', borderRadius: '0.25rem' }}>★ Explore</span>}
                                 </div>
@@ -2182,7 +2153,7 @@ export default function Admin() {
                                   <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                                     {attrs.map(a => (
                                       <span key={a.id} style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#64748b33', color: '#94a3b8', borderRadius: '0.25rem' }}>
-                                        {VERSION_ATTRIBUTE_TYPES.find(t => t.value === a.attribute_type)?.label || a.attribute_type}
+                                        {versionAttributeTypes.find(t => t.value_key === a.attribute_type)?.label || a.attribute_type}
                                       </span>
                                     ))}
                                   </div>
@@ -2209,7 +2180,7 @@ export default function Admin() {
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddNote}>+ Add Note</button>
                       {editingNote && (
                         <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem' }}>
-                          <div style={s.formGroup}><label style={s.label}>Note Type</label><select value={noteType} onChange={(e) => setNoteType(e.target.value)} style={s.select}>{NOTE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+                          <div style={s.formGroup}><label style={s.label}>Note Type</label><select value={noteType} onChange={(e) => setNoteType(e.target.value)} style={s.select}>{noteTypes.map(t => <option key={t.value_key} value={t.value_key}>{t.label}</option>)}</select></div>
                           <div style={s.formGroup}><label style={s.label}>Content</label><textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} style={s.textarea} /></div>
                           <div style={{ display: 'flex', gap: '0.5rem' }}><button style={s.btn} onClick={saveNote} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button><button style={s.btnSec} onClick={cancelNoteEdit}>Cancel</button></div>
                         </div>
@@ -2217,7 +2188,7 @@ export default function Admin() {
                       {getSongNotes(selectedSong.id).map(note => (
                         <div key={note.id} style={s.card}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#22c55e' }}>{NOTE_TYPES.find(t => t.value === note.note_type)?.label || note.note_type}</span>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#22c55e' }}>{noteTypes.find(t => t.value_key === note.note_type)?.label || note.note_type}</span>
                             <div style={{ display: 'flex', gap: '0.25rem' }}><button style={s.btnSmall} onClick={() => startEditNote(note)}>Edit</button><button style={s.btnDanger} onClick={() => deleteNote(note)}>Delete</button></div>
                           </div>
                           <div style={{ fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>{note.note_content}</div>
@@ -2237,10 +2208,10 @@ export default function Admin() {
                           <div style={s.formGroup}>
                             <label style={s.label}>Flag Type *</label>
                             <select value={flagType} onChange={(e) => setFlagType(e.target.value)} style={s.select}>
-                              {FLAG_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                              {flagTypes.map(t => <option key={t.value_key} value={t.value_key}>{t.label}</option>)}
                             </select>
                             <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.25rem' }}>
-                              {FLAG_TYPES.find(t => t.value === flagType)?.description}
+                              {flagTypes.find(t => t.value_key === flagType)?.description}
                             </div>
                           </div>
                           <div style={s.formGroup}>
@@ -2264,7 +2235,7 @@ export default function Admin() {
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
                                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#f59e0b' }}>
-                                  {FLAG_TYPES.find(t => t.value === flag.flag_type)?.label || flag.flag_type}
+                                  {flagTypes.find(t => t.value_key === flag.flag_type)?.label || flag.flag_type}
                                 </span>
                               </div>
                               <div style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>{flag.explanation}</div>
@@ -2493,7 +2464,7 @@ export default function Admin() {
                     <>
                       <div style={s.formGroup}><label style={s.label}>Group Name *</label><input type="text" value={formGroupName} onChange={(e) => setFormGroupName(e.target.value)} style={s.input} /></div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        <div style={s.formGroup}><label style={s.label}>Group Type</label><select value={formGroupType} onChange={(e) => setFormGroupType(e.target.value)} style={s.select}>{GROUP_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+                        <div style={s.formGroup}><label style={s.label}>Group Type</label><select value={formGroupType} onChange={(e) => setFormGroupType(e.target.value)} style={s.select}>{groupTypes.map(t => <option key={t.value_key} value={t.value_key}>{t.label}</option>)}</select></div>
                         <div style={s.formGroup}><label style={s.label}>Requestable</label><select value={formGroupRequestable} onChange={(e) => setFormGroupRequestable(e.target.value === 'true')} style={s.select}><option value="true">Yes</option><option value="false">No</option></select></div>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
@@ -2513,7 +2484,7 @@ export default function Admin() {
                           <div style={s.formGroup}><label style={s.label}>Song *</label><select value={memberSongId} onChange={(e) => setMemberSongId(e.target.value)} style={s.select}><option value="">Select a song...</option>{allSongs.map(so => <option key={so.id} value={so.id}>{so.title}</option>)}</select></div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div style={s.formGroup}><label style={s.label}>Position</label><input type="number" value={memberPosition} onChange={(e) => setMemberPosition(parseInt(e.target.value) || 1)} style={s.input} min="1" /></div>
-                            <div style={s.formGroup}><label style={s.label}>Role</label><select value={memberRole} onChange={(e) => setMemberRole(e.target.value)} style={s.select}>{MEMBER_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+                            <div style={s.formGroup}><label style={s.label}>Role</label><select value={memberRole} onChange={(e) => setMemberRole(e.target.value)} style={s.select}>{memberRoles.map(r => <option key={r.value_key} value={r.value_key}>{r.label}</option>)}</select></div>
                           </div>
                           <div style={s.formGroup}><label style={s.label}>Fragment Lyrics</label><textarea value={memberFragmentLyrics} onChange={(e) => setMemberFragmentLyrics(e.target.value)} style={s.textarea} placeholder="Shortened lyrics..." /></div>
                           <div style={s.formGroup}><label style={s.label}>Specific Instructions</label><textarea value={memberInstructions} onChange={(e) => setMemberInstructions(e.target.value)} style={{ ...s.textarea, minHeight: '80px' }} /></div>
