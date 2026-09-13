@@ -5,24 +5,15 @@ import Link from 'next/link';
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
-const ROOM_CODE_WORDS = [
-  'SUNSHINE', 'MOONLIGHT', 'STARLIGHT', 'RAINBOW', 'BARGES', 'CAMPFIRE',
-  'MOUNTAIN', 'MEADOW', 'RIVER', 'FOREST', 'WILDFLOWER', 'BLACKBERRY',
-  'SPARROW', 'TURTLE', 'CRICKET', 'HARMONY', 'MELODY', 'LULLABY',
-  'CANOE', 'LANTERN', 'DEWDROP', 'SUNRISE', 'SUNSET', 'MAGIC',
-  'DREAM', 'WIND', 'PEACE', 'FRIENDS', 'LINGER', 'WANDER',
-  'ROVER', 'HAPPY', 'BUGS', 'LAKE', 'WANEEYA', 'ELAHAN',
-  'TAHOMA', 'MOWICH', 'KLICKITAT', 'LOOWIT', 'TYHEE', 'ILLAHEE',
-  'WYEAST', 'CELILO', 'ROMANY', 'CHEESIAH', 'DOGMTN', 'WINDMTN',
-  'TAJAR', 'PHIF', 'TILLIE', 'CEDAR', 'MAPLE', 'HEMLOCK',
-  'ALDER', 'CASCADE', 'GORGE', 'RAPIDS', 'SALMON', 'TRILLIUM',
-  'FERN', 'MOSS', 'HUCKLEBERRY', 'CHINOOK', 'RAVEN', 'EAGLE',
-  'VOLCANO', 'LANDSLIDE', 'BANDANA', 'TRAILHEAD', 'SUMMIT', 'RIDGE',
-  'CREEK', 'PINE', 'SPRUCE', 'EVERGREEN', 'PIXIE'
-];
+// Small safety-net fallback, used only if the configurable word list hasn't
+// loaded yet (e.g. someone clicks Start Room before the fetch completes) -
+// the real list lives in option_lists (list_key='room_code_words') and is
+// editable from Settings > Manage Option Lists.
+const FALLBACK_ROOM_CODE_WORDS = ['SUNSHINE', 'CAMPFIRE', 'MOUNTAIN', 'RIVER', 'FOREST', 'HARMONY'];
 
-const generateRoomCode = () => {
-  const word = ROOM_CODE_WORDS[Math.floor(Math.random() * ROOM_CODE_WORDS.length)];
+const generateRoomCode = (words) => {
+  const list = words && words.length > 0 ? words : FALLBACK_ROOM_CODE_WORDS;
+  const word = list[Math.floor(Math.random() * list.length)];
   const number = Math.floor(Math.random() * 90) + 10;
   return word + number;
 };
@@ -48,6 +39,7 @@ export default function Home() {
 
   // Dashboard data
   const [totalSongCount, setTotalSongCount] = useState(null);
+  const [roomCodeWords, setRoomCodeWords] = useState([]);
   const [myStats, setMyStats] = useState(null); // { favorites, known, wantToLearn } once loaded
 
   const [isDark, setIsDark] = useState(false);
@@ -77,6 +69,7 @@ export default function Home() {
 
   useEffect(() => { checkAuthSession(); }, []);
   useEffect(() => { loadTotalSongCount(); }, []);
+  useEffect(() => { loadRoomCodeWords(); }, []);
   useEffect(() => {
     if (user) loadMyStats();
     else setMyStats(null);
@@ -205,7 +198,7 @@ export default function Home() {
 
   // ---------- Room create/join ----------
   const createRoom = async () => {
-    const code = generateRoomCode();
+    const code = generateRoomCode(roomCodeWords);
     setRoomLoading(true);
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/rooms`, {
@@ -241,6 +234,16 @@ export default function Home() {
       const total = range ? parseInt(range.split('/')[1], 10) : null;
       setTotalSongCount(Number.isFinite(total) ? total : null);
     } catch (error) { console.error('Error loading song count:', error); }
+  };
+
+  const loadRoomCodeWords = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?list_key=eq.room_code_words&select=label`, { headers: getAuthHeaders(false) });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setRoomCodeWords(data.map(d => d.label));
+      }
+    } catch (error) { console.error('Error loading room code words:', error); }
   };
 
   const loadMyStats = async () => {
