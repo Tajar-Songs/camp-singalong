@@ -554,6 +554,12 @@ export default function Admin() {
           setIsAddingNew(false); 
           await loadAllData(); 
           selectSong(created[0]); 
+        } else {
+          const errorText = await response.text();
+          console.error('Song create failed:', response.status, errorText);
+          showMessage(`❌ Save failed: ${errorText.substring(0, 150)}`);
+          setSaving(false);
+          return;
         }
       } else {
         // Log changes
@@ -563,7 +569,17 @@ export default function Admin() {
         if (selectedSong.origin !== songData.origin) await logChange('edit', 'songs', selectedSong.id, songData.title, 'origin', selectedSong.origin, songData.origin);
         
         // Update songs table (also keep section/page for backward compatibility during transition)
-        await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null }) });
+        // NOTE: this fetch's response is now checked before proceeding - previously a failed
+        // write here (RLS, bad payload, etc.) would be silently ignored and the UI would show
+        // a false "success" message while the database kept the old value.
+        const songUpdateRes = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ ...songData, section: formSection, page: formPage.trim() || null, old_page: formOldPage.trim() || null }) });
+        if (!songUpdateRes.ok) {
+          const errorText = await songUpdateRes.text();
+          console.error('Song update failed:', songUpdateRes.status, errorText);
+          showMessage(`❌ Save failed: ${errorText.substring(0, 150)}`);
+          setSaving(false);
+          return; // stop here - don't touch songbook entries or optimistic local state below
+        }
         
         // Update/create primary songbook entry
         const primarySongbook = songbooks.find(sb => sb.is_primary);
@@ -3065,7 +3081,3 @@ export default function Admin() {
     </div>
   );
 }
-
-
-
-
