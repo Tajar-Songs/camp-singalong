@@ -1990,45 +1990,24 @@ export default function Admin() {
         <div style={s.content}>
           <div style={s.panel}>
             <input type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={s.searchInput} />
-            <div style={{ marginBottom: '0.75rem' }}>
-              {getFilterableSongbooks(songbooks, songbookEntries).length > 1 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem' }}>
-                  {getFilterableSongbooks(songbooks, songbookEntries).map(sb => {
-                    const isSelected = browseSongbookIds.includes(sb.id);
-                    return (
-                      <button
-                        key={sb.id}
-                        onClick={() => setBrowseSongbookIds(prev => toggleInArray(prev, sb.id))}
-                        style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', border: isSelected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'), background: isSelected ? '#22c55e20' : (s.select.background || '#1e293b'), color: isSelected ? '#22c55e' : (s.select.color || '#fff') }}
-                      >
-                        {isSelected ? '✓ ' : ''}{sb.name}
-                      </button>
-                    );
-                  })}
-                  {browseSongbookIds.length > 0 && (
-                    <button onClick={() => { setBrowseSongbookIds([]); setBrowseSections([]); }} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', color: '#94a3b8' }}>Clear</button>
-                  )}
-                </div>
-              )}
-              {browseSongbookIds.length > 0 && getAvailableSections(songbookSections, browseSongbookIds).length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                  {getAvailableSections(songbookSections, browseSongbookIds).map(sec => {
-                    const isSelected = browseSections.includes(sec.id);
-                    return (
-                      <button
-                        key={sec.id}
-                        onClick={() => setBrowseSections(prev => toggleInArray(prev, sec.id))}
-                        style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', border: isSelected ? '2px solid #3b82f6' : (s.select.border || '1px solid #334155'), background: isSelected ? '#3b82f620' : (s.select.background || '#1e293b'), color: isSelected ? '#3b82f6' : (s.select.color || '#fff') }}
-                      >
-                        {isSelected ? '✓ ' : ''}{sectionLabel(sec)}
-                      </button>
-                    );
-                  })}
-                  {browseSections.length > 0 && (
-                    <button onClick={() => setBrowseSections([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.375rem 0.625rem', color: '#94a3b8' }}>Clear</button>
-                  )}
-                </div>
-              )}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <select
+                value={browseSongbookIds[0] || ''}
+                onChange={(e) => { setBrowseSongbookIds(e.target.value ? [e.target.value] : []); setBrowseSections([]); }}
+                style={{ ...s.select, flex: 1 }}
+              >
+                <option value="">All Songbooks</option>
+                {getFilterableSongbooks(songbooks, songbookEntries).map(sb => <option key={sb.id} value={sb.id}>{sb.name}</option>)}
+              </select>
+              <select
+                value={browseSections[0] || ''}
+                onChange={(e) => setBrowseSections(e.target.value ? [e.target.value] : [])}
+                disabled={browseSongbookIds.length === 0}
+                style={{ ...s.select, flex: 1 }}
+              >
+                <option value="">All Sections</option>
+                {getAvailableSections(songbookSections, browseSongbookIds).map(sec => <option key={sec.id} value={sec.id}>{sectionLabel(sec)}</option>)}
+              </select>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <button style={s.btn} onClick={startAddNewSong}>+ Add Song</button>
