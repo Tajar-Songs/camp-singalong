@@ -10,7 +10,6 @@ const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 // Deliberately does NOT support raw HTML - everything renders as React text nodes, so
 // there's no injection risk from user-submitted content.
 function renderInline(text, keyPrefix) {
-  // Split on **bold** and *italic* while keeping the delimiters, then map to elements
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(p => p !== '');
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -89,24 +88,24 @@ export default function Ideas() {
   const [comments, setComments] = useState({});
   const [userProfiles, setUserProfiles] = useState({});
   
-  const [sortBy, setSortBy] = useState('votes'); // 'votes', 'recent'
-  const [statusFilter, setStatusFilter] = useState('open'); // 'all', 'open', 'planned', 'done', 'declined'
+  const [sortBy, setSortBy] = useState('votes');
+  const [statusFilter, setStatusFilter] = useState('open');
   
   const [showNewForm, setShowNewForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newType, setNewType] = useState('feature');
-  const [newOptions, setNewOptions] = useState(['', '']); // poll options for 'needs_input' ideas
+  const [newOptions, setNewOptions] = useState(['', '']);
   
-  const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'feature', 'bug', 'improvement'
+  const [typeFilter, setTypeFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [message, setMessage] = useState('');
-  const [pollOptions, setPollOptions] = useState({});   // request_id -> [{id, option_text, display_order}]
-  const [pollVotes, setPollVotes] = useState({});        // option_id -> vote count
-  const [myPollVote, setMyPollVote] = useState({});      // request_id -> option_id I voted for
-  const [pollBreakdown, setPollBreakdown] = useState({}); // request_id -> { [option_id]: { [role]: count } }
-  const [breakdownOpenFor, setBreakdownOpenFor] = useState(null); // request_id currently showing breakdown, or null
+  const [pollOptions, setPollOptions] = useState({});
+  const [pollVotes, setPollVotes] = useState({});
+  const [myPollVote, setMyPollVote] = useState({});
+  const [pollBreakdown, setPollBreakdown] = useState({});
+  const [breakdownOpenFor, setBreakdownOpenFor] = useState(null);
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -158,12 +157,10 @@ export default function Ideas() {
 
   const loadData = async () => {
     try {
-      // Load requests
       const reqRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?select=*&order=created_at.desc`, { headers: getAuthHeaders(false) });
       const reqData = await reqRes.json();
       setRequests(Array.isArray(reqData) ? reqData : []);
 
-      // Load votes
       const votesRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_votes?select=*`, { headers: getAuthHeaders(false) });
       const votesData = await votesRes.json();
       const votesMap = {};
@@ -175,7 +172,6 @@ export default function Ideas() {
       }
       setVotes(votesMap);
 
-      // Load comments
       const commentsRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_comments?select=*&order=created_at.asc`, { headers: getAuthHeaders(false) });
       const commentsData = await commentsRes.json();
       const commentsMap = {};
@@ -187,7 +183,6 @@ export default function Ideas() {
       }
       setComments(commentsMap);
 
-      // Load poll options
       const optRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_options?select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
       const optData = await optRes.json();
       const optMap = {};
@@ -199,7 +194,6 @@ export default function Ideas() {
       }
       setPollOptions(optMap);
 
-      // Load poll vote counts - via RPC, not the raw table, since votes are anonymized
       const pvRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_poll_vote_counts`, {
         method: 'POST',
         headers: getAuthHeaders()
@@ -211,7 +205,6 @@ export default function Ideas() {
       }
       setPollVotes(countMap);
 
-      // Load user profiles for display names
       const profilesRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=id,display_name,email`, { headers: getAuthHeaders(false) });
       const profilesData = await profilesRes.json();
       const profilesMap = {};
@@ -233,9 +226,7 @@ export default function Ideas() {
 
   const toggleVote = async (requestId) => {
     if (!user) return;
-    
     const alreadyVoted = hasVoted(requestId);
-    
     try {
       if (alreadyVoted) {
         await fetch(`${SUPABASE_URL}/rest/v1/feature_votes?request_id=eq.${requestId}&user_id=eq.${user.id}`, {
@@ -266,7 +257,7 @@ export default function Ideas() {
   const toggleBreakdown = async (requestId) => {
     if (breakdownOpenFor === requestId) { setBreakdownOpenFor(null); return; }
     setBreakdownOpenFor(requestId);
-    if (pollBreakdown[requestId]) return; // already loaded
+    if (pollBreakdown[requestId]) return;
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_poll_vote_breakdown_by_role`, {
         method: 'POST',
@@ -292,9 +283,8 @@ export default function Ideas() {
     if (!user) return;
     const previousOptionId = myPollVote[requestId];
     try {
-      if (previousOptionId === optionId) return; // already voted for this one
+      if (previousOptionId === optionId) return;
       if (previousOptionId) {
-        // Changing an existing vote - update the row (matches the UNIQUE(request_id, user_id) constraint)
         await fetch(`${SUPABASE_URL}/rest/v1/feature_request_option_votes?request_id=eq.${requestId}&user_id=eq.${user.id}`, {
           method: 'PATCH',
           headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
@@ -326,7 +316,6 @@ export default function Ideas() {
       showMessage('❌ Only admins can post this type');
       return;
     }
-    
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests`, {
         method: 'POST',
@@ -341,8 +330,6 @@ export default function Ideas() {
       const data = await res.json();
       if (data[0]) {
         setRequests(prev => [data[0], ...prev]);
-
-        // If this is a poll (needs_input with filled-in options), create the option rows
         const filledOptions = newOptions.map(o => o.trim()).filter(Boolean);
         if (newType === 'needs_input' && filledOptions.length > 0) {
           const optRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_options`, {
@@ -359,7 +346,6 @@ export default function Ideas() {
             setPollOptions(prev => ({ ...prev, [data[0].id]: optData }));
           }
         }
-
         setNewTitle('');
         setNewDescription('');
         setNewType('feature');
@@ -375,7 +361,6 @@ export default function Ideas() {
 
   const addComment = async (requestId) => {
     if (!user || !newComment.trim()) return;
-    
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_comments`, {
         method: 'POST',
@@ -402,11 +387,22 @@ export default function Ideas() {
 
   const updateStatus = async (requestId, newStatus) => {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?id=eq.${requestId}`, {
+      // NOTE: this fetch's response is now checked before updating local state.
+      // Previously a failed write here (e.g. blocked by RLS - there was no UPDATE
+      // policy on feature_requests at all before this was fixed) was silently
+      // ignored, and the status dropdown/badge would appear to change locally
+      // while the database kept the old value.
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?id=eq.${requestId}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({ status: newStatus, updated_at: new Date().toISOString() })
       });
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Status update failed:', res.status, errorText);
+        showMessage(`❌ Could not update status: ${errorText.substring(0, 200)}`);
+        return;
+      }
       setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: newStatus } : r));
       showMessage('✅ Status updated');
     } catch (error) {
@@ -415,7 +411,6 @@ export default function Ideas() {
     }
   };
 
-  // Filter and sort
   const filteredRequests = requests
     .filter(r => statusFilter === 'all' || r.status === statusFilter)
     .filter(r => typeFilter === 'all' || (r.request_type || 'feature') === typeFilter)
@@ -431,7 +426,6 @@ export default function Ideas() {
     needs_input: { icon: '🤔', label: 'Needs Input', color: '#a855f7' }
   };
 
-  // Types any logged-in user can post. Admin-only types are added on top of this.
   const POSTABLE_TYPES = ['feature', 'bug', 'improvement'];
   const ADMIN_ONLY_TYPES = ['needs_input'];
 
@@ -472,7 +466,6 @@ export default function Ideas() {
           <p style={s.subtitle}>Share feedback, vote on ideas, and weigh in when we need your input</p>
         </div>
 
-        {/* New idea button / form */}
         {user ? (
           showNewForm ? (
             <div style={{ ...s.card, padding: '1rem', marginBottom: '1.5rem' }}>
@@ -559,7 +552,6 @@ export default function Ideas() {
           </div>
         )}
 
-        {/* Type tabs */}
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
           <button 
             onClick={() => setTypeFilter('all')} 
@@ -587,7 +579,6 @@ export default function Ideas() {
           ))}
         </div>
 
-        {/* Filters */}
         <div style={s.filters}>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
             <option value="all">All Status</option>
@@ -603,7 +594,6 @@ export default function Ideas() {
           <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
         </div>
 
-        {/* Ideas list */}
         {filteredRequests.map(req => {
           const voteCount = getVoteCount(req.id);
           const voted = hasVoted(req.id);
@@ -615,7 +605,6 @@ export default function Ideas() {
           return (
             <div key={req.id} style={s.card}>
               <div style={{ display: 'flex' }}>
-                {/* Vote column */}
                 <div style={{ 
                   padding: '1rem', 
                   display: 'flex', 
@@ -642,7 +631,6 @@ export default function Ideas() {
                   <span style={{ fontWeight: 'bold', fontSize: '1.25rem', marginTop: '0.25rem' }}>{voteCount}</span>
                 </div>
 
-                {/* Content */}
                 <div style={{ flex: 1, padding: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -757,7 +745,6 @@ export default function Ideas() {
                       💬 {reqComments.length} {isExpanded ? '▼' : '▶'}
                     </button>
                     
-                    {/* Admin status controls */}
                     {isAdmin && (
                       <select
                         value={req.status}
@@ -772,7 +759,6 @@ export default function Ideas() {
                     )}
                   </div>
 
-                  {/* Comments section */}
                   {isExpanded && (
                     <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
                       {reqComments.length === 0 && (
