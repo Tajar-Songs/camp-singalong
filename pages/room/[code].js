@@ -5,16 +5,6 @@ import { getFilterableSongbooks, getAvailableSections, toggleInArray, sectionLab
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
-const SECTION_INFO = {
-  A: "Graces", B: "Girl Scout Standards", C: "Camp Arrowhead Songs", D: "Patriotic Songs",
-  E: "Traditional & Folk Songs", F: "Morning Songs", G: "Animal Songs", H: "Action Songs",
-  I: "Silly Songs", J: "Food Songs", K: "Echo/Repeat Songs", L: "Campfire Songs",
-  M: "Lullabies", N: "Friendship Songs", O: "Happiness, Fun & Laughter", P: "Love Songs",
-  Q: "Peace Songs", R: "Outdoor Songs", S: "Songs to be Sung Together",
-  T: "Rounds that need Translation", U: "Rounds & Canons", V: "Contemporary Folk Songs",
-  W: "Kids' Movies & Musicals"
-};
-
 export default function Room() {
   const router = useRouter();
   const { code } = router.query;
@@ -514,6 +504,7 @@ export default function Room() {
     return {
       page: primaryEntry?.page || null,
       section: primaryEntry?.section || null,
+      section_id: primaryEntry?.section_id || null,
       old_page: oldEntry?.page || null
     };
   };
@@ -945,8 +936,9 @@ export default function Room() {
     const matchesPage = (page && page.toLowerCase().includes(searchLower)) || 
                         (oldPage && oldPage.toLowerCase().includes(searchLower));
     
-    const sectionName = SECTION_INFO[pageInfo.section] || "";
-    const matchesSectionSearch = pageInfo.section?.toLowerCase() === searchLower || 
+    const sectionDef = sectionDefs.find(d => d.id === pageInfo.section_id);
+    const sectionName = sectionDef?.section_name || "";
+    const matchesSectionSearch = (sectionDef?.section_code?.toLowerCase() === searchLower) ||
                            sectionName.toLowerCase().includes(searchLower);
     
     // Search in aliases
