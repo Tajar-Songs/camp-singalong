@@ -1,20 +1,9 @@
 import { useState, useEffect } from 'react';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
-
-const SECTION_INFO = {
-  A: "Graces", B: "Girl Scout Standards", C: "Camp Arrowhead Songs", D: "Patriotic Songs",
-  E: "Traditional & Folk Songs", F: "Morning Songs", G: "Animal Songs", H: "Action Songs",
-  I: "Silly Songs", J: "Food Songs", K: "Echo/Repeat Songs", L: "Campfire Songs",
-  M: "Lullabies", N: "Friendship Songs", O: "Happiness, Fun & Laughter", P: "Love Songs",
-  Q: "Peace Songs", R: "Outdoor Songs", S: "Songs to be Sung Together",
-  T: "Rounds that need Translation", U: "Rounds & Canons", V: "Contemporary Folk Songs",
-  W: "Kids' Movies & Musicals"
-};
-
-
 
 export default function TagManagement() {
   // Auth state
@@ -51,7 +40,10 @@ export default function TagManagement() {
   const [tagDescription, setTagDescription] = useState('');
 
   // Song filtering state (for Apply tab)
-  const [selectedSections, setSelectedSections] = useState(Object.keys(SECTION_INFO));
+  const [songbookIds, setSongbookIds] = useState([]); // multi-select; [] = no songbook restriction shown
+  const [sectionDefs, setSectionDefs] = useState([]); // raw songbook_sections rows
+  const [selectedSections, setSelectedSections] = useState([]); // now stores real section ids, not text codes
+  const [sectionsInitialized, setSectionsInitialized] = useState(false);
   const [filterByTag, setFilterByTag] = useState(''); // 'has:tagId', 'missing:tagId', or ''
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSongs, setSelectedSongs] = useState([]); // Array of song IDs
@@ -178,7 +170,7 @@ export default function TagManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [tagsRes, songsRes, songTagsRes, versionsRes, songbooksRes, entriesRes] = await Promise.all([
+      const [tagsRes, songsRes, songTagsRes, versionsRes, songbooksRes, entriesRes, sectionDefsRes] = await Promise.all([
         fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
           headers: getAuthHeaders(false)
         }),
@@ -196,6 +188,9 @@ export default function TagManagement() {
         }),
         fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
           headers: getAuthHeaders(false)
+        }),
+        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, {
+          headers: getAuthHeaders(false)
         })
       ]);
       
@@ -206,6 +201,8 @@ export default function TagManagement() {
       const versionsData = await versionsRes.json();
       const songbooksData = await songbooksRes.json();
       const entriesData = await entriesRes.json();
+      const sectionDefsData = await sectionDefsRes.json();
+      if (Array.isArray(sectionDefsData)) setSectionDefs(sectionDefsData);
       
       // Only set state if we got arrays (not error objects)
       if (Array.isArray(tagsData)) setTags(tagsData);
@@ -231,6 +228,26 @@ export default function TagManagement() {
     const entry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === primarySongbook?.id);
     return { page: entry?.page || null, section: entry?.section || null };
   };
+
+  // Filterable songbooks and their real sections (replaces the old hardcoded,
+  // single-songbook SECTION_INFO map, which broke for any book beyond the
+  // original one - especially books with no letter/number codes at all).
+  const filterableSongbooks = getFilterableSongbooks(songbooks, songbookEntries);
+  const availableSections = getAvailableSections(sectionDefs, songbookIds);
+
+  useEffect(() => {
+    if (sectionsInitialized) return;
+    if (songbookIds.length === 0 && filterableSongbooks.length > 0) {
+      const primary = filterableSongbooks.find(sb => sb.is_primary) || filterableSongbooks[0];
+      setSongbookIds([primary.id]);
+    }
+  }, [filterableSongbooks, sectionsInitialized]);
+  useEffect(() => {
+    if (!sectionsInitialized && songbookIds.length > 0 && availableSections.length > 0) {
+      setSelectedSections(availableSections.map(s => s.id));
+      setSectionsInitialized(true);
+    }
+  }, [availableSections, songbookIds, sectionsInitialized]);
 
   // Get tags for a specific song
   const getTagsForSong = (songId) => {
@@ -385,8 +402,15 @@ export default function TagManagement() {
   // Filter songs based on section, tag filter, and search
   const filteredSongs = songs.filter(song => {
     const pageInfo = getSongPage(song.id);
-    // Section filter
-    if (!selectedSections.includes(pageInfo.section)) return false;
+    // Section filter - checks the song's entries in whichever songbook(s) are
+    // selected, using real section ids (works correctly for any songbook,
+    // including ones with no letter/number codes).
+    if (songbookIds.length > 0 || selectedSections.length > 0) {
+      const entries = songbookEntries.filter(e => e.song_id === song.id);
+      const relevant = songbookIds.length > 0 ? entries.filter(e => songbookIds.includes(e.songbook_id)) : entries;
+      if (songbookIds.length > 0 && relevant.length === 0) return false;
+      if (selectedSections.length > 0 && !relevant.some(e => selectedSections.includes(e.section_id))) return false;
+    }
 
     // Tag filter
     if (filterByTag) {
@@ -811,12 +835,36 @@ export default function TagManagement() {
             <div className="bg-slate-800 rounded-2xl p-6 mb-6 space-y-4">
               <h3 className="font-bold text-lg mb-4">Filter Songs</h3>
               
+              {/* Songbook Filter - only shown if there's more than one populated songbook */}
+              {filterableSongbooks.length > 1 && (
+                <div>
+                  <label className="text-sm font-bold text-slate-400 block mb-2">Songbook</label>
+                  <div className="flex flex-wrap gap-2">
+                    {filterableSongbooks.map(sb => {
+                      const isSelected = songbookIds.includes(sb.id);
+                      return (
+                        <button
+                          key={sb.id}
+                          onClick={() => { setSongbookIds(prev => toggleInArray(prev, sb.id)); }}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                        >
+                          {isSelected ? '✓ ' : ''}{sb.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Section Filter */}
               <div>
                 <label className="text-sm font-bold text-slate-400 block mb-2">Sections</label>
+                {songbookIds.length === 0 && (
+                  <p className="text-xs text-slate-500 mb-2">Select a songbook above to see its sections.</p>
+                )}
                 <div className="flex gap-2 mb-4">
                   <button 
-                    onClick={() => setSelectedSections(Object.keys(SECTION_INFO))} 
+                    onClick={() => setSelectedSections(availableSections.map(s => s.id))} 
                     className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 bg-slate-700 border-slate-600 hover:bg-slate-600"
                   >
                     Select All
@@ -829,15 +877,15 @@ export default function TagManagement() {
                   </button>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {Object.entries(SECTION_INFO).map(([letter, name]) => (
-                    <label key={letter} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-700/50 p-1 rounded">
+                  {availableSections.map(sec => (
+                    <label key={sec.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-700/50 p-1 rounded">
                       <input
                         type="checkbox"
-                        checked={selectedSections.includes(letter)}
-                        onChange={() => toggleSection(letter)}
+                        checked={selectedSections.includes(sec.id)}
+                        onChange={() => toggleSection(sec.id)}
                         className="rounded"
                       />
-                      <span className="truncate">{letter}: {name}</span>
+                      <span className="truncate">{sectionLabel(sec)}</span>
                     </label>
                   ))}
                 </div>
