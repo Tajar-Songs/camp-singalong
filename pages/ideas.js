@@ -96,8 +96,10 @@ export default function Ideas() {
   const [newDescription, setNewDescription] = useState('');
   const [newType, setNewType] = useState('feature');
   const [newOptions, setNewOptions] = useState(['', '']);
-  
+  const [newTopics, setNewTopics] = useState([]); // value_keys selected for the new submission
+
   const [typeFilter, setTypeFilter] = useState('all');
+  const [topicFilter, setTopicFilter] = useState([]); // multi-select, [] = any topic
   const [expandedId, setExpandedId] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [message, setMessage] = useState('');
@@ -106,6 +108,9 @@ export default function Ideas() {
   const [myPollVote, setMyPollVote] = useState({});
   const [pollBreakdown, setPollBreakdown] = useState({});
   const [breakdownOpenFor, setBreakdownOpenFor] = useState(null);
+
+  const [topicOptions, setTopicOptions] = useState([]); // option_lists rows, list_key='feedback_topics'
+  const [requestTopics, setRequestTopics] = useState({}); // request_id -> [value_key, ...]
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -213,6 +218,23 @@ export default function Ideas() {
       }
       setUserProfiles(profilesMap);
 
+      // Load topic option definitions (admin-editable via /option-lists, list_key='feedback_topics')
+      const topicOptRes = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?list_key=eq.feedback_topics&select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
+      const topicOptData = await topicOptRes.json();
+      setTopicOptions(Array.isArray(topicOptData) ? topicOptData : []);
+
+      // Load topic assignments (join table, many-to-many: a submission can span multiple topics)
+      const reqTopicsRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_topics?select=request_id,topic_value_key`, { headers: getAuthHeaders(false) });
+      const reqTopicsData = await reqTopicsRes.json();
+      const reqTopicsMap = {};
+      if (Array.isArray(reqTopicsData)) {
+        reqTopicsData.forEach(rt => {
+          if (!reqTopicsMap[rt.request_id]) reqTopicsMap[rt.request_id] = [];
+          reqTopicsMap[rt.request_id].push(rt.topic_value_key);
+        });
+      }
+      setRequestTopics(reqTopicsMap);
+
     } catch (error) { console.error('Error loading data:', error); }
   };
 
@@ -222,6 +244,8 @@ export default function Ideas() {
   const hasVoted = (requestId) => user && votes[requestId]?.includes(user.id);
   const getComments = (requestId) => comments[requestId] || [];
   const getUserName = (userId) => userProfiles[userId]?.display_name || userProfiles[userId]?.email?.split('@')[0] || 'Anonymous';
+  const getTopicsForRequest = (requestId) => requestTopics[requestId] || [];
+  const getTopicLabel = (valueKey) => topicOptions.find(t => t.value_key === valueKey)?.label || valueKey;
   const isAdmin = hasAnyRole(userRoleKeys);
 
   const toggleVote = async (requestId) => {
@@ -327,31 +351,64 @@ export default function Ideas() {
           created_by: user.id
         })
       });
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Idea submit failed:', res.status, errorText);
+        showMessage(`❌ Error submitting: ${errorText.substring(0, 200)}`);
+        return;
+      }
       const data = await res.json();
       if (data[0]) {
+        const newRequestId = data[0].id;
         setRequests(prev => [data[0], ...prev]);
+
         const filledOptions = newOptions.map(o => o.trim()).filter(Boolean);
         if (newType === 'needs_input' && filledOptions.length > 0) {
           const optRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_options`, {
             method: 'POST',
             headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
             body: JSON.stringify(filledOptions.map((text, i) => ({
-              request_id: data[0].id,
+              request_id: newRequestId,
               option_text: text,
               display_order: i
             })))
           });
           const optData = await optRes.json();
           if (Array.isArray(optData)) {
-            setPollOptions(prev => ({ ...prev, [data[0].id]: optData }));
+            setPollOptions(prev => ({ ...prev, [newRequestId]: optData }));
           }
         }
+
+        // Save topic assignments, if any were selected - topics are optional.
+        // If this write fails, the idea itself was still created successfully,
+        // so we don't roll anything back - just tell the person the topics
+        // specifically didn't save.
+        let topicsSavedOk = true;
+        if (newTopics.length > 0) {
+          const topicRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_topics`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+            body: JSON.stringify(newTopics.map(topicValueKey => ({
+              request_id: newRequestId,
+              topic_value_key: topicValueKey
+            })))
+          });
+          if (topicRes.ok) {
+            setRequestTopics(prev => ({ ...prev, [newRequestId]: newTopics }));
+          } else {
+            const errorText = await topicRes.text();
+            console.error('Topic assignment failed:', topicRes.status, errorText);
+            topicsSavedOk = false;
+          }
+        }
+
         setNewTitle('');
         setNewDescription('');
         setNewType('feature');
         setNewOptions(['', '']);
+        setNewTopics([]);
         setShowNewForm(false);
-        showMessage('✅ Idea submitted!');
+        showMessage(topicsSavedOk ? '✅ Idea submitted!' : '✅ Idea submitted, but topics could not be saved');
       }
     } catch (error) {
       console.error('Error submitting idea:', error);
@@ -387,11 +444,6 @@ export default function Ideas() {
 
   const updateStatus = async (requestId, newStatus) => {
     try {
-      // NOTE: this fetch's response is now checked before updating local state.
-      // Previously a failed write here (e.g. blocked by RLS - there was no UPDATE
-      // policy on feature_requests at all before this was fixed) was silently
-      // ignored, and the status dropdown/badge would appear to change locally
-      // while the database kept the old value.
       const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?id=eq.${requestId}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
@@ -411,13 +463,58 @@ export default function Ideas() {
     }
   };
 
+  // Toggle a topic on an existing request (admin-only from the list view - the
+  // submitter picks topics at creation time via newTopics, but admins can
+  // recategorize afterward since they're the ones who'll rely on filtering by it).
+  const toggleRequestTopic = async (requestId, topicValueKey) => {
+    const current = getTopicsForRequest(requestId);
+    const isSet = current.includes(topicValueKey);
+    try {
+      if (isSet) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_topics?request_id=eq.${requestId}&topic_value_key=eq.${topicValueKey}`, {
+          method: 'DELETE', headers: getAuthHeaders(false)
+        });
+        if (!res.ok) { showMessage('❌ Could not remove topic'); return; }
+        setRequestTopics(prev => ({ ...prev, [requestId]: current.filter(t => t !== topicValueKey) }));
+      } else {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_topics`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ request_id: requestId, topic_value_key: topicValueKey })
+        });
+        if (!res.ok) { showMessage('❌ Could not add topic'); return; }
+        setRequestTopics(prev => ({ ...prev, [requestId]: [...current, topicValueKey] }));
+      }
+    } catch (error) {
+      console.error('Error toggling topic:', error);
+      showMessage('❌ Error updating topic');
+    }
+  };
+
+  // Base filter (everything except type) - used both for the main list and
+  // for computing per-type counts, so the counts reflect status/topic filters
+  // currently active without also collapsing to the selected type itself.
+  const matchesNonTypeFilters = (r) => {
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (topicFilter.length > 0) {
+      const reqTopics = getTopicsForRequest(r.id);
+      if (!topicFilter.some(t => reqTopics.includes(t))) return false;
+    }
+    return true;
+  };
+
   const filteredRequests = requests
-    .filter(r => statusFilter === 'all' || r.status === statusFilter)
+    .filter(matchesNonTypeFilters)
     .filter(r => typeFilter === 'all' || (r.request_type || 'feature') === typeFilter)
     .sort((a, b) => {
       if (sortBy === 'votes') return getVoteCount(b.id) - getVoteCount(a.id);
       return new Date(b.created_at) - new Date(a.created_at);
     });
+
+  // Count of items matching a given type AND all currently-active non-type
+  // filters (status, topic) - this is what makes the tab badges reflect the
+  // active filter instead of always showing the all-time total for that type.
+  const countForType = (t) => requests.filter(r => matchesNonTypeFilters(r) && (r.request_type || 'feature') === t).length;
 
   const typeLabels = {
     feature: { icon: '🌟', label: 'Feature Request', color: '#3b82f6' },
@@ -449,7 +546,14 @@ export default function Ideas() {
     select: { padding: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', fontSize: '0.875rem' },
     card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', marginBottom: '1rem', overflow: 'hidden' },
     filters: { display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' },
-    message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 }
+    message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
+    topicChip: (selected) => ({
+      padding: '0.3rem 0.6rem', borderRadius: '1rem', fontSize: '0.75rem', cursor: 'pointer',
+      border: selected ? '2px solid #22c55e' : '1px solid #334155',
+      background: selected ? '#22c55e20' : '#1e293b',
+      color: selected ? '#22c55e' : '#94a3b8'
+    }),
+    topicBadge: { display: 'inline-block', background: '#334155', color: '#94a3b8', padding: '0.15rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', marginRight: '0.375rem', marginBottom: '0.25rem' }
   };
 
   if (loading) {
@@ -511,6 +615,31 @@ export default function Ideas() {
                   <div style={{ color: '#e2e8f0', fontSize: '0.875rem' }}><FormattedText text={newDescription} /></div>
                 </div>
               )}
+
+              {/* Topics (optional) */}
+              {topicOptions.length > 0 && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                    What part of the platform is this about? (optional, pick any that apply)
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                    {topicOptions.map(topic => {
+                      const selected = newTopics.includes(topic.value_key);
+                      return (
+                        <button
+                          key={topic.value_key}
+                          type="button"
+                          onClick={() => setNewTopics(prev => selected ? prev.filter(t => t !== topic.value_key) : [...prev, topic.value_key])}
+                          style={s.topicChip(selected)}
+                        >
+                          {selected ? '✓ ' : ''}{topic.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {newType === 'needs_input' && (
                 <div style={{ marginBottom: '0.75rem' }}>
                   <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
@@ -540,7 +669,7 @@ export default function Ideas() {
               )}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button onClick={submitIdea} disabled={!newTitle.trim()} style={{ ...s.btn, opacity: newTitle.trim() ? 1 : 0.5 }}>Submit</button>
-                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); setNewOptions(['', '']); }} style={s.btnSec}>Cancel</button>
+                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); setNewOptions(['', '']); setNewTopics([]); }} style={s.btnSec}>Cancel</button>
               </div>
             </div>
           ) : (
@@ -552,6 +681,7 @@ export default function Ideas() {
           </div>
         )}
 
+        {/* Type tabs - counts now reflect the active status/topic filters, not all-time totals */}
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
           <button 
             onClick={() => setTypeFilter('all')} 
@@ -561,7 +691,7 @@ export default function Ideas() {
               fontWeight: typeFilter === 'all' ? '600' : '400'
             }}
           >
-            All
+            All ({requests.filter(matchesNonTypeFilters).length})
           </button>
           {[...POSTABLE_TYPES, ...ADMIN_ONLY_TYPES].map(t => (
             <button 
@@ -574,11 +704,12 @@ export default function Ideas() {
               }}
             >
               {typeLabels[t].icon} {typeLabels[t].label}
-              {' '}({requests.filter(r => (r.request_type || 'feature') === t).length})
+              {' '}({countForType(t)})
             </button>
           ))}
         </div>
 
+        {/* Filters */}
         <div style={s.filters}>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
             <option value="all">All Status</option>
@@ -594,6 +725,32 @@ export default function Ideas() {
           <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
         </div>
 
+        {/* Topic filter - separate row since several topics can be selected at once */}
+        {topicOptions.length > 0 && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+              <span style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase' }}>Topic{topicFilter.length > 0 ? ` (${topicFilter.length})` : ''}</span>
+              {topicFilter.length > 0 && (
+                <button onClick={() => setTopicFilter([])} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', cursor: 'pointer' }}>Clear</button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+              {topicOptions.map(topic => {
+                const selected = topicFilter.includes(topic.value_key);
+                return (
+                  <button
+                    key={topic.value_key}
+                    onClick={() => setTopicFilter(prev => selected ? prev.filter(t => t !== topic.value_key) : [...prev, topic.value_key])}
+                    style={s.topicChip(selected)}
+                  >
+                    {selected ? '✓ ' : ''}{topic.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {filteredRequests.map(req => {
           const voteCount = getVoteCount(req.id);
           const voted = hasVoted(req.id);
@@ -601,6 +758,7 @@ export default function Ideas() {
           const isExpanded = expandedId === req.id;
           const statusColor = statusColors[req.status] || statusColors.open;
           const reqType = typeLabels[req.request_type] || typeLabels.feature;
+          const reqTopics = getTopicsForRequest(req.id);
 
           return (
             <div key={req.id} style={s.card}>
@@ -658,6 +816,13 @@ export default function Ideas() {
                       {req.status}
                     </span>
                   </div>
+
+                  {/* Topic badges */}
+                  {reqTopics.length > 0 && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      {reqTopics.map(tk => <span key={tk} style={s.topicBadge}>{getTopicLabel(tk)}</span>)}
+                    </div>
+                  )}
                   
                   {req.description && (
                     <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
@@ -735,7 +900,7 @@ export default function Ideas() {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#64748b' }}>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#64748b', flexWrap: 'wrap' }}>
                     <span>by {getUserName(req.created_by)}</span>
                     <span>{new Date(req.created_at).toLocaleDateString()}</span>
                     <button 
@@ -758,6 +923,26 @@ export default function Ideas() {
                       </select>
                     )}
                   </div>
+
+                  {/* Admin: recategorize topics after the fact */}
+                  {isAdmin && topicOptions.length > 0 && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {topicOptions.map(topic => {
+                          const selected = reqTopics.includes(topic.value_key);
+                          return (
+                            <button
+                              key={topic.value_key}
+                              onClick={() => toggleRequestTopic(req.id, topic.value_key)}
+                              style={{ ...s.topicChip(selected), padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                            >
+                              {selected ? '✓ ' : '+ '}{topic.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {isExpanded && (
                     <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
