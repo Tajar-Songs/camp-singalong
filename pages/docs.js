@@ -337,7 +337,12 @@ export default function Docs() {
     docList: { maxHeight: '60vh', overflowY: 'auto' },
     docItem: (active) => ({ padding: '0.75rem 1rem', borderBottom: '1px solid #334155', cursor: 'pointer', background: active ? '#22c55e22' : 'transparent', borderLeft: active ? '3px solid #22c55e' : '3px solid transparent' }),
     folderHeader: { padding: '0.75rem 1rem', background: '#0f172a', fontWeight: 'bold', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' },
-    main: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', padding: '1.5rem', minHeight: '70vh' },
+    // Fix: min-width 0 lets this grid child shrink below its content's natural
+    // width (the CSS grid default is min-width: auto, which is what silently
+    // let wide tables push the whole panel past the viewport with no way to
+    // reach the cut-off content). This, combined with the table CSS below,
+    // means wide content now reflows/wraps to fit instead of overflowing.
+    main: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', padding: '1.5rem', minHeight: '70vh', minWidth: 0 },
     label: { display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem', fontWeight: '500' },
     formGroup: { marginBottom: '1rem' },
     textarea: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#e2e8f0', fontFamily: 'monospace', fontSize: '0.875rem', lineHeight: '1.6', resize: 'vertical', outline: 'none' },
@@ -347,6 +352,11 @@ export default function Docs() {
     existingTag: { background: '#1e293b', border: '1px solid #334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', marginRight: '0.25rem', marginBottom: '0.25rem', color: '#94a3b8' },
     message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
     editorTab: (active) => ({ padding: '0.5rem 1rem', background: active ? '#22c55e' : '#334155', border: 'none', borderRadius: '0.375rem', color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: active ? '600' : '400' }),
+    // Sticky WYSIWYG toolbar: stays pinned to the top of the editor panel while
+    // scrolling through long content, rather than scrolling away with the text.
+    // Stuck to the editor panel (not the page/viewport) per explicit preference -
+    // this only matters while actively editing, not while just reading.
+    wysiwygToolbar: { display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap', padding: '0.5rem', background: '#1e293b', borderRadius: '0.375rem', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' },
   };
 
   if (loading) return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
@@ -464,8 +474,10 @@ export default function Docs() {
                   
                   {editorMode === 'wysiwyg' && (
                     <>
-                      {/* WYSIWYG Toolbar */}
-                      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap', padding: '0.5rem', background: '#1e293b', borderRadius: '0.375rem' }}>
+                      {/* WYSIWYG Toolbar - now sticky (position: sticky, top: 0) so it
+                          stays visible while scrolling through long doc content instead
+                          of scrolling away, addressing the "toolbar disappears" issue. */}
+                      <div style={s.wysiwygToolbar}>
                         <button style={s.toolbarBtn} onClick={() => execCommand('bold')} title="Bold"><b>B</b></button>
                         <button style={s.toolbarBtn} onClick={() => execCommand('italic')} title="Italic"><i>I</i></button>
                         <button style={s.toolbarBtn} onClick={() => execCommand('underline')} title="Underline"><u>U</u></button>
@@ -562,6 +574,53 @@ export default function Docs() {
         .doc-content strong, .doc-content b { font-weight: bold; color: #fff; }
         .doc-content em, .doc-content i { font-style: italic; }
         .doc-content code { background: #334155; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-family: monospace; }
+
+        /* Table fix: previously tables had no styling at all, so a wide table
+           (several migrated docs have side-by-side comparison tables) rendered
+           at its natural width and pushed past the container with no
+           scrollbar to reach the cut-off content. table-layout: fixed forces
+           columns to share the available width instead of growing to fit
+           their content, and word-wrap/overflow-wrap let long cell text wrap
+           onto multiple lines rather than forcing the column wider. Net
+           effect: tables now reflow to fit the screen, matching "responsive
+           by default" from Design Principles, instead of requiring a
+           horizontal scrollbar. */
+        .doc-content table {
+          width: 100%;
+          table-layout: fixed;
+          border-collapse: collapse;
+          margin: 1rem 0;
+        }
+        .doc-content th, .doc-content td {
+          border: 1px solid #334155;
+          padding: 0.5rem 0.75rem;
+          text-align: left;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+          vertical-align: top;
+        }
+        .doc-content th {
+          background: #1e293b;
+          font-weight: bold;
+          color: #fff;
+        }
+        .doc-content td {
+          color: #e2e8f0;
+        }
+        /* General safety net: anything else that could still overflow (a very
+           long unbroken URL or code string with no natural break point) wraps
+           instead of pushing the layout wider. This is a fallback, not the
+           primary fix - tables above are handled specifically so they reflow
+           column-by-column rather than just wrapping as one wide block. */
+        .doc-content {
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+        }
+        .doc-content pre, .doc-content code {
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
       `}</style>
     </div>
   );
