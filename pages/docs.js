@@ -23,7 +23,26 @@ const cleanHtml = (html) => {
 // Convert HTML to simple markdown
 const htmlToMarkdown = (html) => {
   if (!html) return '';
-  let md = html
+  let md = html;
+
+  // FIX: merge adjacent identical inline formatting tags BEFORE converting
+  // them to markdown. Without this, <strong>A</strong><strong>B</strong>
+  // (two separately-bolded spans sitting next to each other, e.g. from
+  // selecting and bolding a label, then separately bolding the text after
+  // it) converts independently into "**A****B**" - four consecutive
+  // asterisks with no way for any markdown parser to know where one bold
+  // span ends and the next begins. This was a real, reproducible cause of
+  // corrupted docs (confirmed against this project's Admin Model doc).
+  // Repeated until no more merges happen, since 3+ adjacent spans can occur.
+  ['strong', 'b', 'em', 'i'].forEach(tag => {
+    let prev;
+    do {
+      prev = md;
+      md = md.replace(new RegExp(`</${tag}>\\s*<${tag}[^>]*>`, 'gi'), '');
+    } while (prev !== md);
+  });
+
+  md = md
     // Headers
     .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n')
     .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n')
@@ -57,17 +76,47 @@ const markdownToHtml = (md) => {
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // FIX: use [\s\S] instead of . for the bold/italic body match. '.' does
+    // not match newlines by default, so a bold span whose ** markers land on
+    // different lines (which happens with this project's older docs, a
+    // leftover from earlier lossy HTML->MD conversions before the adjacent-tag
+    // fix above existed) was left as literal, unconverted "**" characters
+    // instead of becoming <strong>. [\s\S] matches any character including
+    // newlines, so the pairing now works regardless of line breaks.
+    .replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([\s\S]+?)\*/g, '<em>$1</em>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // FIX: group consecutive list-item lines into ONE <ul> each, done here -
+  // before the paragraph/<br> conversion below - using placeholder markers.
+  // Previously, "- item1\n- item2" converted each line to its own <li>, then
+  // the <br> insertion ran on what was still separate lines, placing a <br>
+  // between sibling <li> elements - which broke the "consecutive <li> tags"
+  // pattern the old list-wrapping regex needed to find them as one group.
+  // Each item ended up wrapped in its own single-item <ul> instead of one
+  // shared list. Marking items first and grouping BEFORE <br> insertion
+  // fixes this; blank lines between item lines (common in this project's
+  // docs) are tolerated by the grouping regex below.
+  html = html.replace(/^\s*[-*]\s+(.+)$/gm, '@@LI@@$1@@/LI@@');
+  html = html.replace(/(?:@@LI@@[\s\S]*?@@\/LI@@\s*\n?)+/g, (block) => {
+    const items = [...block.matchAll(/@@LI@@([\s\S]*?)@@\/LI@@/g)].map(m => `<li>${m[1]}</li>`);
+    return `<ul>${items.join('')}</ul>`;
+  });
+
+  html = html
     .replace(/\n\n/g, '</p><p>')
     .replace(/\n/g, '<br>');
   html = '<p>' + html + '</p>';
   html = html.replace(/<p><\/p>/g, '').replace(/<p><br><\/p>/g, '');
-  html = html.replace(/(<li>.*?<\/li>)+/gs, '<ul>$&</ul>');
+  // Clean up: a <ul> shouldn't be trapped inside a stray <p>, and shouldn't
+  // have a dangling <br> immediately touching it on either side.
+  html = html.replace(/<p>\s*<ul>/g, '<ul>').replace(/<\/ul>\s*<\/p>/g, '</ul>');
+  html = html.replace(/<br>\s*<ul>/g, '<ul>').replace(/<\/ul>\s*<br>/g, '</ul>');
+  // Cleanup: strip stray <p> wrapping that lands around headers (harmless to
+  // browsers either way, but not clean output).
+  html = html.replace(/<p>\s*(<h[123]>)/g, '$1').replace(/(<\/h[123]>)\s*<\/p>/g, '$1');
   return html;
 };
 
