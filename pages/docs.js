@@ -346,7 +346,14 @@ export default function Docs() {
     label: { display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem', fontWeight: '500' },
     formGroup: { marginBottom: '1rem' },
     textarea: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#e2e8f0', fontFamily: 'monospace', fontSize: '0.875rem', lineHeight: '1.6', resize: 'vertical', outline: 'none' },
-    wysiwygEditor: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#e2e8f0', fontSize: '1rem', lineHeight: '1.7', outline: 'none', overflow: 'auto' },
+    wysiwygEditor: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', borderTop: 'none', borderTopLeftRadius: 0, borderTopRightRadius: 0, color: '#e2e8f0', fontSize: '1rem', lineHeight: '1.7', outline: 'none' },
+    // The editor + its toolbar now share one scrolling container (wysiwygScrollBox)
+    // capped at a fixed viewport-relative height, so long content scrolls WITHIN
+    // this box instead of growing the whole page. That's what makes the sticky
+    // toolbar below actually have something to stick to - position: sticky only
+    // works relative to a scrolling ancestor, and previously there wasn't one;
+    // the page itself was scrolling past the toolbar instead.
+    wysiwygScrollBox: { maxHeight: '65vh', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.5rem' },
     tag: { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: '#334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', marginRight: '0.25rem', marginBottom: '0.25rem' },
     tagRemove: { background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0', fontSize: '1rem', lineHeight: 1 },
     existingTag: { background: '#1e293b', border: '1px solid #334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', marginRight: '0.25rem', marginBottom: '0.25rem', color: '#94a3b8' },
@@ -356,7 +363,7 @@ export default function Docs() {
     // scrolling through long content, rather than scrolling away with the text.
     // Stuck to the editor panel (not the page/viewport) per explicit preference -
     // this only matters while actively editing, not while just reading.
-    wysiwygToolbar: { display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap', padding: '0.5rem', background: '#1e293b', borderRadius: '0.375rem', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' },
+    wysiwygToolbar: { display: 'flex', gap: '0.25rem', marginBottom: 0, flexWrap: 'wrap', padding: '0.5rem', background: '#1e293b', borderTopLeftRadius: '0.5rem', borderTopRightRadius: '0.5rem', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' },
   };
 
   if (loading) return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
@@ -474,33 +481,35 @@ export default function Docs() {
                   
                   {editorMode === 'wysiwyg' && (
                     <>
-                      {/* WYSIWYG Toolbar - now sticky (position: sticky, top: 0) so it
-                          stays visible while scrolling through long doc content instead
-                          of scrolling away, addressing the "toolbar disappears" issue. */}
-                      <div style={s.wysiwygToolbar}>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('bold')} title="Bold"><b>B</b></button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('italic')} title="Italic"><i>I</i></button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('underline')} title="Underline"><u>U</u></button>
-                        <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h1')} title="Heading 1">H1</button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h2')} title="Heading 2">H2</button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h3')} title="Heading 3">H3</button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'p')} title="Paragraph">P</button>
-                        <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('insertUnorderedList')} title="Bullet List">• List</button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('insertOrderedList')} title="Numbered List">1. List</button>
-                        <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
-                        <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link">🔗 Link</button>
-                        <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting">✖ Clear</button>
+                      {/* Toolbar + editable area now share one scrolling container
+                          (wysiwygScrollBox) so the sticky toolbar has a scrolling
+                          ancestor to stick within - see style comment above. */}
+                      <div style={s.wysiwygScrollBox}>
+                        <div style={s.wysiwygToolbar}>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('bold')} title="Bold"><b>B</b></button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('italic')} title="Italic"><i>I</i></button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('underline')} title="Underline"><u>U</u></button>
+                          <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h1')} title="Heading 1">H1</button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h2')} title="Heading 2">H2</button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h3')} title="Heading 3">H3</button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'p')} title="Paragraph">P</button>
+                          <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('insertUnorderedList')} title="Bullet List">• List</button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('insertOrderedList')} title="Numbered List">1. List</button>
+                          <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                          <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link">🔗 Link</button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting">✖ Clear</button>
+                        </div>
+                        <div
+                          ref={editorRef}
+                          contentEditable
+                          style={s.wysiwygEditor}
+                          className="doc-content"
+                          dangerouslySetInnerHTML={{ __html: editContentHtml }}
+                          onBlur={() => setEditContentHtml(editorRef.current?.innerHTML || '')}
+                        />
                       </div>
-                      <div
-                        ref={editorRef}
-                        contentEditable
-                        style={s.wysiwygEditor}
-                        className="doc-content"
-                        dangerouslySetInnerHTML={{ __html: editContentHtml }}
-                        onBlur={() => setEditContentHtml(editorRef.current?.innerHTML || '')}
-                      />
                     </>
                   )}
                   
