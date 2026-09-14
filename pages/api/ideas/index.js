@@ -23,7 +23,12 @@ export default async function handler(req, res) {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
-      }
+      },
+      // Explicit no-cache on the outgoing fetch to Supabase - without this,
+      // Next.js can cache the fetch() result itself (separate from the
+      // Cache-Control header below, which only controls caching between
+      // this API route and its callers).
+      cache: 'no-store'
     });
 
     if (!response.ok) {
@@ -31,6 +36,13 @@ export default async function handler(req, res) {
     }
 
     const items = await response.json();
+
+    // Explicit no-cache: nothing between this server and the client should
+    // ever serve a cached copy of this response. Newly-created items were
+    // previously missing from this endpoint until a fresh (uncached) fetch
+    // happened to occur - this was the bug, mirroring the same fix already
+    // applied to /api/docs/[slug].
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 
     res.status(200).json({
       count: items.length,
