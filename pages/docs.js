@@ -598,19 +598,31 @@ export default function Docs() {
       const authorIds = [...new Set(versions.map(v => v.changed_by).filter(Boolean))];
       const missingIds = authorIds.filter(id => !(id in versionAuthors));
       if (missingIds.length > 0) {
-        const idList = missingIds.map(id => `"${id}"`).join(',');
+        // FIX: no quotes around each id - PostgREST's in.() list takes plain
+        // comma-separated values; wrapping each UUID in literal quote
+        // characters makes it search for that string WITH the quotes
+        // included, which never matches a real UUID, so this always
+        // returned zero rows (silently, no error) and the "Loading..."
+        // label in the UI never resolved.
+        const idList = missingIds.join(',');
         const profRes = await fetch(
           `${SUPABASE_URL}/rest/v1/user_profiles?id=in.(${idList})&select=id,display_name,email`,
           { headers: getAuthHeaders(false) }
         );
-        const profData = await profRes.json();
-        if (Array.isArray(profData)) {
-          setVersionAuthors(prev => {
-            const next = { ...prev };
+        const profData = profRes.ok ? await profRes.json() : [];
+        setVersionAuthors(prev => {
+          const next = { ...prev };
+          if (Array.isArray(profData)) {
             profData.forEach(p => { next[p.id] = p.display_name || p.email?.split('@')[0] || 'Unknown'; });
-            return next;
-          });
-        }
+          }
+          // FIX: whether or not the lookup found every id, fall back to
+          // 'Unknown' for any that are still missing afterward - previously
+          // an id that failed to resolve (for any reason - a bad query, a
+          // deleted user, a network hiccup) stayed stuck on "Loading..."
+          // forever instead of ever settling on something to display.
+          missingIds.forEach(id => { if (!(id in next)) next[id] = 'Unknown'; });
+          return next;
+        });
       }
     } catch (error) {
       console.error('Error loading version history:', error);
