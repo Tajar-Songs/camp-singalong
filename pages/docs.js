@@ -144,6 +144,15 @@ export default function Docs() {
   const [editVisibility, setEditVisibility] = useState('admin');
   const [editTags, setEditTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
+
+  // --- Draft autosave state (Piece 1 of version history/publishing work) ---
+  // A draft is a private, unpublished snapshot of in-progress edits, stored
+  // separately from the real doc so it never overwrites published content.
+  // Cleared once the doc is actually published, or explicitly discarded.
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [draftStatus, setDraftStatus] = useState(''); // '', 'saving', 'saved'
+  const autosaveTimerRef = useRef(null);
+  const skipNextAutosaveRef = useRef(false); // set true right after loading a draft/doc, so loading doesn't immediately re-trigger a save
   
   const editorRef = useRef(null);
 
@@ -165,6 +174,7 @@ export default function Docs() {
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
+        setCurrentUserId(userData.id);
         await loadUserProfile(userData.id);
       }
     } catch (error) { console.log('Auth check failed'); }
@@ -232,31 +242,52 @@ export default function Docs() {
 
   const generateSlug = (title) => title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-  const startEdit = (doc) => {
+  const startEdit = async (doc) => {
     setSelectedDoc(doc);
     setEditMode(true);
     setIsCreatingNew(false);
+    skipNextAutosaveRef.current = true;
     setEditTitle(doc.title || '');
     setEditSlug(doc.slug || '');
-    // Use markdown if available, otherwise use HTML
+    // Use markdown if available, otherwise use HTML - but default the EDITOR
+    // VIEW to Visual regardless (see logged feedback: visual should be the
+    // default for most people). content_md/content_html are both populated
+    // either way, so switching modes still works correctly - only the
+    // initially-shown tab changes.
     if (doc.content_md) {
       setEditContentMd(doc.content_md);
       setEditContentHtml(markdownToHtml(doc.content_md));
-      setEditorMode('markdown');
     } else {
       setEditContentHtml(doc.content || '');
       setEditContentMd(htmlToMarkdown(doc.content || ''));
-      setEditorMode('wysiwyg');
     }
+    setEditorMode('wysiwyg');
     setEditFolder(doc.folder || '');
     setEditVisibility(doc.visibility || 'admin');
     setEditTags(doc.tags || []);
+    setDraftStatus('');
+
+    // Check for a newer unpublished draft than what's actually live, and
+    // offer to restore it rather than silently discarding in-progress work.
+    const draft = await findDraft(doc.id);
+    if (draft) {
+      const draftIsNewer = !doc.updated_at || new Date(draft.updated_at) > new Date(doc.updated_at);
+      if (draftIsNewer) {
+        const draftTime = new Date(draft.updated_at).toLocaleString();
+        if (confirm(`You have unsaved changes from ${draftTime}. Restore them?`)) {
+          applyDraft(draft);
+        } else {
+          await clearDraft(doc.id);
+        }
+      }
+    }
   };
 
-  const startCreate = () => {
+  const startCreate = async () => {
     setSelectedDoc(null);
     setEditMode(true);
     setIsCreatingNew(true);
+    skipNextAutosaveRef.current = true;
     setEditTitle('');
     setEditSlug('');
     setEditContentHtml('');
@@ -265,9 +296,21 @@ export default function Docs() {
     setEditVisibility('admin');
     setEditTags([]);
     setEditorMode('wysiwyg');
+    setDraftStatus('');
+
+    // Same restoration check, for an in-progress new (never-published) doc.
+    const draft = await findDraft(null);
+    if (draft) {
+      const draftTime = new Date(draft.updated_at).toLocaleString();
+      if (confirm(`You have an unsaved new document from ${draftTime}. Restore it?`)) {
+        applyDraft(draft);
+      } else {
+        await clearDraft(null);
+      }
+    }
   };
 
-  const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); };
+  const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); setDraftStatus(''); };
   const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); };
   const addTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !editTags.includes(t)) setEditTags([...editTags, t]); setTagInput(''); };
   const removeTag = (tag) => { setEditTags(editTags.filter(t => t !== tag)); };
@@ -305,7 +348,11 @@ export default function Docs() {
     if (url) execCommand('createLink', url);
   };
 
-  const saveDoc = async () => {
+  // Renamed from saveDoc: this is "Save & Publish" - it writes the real,
+  // live docs row (same as before) and, new in this pass, also writes a
+  // content_versions snapshot and clears any pending draft for this doc,
+  // since a published save supersedes whatever draft led up to it.
+  const savePublish = async () => {
     if (!editTitle.trim()) { showMessage('❌ Title is required'); return; }
     if (!editSlug.trim()) { showMessage('❌ Slug is required'); return; }
     
@@ -344,22 +391,166 @@ export default function Docs() {
         });
         if (res.ok) {
           const created = await res.json();
+          const newDoc = created[0];
+          // First publish of a new doc = version 1. No prior version to
+          // compare against, but recorded the same way for consistency.
+          if (newDoc) {
+            await fetch(`${SUPABASE_URL}/rest/v1/content_versions`, {
+              method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+              body: JSON.stringify({
+                table_name: 'docs', record_id: newDoc.id, changed_by: currentUserId,
+                content: { title: newDoc.title, slug: newDoc.slug, content: newDoc.content, content_md: newDoc.content_md, folder: newDoc.folder, tags: newDoc.tags }
+              })
+            });
+          }
+          await clearDraft(null); // clears the "new doc, no record_id yet" draft
           showMessage('✅ Document created!');
           await loadDocs();
-          if (created[0]) { setSelectedDoc(created[0]); setIsCreatingNew(false); setEditMode(false); }
+          if (newDoc) { setSelectedDoc(newDoc); setIsCreatingNew(false); setEditMode(false); }
         } else { const error = await res.json(); showMessage(`❌ Error: ${error.message || 'Could not create'}`); }
       } else {
+        // Only create a new version if a field that actually counts as
+        // "meaningful content" changed (title/slug/content/content_md) -
+        // folder/tags/visibility changing alone does not trigger a version,
+        // per the platform's Content Versioning design.
+        const meaningfulChange =
+          selectedDoc.title !== docData.title ||
+          selectedDoc.slug !== docData.slug ||
+          (selectedDoc.content || '') !== docData.content ||
+          (selectedDoc.content_md || '') !== docData.content_md;
+
         const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
           method: 'PATCH', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' }, body: JSON.stringify(docData)
         });
-        if (res.ok) { showMessage('✅ Saved!'); await loadDocs(); setSelectedDoc({ ...selectedDoc, ...docData }); }
+        if (res.ok) {
+          if (meaningfulChange) {
+            await fetch(`${SUPABASE_URL}/rest/v1/content_versions`, {
+              method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+              body: JSON.stringify({
+                table_name: 'docs', record_id: selectedDoc.id, changed_by: currentUserId,
+                content: { title: docData.title, slug: docData.slug, content: docData.content, content_md: docData.content_md, folder: docData.folder, tags: docData.tags }
+              })
+            });
+          }
+          await clearDraft(selectedDoc.id);
+          showMessage('✅ Saved!'); await loadDocs(); setSelectedDoc({ ...selectedDoc, ...docData }); setEditMode(false);
+        }
         else { showMessage('❌ Error saving'); }
       }
     } catch (error) { console.error(error); showMessage('❌ Error saving'); }
     setSaving(false);
   };
 
-  const deleteDoc = async () => {
+  // --- Draft autosave functions ---
+  // Drafts capture everything being edited (not just the fields that trigger
+  // a real version) - the goal here is "don't lose my in-progress work,"
+  // which is a broader concern than "what counts as a meaningful content
+  // change" (see content_versions, which only captures title/slug/content/
+  // content_md - drafts capture folder/tags/visibility too since losing
+  // those mid-edit would still be a real loss of work).
+  const currentDraftContent = () => ({
+    title: editTitle,
+    slug: editSlug,
+    content: editorMode === 'wysiwyg' && editorRef.current ? editorRef.current.innerHTML : editContentHtml,
+    content_md: editContentMd,
+    folder: editFolder,
+    visibility: editVisibility,
+    tags: editTags
+  });
+
+  const saveDraft = async () => {
+    if (!currentUserId) return;
+    setDraftStatus('saving');
+    try {
+      const draftRow = {
+        table_name: 'docs',
+        record_id: isCreatingNew ? null : (selectedDoc?.id || null),
+        user_id: currentUserId,
+        content: currentDraftContent(),
+        updated_at: new Date().toISOString()
+      };
+      // Upsert on the (table_name, record_id, user_id) unique constraint.
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/content_drafts`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(draftRow)
+      });
+      if (res.ok) {
+        setDraftStatus('saved');
+      } else {
+        const errorText = await res.text();
+        console.error('Draft save failed:', res.status, errorText);
+        setDraftStatus('');
+      }
+    } catch (error) {
+      console.error('Error saving draft:', error);
+      setDraftStatus('');
+    }
+  };
+
+  // Look up the most recent draft for a given record (or, for a new doc,
+  // the most recent draft with no record_id yet - see the note above this
+  // section about the "one in-progress new doc at a time" assumption).
+  const findDraft = async (recordId) => {
+    if (!currentUserId) return null;
+    try {
+      const filter = recordId
+        ? `record_id=eq.${recordId}`
+        : `record_id=is.null`;
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&${filter}&user_id=eq.${currentUserId}&select=*&order=updated_at.desc&limit=1`,
+        { headers: getAuthHeaders(false) }
+      );
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data[0] : null;
+    } catch (error) {
+      console.error('Error checking for draft:', error);
+      return null;
+    }
+  };
+
+  const clearDraft = async (recordId) => {
+    if (!currentUserId) return;
+    try {
+      const filter = recordId
+        ? `record_id=eq.${recordId}`
+        : `record_id=is.null`;
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&${filter}&user_id=eq.${currentUserId}`,
+        { method: 'DELETE', headers: getAuthHeaders(false) }
+      );
+    } catch (error) {
+      console.error('Error clearing draft:', error);
+    }
+  };
+
+  // Apply a draft's saved content into the editor's live state.
+  const applyDraft = (draft) => {
+    skipNextAutosaveRef.current = true;
+    const c = draft.content || {};
+    setEditTitle(c.title || '');
+    setEditSlug(c.slug || '');
+    setEditContentHtml(c.content || '');
+    setEditContentMd(c.content_md || '');
+    setEditFolder(c.folder || '');
+    setEditVisibility(c.visibility || 'admin');
+    setEditTags(c.tags || []);
+  };
+
+  // Debounced autosave: writes a draft a few seconds after the person stops
+  // making changes, rather than on every keystroke. Skipped once right after
+  // a doc/draft is first loaded into the editor, so opening something for
+  // editing doesn't immediately count as "a change" and autosave a no-op draft.
+  useEffect(() => {
+    if (!editMode) return;
+    if (skipNextAutosaveRef.current) { skipNextAutosaveRef.current = false; return; }
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => { saveDraft(); }, 4000);
+    return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTitle, editSlug, editContentMd, editContentHtml, editFolder, editVisibility, editTags]);
+
+
     if (!confirm(`Delete "${selectedDoc.title}"?`)) return;
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
@@ -464,10 +655,18 @@ export default function Docs() {
                 {/* Top toolbar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #334155', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isCreatingNew ? '📝 New Document' : '📝 Editing'}</h2>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button style={s.btn} onClick={saveDoc} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {/* Save = draft only, private, does not touch the live doc or
+                        create a version. Save & Publish = the real save, as before. */}
+                    <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save'}</button>
+                    <button style={s.btn} onClick={savePublish} disabled={saving}>{saving ? 'Publishing...' : 'Save & Publish'}</button>
                     <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
                     {!isCreatingNew && <button style={s.btnDanger} onClick={deleteDoc}>Delete</button>}
+                    {/* "+ New" while already editing/viewing a doc - previously only
+                        available from the sidebar or the view-mode header, not from
+                        inside the editor itself. */}
+                    <button style={s.btnSec} onClick={startCreate}>+ New</button>
+                    {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Draft saved</span>}
                   </div>
                 </div>
 
@@ -582,9 +781,11 @@ export default function Docs() {
                 </div>
 
                 {/* Bottom save */}
-                <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                  <button style={s.btn} onClick={saveDoc} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '1rem', borderTop: '1px solid #334155', alignItems: 'center' }}>
+                  <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save'}</button>
+                  <button style={s.btn} onClick={savePublish} disabled={saving}>{saving ? 'Publishing...' : 'Save & Publish'}</button>
                   <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
+                  {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Draft saved</span>}
                 </div>
               </>
             ) : (
