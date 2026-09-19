@@ -155,6 +155,16 @@ export default function Docs() {
   const [userDrafts, setUserDrafts] = useState([]);
   const autosaveTimerRef = useRef(null);
   const skipNextAutosaveRef = useRef(false); // set true right after loading a draft/doc, so loading doesn't immediately re-trigger a save
+  // Stable client-generated id for a new, not-yet-published doc's draft.
+  // Necessary because content_drafts' uniqueness (table_name, record_id,
+  // user_id) can't rely on record_id being null while unpublished - Postgres
+  // treats every NULL as distinct from every other NULL in a unique
+  // constraint, so every autosave with record_id=null would insert a brand
+  // new row instead of updating the same one (confirmed: this is exactly
+  // what caused duplicate drafts to appear during testing). Using a stable
+  // pending UUID instead of null means the constraint actually works while
+  // a new doc is still unpublished.
+  const pendingNewDocIdRef = useRef(null);
   
   const editorRef = useRef(null);
 
@@ -297,6 +307,9 @@ export default function Docs() {
     setEditMode(true);
     setIsCreatingNew(true);
     skipNextAutosaveRef.current = true;
+    // Fresh pending id for this new, unpublished doc's drafts - see the
+    // comment on pendingNewDocIdRef above for why this can't be null.
+    pendingNewDocIdRef.current = crypto.randomUUID();
     setEditTitle('');
     setEditSlug('');
     setEditContentHtml('');
@@ -401,7 +414,8 @@ export default function Docs() {
               })
             });
           }
-          await clearDraft(null); // clears the "new doc, no record_id yet" draft
+          await clearDraft(pendingNewDocIdRef.current); // clears the pending-id draft now that it's really published
+          pendingNewDocIdRef.current = null;
           showMessage('✅ Document created!');
           await loadDocs();
           if (newDoc) { setSelectedDoc(newDoc); setIsCreatingNew(false); setEditMode(false); }
@@ -462,17 +476,26 @@ export default function Docs() {
     try {
       const draftRow = {
         table_name: 'docs',
-        record_id: isCreatingNew ? null : (selectedDoc?.id || null),
+        // Use the stable pending id for an unpublished new doc, never null -
+        // see pendingNewDocIdRef's comment for why null breaks the upsert.
+        record_id: isCreatingNew ? pendingNewDocIdRef.current : (selectedDoc?.id || null),
         user_id: currentUserId,
         content: currentDraftContent(),
         updated_at: new Date().toISOString()
       };
       // Upsert on the (table_name, record_id, user_id) unique constraint.
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/content_drafts`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify(draftRow)
-      });
+      // on_conflict must be given explicitly - without it, PostgREST targets
+      // the primary key (id) for conflict detection, which never collides
+      // since every insert gets a fresh random id, so "merge-duplicates"
+      // would silently never actually merge anything onto the same row.
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/content_drafts?on_conflict=table_name,record_id,user_id`,
+        {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(draftRow)
+        }
+      );
       if (res.ok) {
         setDraftStatus('saved');
         loadUserDrafts(); // keep the Drafts list/badge in sync
@@ -553,25 +576,31 @@ export default function Docs() {
     }
   };
 
-  // Resume editing a draft picked from the Drafts list. Two cases:
-  // an update to an existing, already-published doc (record_id set - the
-  // matching doc should already be in `docs`, loaded from the published
-  // list), or an in-progress, never-published new doc (record_id null).
+  // Resume editing a draft picked from the Drafts list. "Published" here
+  // means the draft's record_id actually matches a real doc already loaded
+  // in `docs` - that's true for an edit-in-progress on an existing doc, and
+  // false for an unpublished new doc (whether its record_id is the pending
+  // client-generated id, or - for any leftover rows from before that fix -
+  // still literally null; either way, no real published doc will match it).
   const resumeDraft = (draft) => {
-    setShowDrafts(false);
     setEditMode(true);
     skipNextAutosaveRef.current = true;
     setDraftStatus('');
-    if (draft.record_id) {
-      const liveDoc = docs.find(d => d.id === draft.record_id) || { id: draft.record_id };
+    const liveDoc = draft.record_id ? docs.find(d => d.id === draft.record_id) : null;
+    if (liveDoc) {
       setSelectedDoc(liveDoc);
       setIsCreatingNew(false);
     } else {
+      // Not a real published doc - resuming an unpublished new-doc draft.
+      // Restore the pending id so further saves keep targeting this same row.
       setSelectedDoc(null);
       setIsCreatingNew(true);
+      pendingNewDocIdRef.current = draft.record_id || crypto.randomUUID();
     }
     setEditorMode('wysiwyg');
     applyDraft(draft);
+    // Deliberately NOT switching showDrafts back to Published here - stays
+    // on whichever tab was active until the person clicks the toggle themselves.
   };
 
   // Debounced autosave: writes a draft a few seconds after the person stops
@@ -662,7 +691,7 @@ export default function Docs() {
               <button
                 style={{ ...s.btnSec, flex: 1, background: !showDrafts ? '#22c55e' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
                 onClick={() => setShowDrafts(false)}
-              >Published</button>
+              >Published{docs.length > 0 ? ` (${docs.length})` : ''}</button>
               <button
                 style={{ ...s.btnSec, flex: 1, background: showDrafts ? '#22c55e' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
                 onClick={() => { setShowDrafts(true); loadUserDrafts(); }}
@@ -705,13 +734,25 @@ export default function Docs() {
                 <>
                   {userDrafts.map(draft => {
                     const label = draft.content?.title?.trim() || 'Untitled draft';
-                    const isNewDoc = !draft.record_id;
+                    const isNewDoc = !docs.find(d => d.id === draft.record_id);
                     return (
-                      <div key={draft.id} onClick={() => resumeDraft(draft)} style={s.docItem(false)}>
-                        <div style={{ fontWeight: '500' }}>{label}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
-                          {isNewDoc ? '🆕 unpublished new doc' : '✏️ unpublished edit'} · saved {new Date(draft.updated_at).toLocaleString()}
+                      <div key={draft.id} onClick={() => resumeDraft(draft)} style={{ ...s.docItem(false), display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: '500' }}>{label}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                            {isNewDoc ? '🆕 unpublished new doc' : '✏️ unpublished edit'} · saved {new Date(draft.updated_at).toLocaleString()}
+                          </div>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); // don't also trigger resumeDraft on the parent
+                            if (confirm(`Discard this draft ("${label}")? This can't be undone.`)) {
+                              clearDraft(draft.record_id || null);
+                            }
+                          }}
+                          style={{ ...s.btnSmall, background: '#334155', flexShrink: 0 }}
+                          title="Discard draft"
+                        >🗑</button>
                       </div>
                     );
                   })}
