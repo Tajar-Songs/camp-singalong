@@ -550,7 +550,7 @@ export default function Docs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editTitle, editSlug, editContentMd, editContentHtml, editFolder, editVisibility, editTags]);
 
-
+  const deleteDoc = async () => {
     if (!confirm(`Delete "${selectedDoc.title}"?`)) return;
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
