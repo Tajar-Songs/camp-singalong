@@ -1183,9 +1183,25 @@ export default function Docs() {
                         <button style={s.btnSec} onClick={() => setShowDiff(false)}>← Back to version list</button>
                       </div>
                       {(() => {
+                        // '__current__' is a synthetic entry representing the live
+                        // doc right now, not any saved content_versions row - built
+                        // directly from selectedDoc so it's always accurate, even in
+                        // the edge case where the newest saved version doesn't
+                        // perfectly reflect current state (e.g. folder/tags changed
+                        // without a version-triggering content edit since).
+                        const resolveVersion = (id) => {
+                          if (id === '__current__') {
+                            return {
+                              id: '__current__',
+                              created_at: selectedDoc.updated_at || selectedDoc.created_at,
+                              content: { title: selectedDoc.title, slug: selectedDoc.slug, content: selectedDoc.content, content_md: selectedDoc.content_md, folder: selectedDoc.folder, tags: selectedDoc.tags }
+                            };
+                          }
+                          return docVersions.find(v => v.id === id);
+                        };
                         // compareSelection order isn't chronological (whichever was
                         // clicked first) - sort so "old"/"new" always means what they say.
-                        const [vA, vB] = compareSelection.map(id => docVersions.find(v => v.id === id)).filter(Boolean);
+                        const [vA, vB] = compareSelection.map(resolveVersion).filter(Boolean);
                         if (!vA || !vB) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Select two versions to compare.</div>;
                         const [older, newer] = new Date(vA.created_at) <= new Date(vB.created_at) ? [vA, vB] : [vB, vA];
                         const oldC = older.content || {}, newC = newer.content || {};
@@ -1193,7 +1209,7 @@ export default function Docs() {
                         return (
                           <div>
                             <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
-                              Comparing {new Date(older.created_at).toLocaleString()} → {new Date(newer.created_at).toLocaleString()}
+                              Comparing {older.id === '__current__' ? 'Current' : new Date(older.created_at).toLocaleString()} → {newer.id === '__current__' ? 'Current' : new Date(newer.created_at).toLocaleString()}
                             </div>
                             {oldC.title !== newC.title && (
                               <div style={{ marginBottom: '0.75rem' }}>
@@ -1249,20 +1265,38 @@ export default function Docs() {
                         <button style={s.btnSec} onClick={() => resetHistoryView()}>← Back to document</button>
                       </div>
                     </div>
-                    {docVersions.length === 0 ? (
-                      <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-                        No version history yet - this doc hasn't been saved & published since version tracking was added, or has never been edited.
-                      </div>
-                    ) : (
-                      <div>
-                        {docVersions.length >= 2 && (
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.75rem' }}>
-                            Select two versions to compare them ({compareSelection.length}/2 selected)
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                      Select two to compare them ({compareSelection.length}/2 selected)
+                    </div>
+                    <div>
+                      {/* Synthetic "Current (Live)" entry - always shown, always
+                          accurate, built from the live doc rather than from
+                          whichever saved version happens to be newest (which can
+                          drift slightly out of sync - see comment on resolveVersion
+                          in the diff view above). */}
+                      {(() => {
+                        const isSelected = compareSelection.includes('__current__');
+                        return (
+                          <div
+                            onClick={() => toggleCompareSelection('__current__')}
+                            style={{ padding: '0.75rem 1rem', background: '#0f172a', border: isSelected ? '2px solid #22c55e' : '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: '500' }}>{isSelected ? '✓ ' : ''}Current (Live)</span>
+                              <span style={{ fontSize: '0.7rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Current</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>what's actually live right now</div>
                           </div>
-                        )}
-                        {docVersions.map((v, i) => {
+                        );
+                      })()}
+                      {docVersions.length === 0 ? (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                          No saved version history yet - this doc hasn't been saved & published since version tracking was added, or has never been edited.
+                        </div>
+                      ) : (
+                        docVersions.map((v, i) => {
                           const authorName = v.changed_by ? (versionAuthors[v.changed_by] || 'Loading...') : 'Unknown';
-                          const isCurrent = i === 0;
+                          const isLatestSaved = i === 0;
                           const isSelected = compareSelection.includes(v.id);
                           return (
                             <div
@@ -1272,14 +1306,17 @@ export default function Docs() {
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontWeight: '500' }}>{isSelected ? '✓ ' : ''}{new Date(v.created_at).toLocaleString()}</span>
-                                {isCurrent && <span style={{ fontSize: '0.7rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Current</span>}
+                                {/* Renamed from "Current" to avoid implying this saved
+                                    row necessarily matches live state exactly - see the
+                                    Current (Live) entry above for that. */}
+                                {isLatestSaved && <span style={{ fontSize: '0.7rem', background: '#334155', color: '#94a3b8', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Latest saved</span>}
                               </div>
                               <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>by {authorName}</div>
                             </div>
                           );
-                        })}
-                      </div>
-                    )}
+                        })
+                      )}
+                    </div>
                   </div>
                   )
                 ) : (
