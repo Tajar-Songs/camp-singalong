@@ -151,6 +151,8 @@ export default function Docs() {
   // Cleared once the doc is actually published, or explicitly discarded.
   const [currentUserId, setCurrentUserId] = useState(null);
   const [draftStatus, setDraftStatus] = useState(''); // '', 'saving', 'saved'
+  const [showDrafts, setShowDrafts] = useState(false); // toggles the sidebar list between Published and Drafts
+  const [userDrafts, setUserDrafts] = useState([]);
   const autosaveTimerRef = useRef(null);
   const skipNextAutosaveRef = useRef(false); // set true right after loading a draft/doc, so loading doesn't immediately re-trigger a save
   
@@ -165,6 +167,7 @@ export default function Docs() {
 
   useEffect(() => { checkAuth(); loadDocs(); }, []);
   useEffect(() => { if (user) loadDocs(); }, [user, userRoleKeys]); // Reload when roles are known, to get admin-only docs
+  useEffect(() => { if (currentUserId) loadUserDrafts(); }, [currentUserId]); // populate the Drafts count badge as soon as we know who's logged in
 
   const checkAuth = async () => {
     try {
@@ -283,7 +286,13 @@ export default function Docs() {
     }
   };
 
-  const startCreate = async () => {
+  // Note: no longer async, and no longer auto-checks for a prior in-progress
+  // new-doc draft - now that the Drafts sidebar toggle exists and can show
+  // ALL in-progress new docs (not just the single most recent one, which is
+  // all the old single-draft check here could ever find), "+ New" always
+  // starts genuinely blank. Picking up an unfinished new doc now happens via
+  // the Drafts list instead.
+  const startCreate = () => {
     setSelectedDoc(null);
     setEditMode(true);
     setIsCreatingNew(true);
@@ -297,17 +306,6 @@ export default function Docs() {
     setEditTags([]);
     setEditorMode('wysiwyg');
     setDraftStatus('');
-
-    // Same restoration check, for an in-progress new (never-published) doc.
-    const draft = await findDraft(null);
-    if (draft) {
-      const draftTime = new Date(draft.updated_at).toLocaleString();
-      if (confirm(`You have an unsaved new document from ${draftTime}. Restore it?`)) {
-        applyDraft(draft);
-      } else {
-        await clearDraft(null);
-      }
-    }
   };
 
   const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); setDraftStatus(''); };
@@ -477,6 +475,7 @@ export default function Docs() {
       });
       if (res.ok) {
         setDraftStatus('saved');
+        loadUserDrafts(); // keep the Drafts list/badge in sync
       } else {
         const errorText = await res.text();
         console.error('Draft save failed:', res.status, errorText);
@@ -519,6 +518,7 @@ export default function Docs() {
         `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&${filter}&user_id=eq.${currentUserId}`,
         { method: 'DELETE', headers: getAuthHeaders(false) }
       );
+      loadUserDrafts(); // keep the Drafts list/badge in sync
     } catch (error) {
       console.error('Error clearing draft:', error);
     }
@@ -535,6 +535,43 @@ export default function Docs() {
     setEditFolder(c.folder || '');
     setEditVisibility(c.visibility || 'admin');
     setEditTags(c.tags || []);
+  };
+
+  // Loads every draft the current user owns for docs (across ALL records,
+  // not just the one currently open) - powers the "Drafts" sidebar toggle.
+  const loadUserDrafts = async () => {
+    if (!currentUserId) return;
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&user_id=eq.${currentUserId}&select=*&order=updated_at.desc`,
+        { headers: getAuthHeaders(false) }
+      );
+      const data = await res.json();
+      setUserDrafts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error loading drafts list:', error);
+    }
+  };
+
+  // Resume editing a draft picked from the Drafts list. Two cases:
+  // an update to an existing, already-published doc (record_id set - the
+  // matching doc should already be in `docs`, loaded from the published
+  // list), or an in-progress, never-published new doc (record_id null).
+  const resumeDraft = (draft) => {
+    setShowDrafts(false);
+    setEditMode(true);
+    skipNextAutosaveRef.current = true;
+    setDraftStatus('');
+    if (draft.record_id) {
+      const liveDoc = docs.find(d => d.id === draft.record_id) || { id: draft.record_id };
+      setSelectedDoc(liveDoc);
+      setIsCreatingNew(false);
+    } else {
+      setSelectedDoc(null);
+      setIsCreatingNew(true);
+    }
+    setEditorMode('wysiwyg');
+    applyDraft(draft);
   };
 
   // Debounced autosave: writes a draft a few seconds after the person stops
@@ -618,31 +655,69 @@ export default function Docs() {
             <h1 style={s.title}>📚 Docs</h1>
             {isAdmin && !editMode && <button style={s.btn} onClick={startCreate}>+ New</button>}
           </div>
-          <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={s.input} />
-          {folders.length > 0 && (
-            <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={s.select}>
-              <option value="">All Folders</option>
-              {folders.map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
+          {/* Published / Drafts toggle - reuses the same list styling below,
+              just swaps the data source, rather than building a separate UI. */}
+          {isAdmin && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <button
+                style={{ ...s.btnSec, flex: 1, background: !showDrafts ? '#22c55e' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
+                onClick={() => setShowDrafts(false)}
+              >Published</button>
+              <button
+                style={{ ...s.btnSec, flex: 1, background: showDrafts ? '#22c55e' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
+                onClick={() => { setShowDrafts(true); loadUserDrafts(); }}
+              >Drafts{userDrafts.length > 0 ? ` (${userDrafts.length})` : ''}</button>
+            </div>
+          )}
+          {!showDrafts && (
+            <>
+              <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={s.input} />
+              {folders.length > 0 && (
+                <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={s.select}>
+                  <option value="">All Folders</option>
+                  {folders.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              )}
+            </>
           )}
           <div style={s.card}>
             <div style={s.docList}>
-              {Object.entries(docsByFolder).map(([folder, folderDocs]) => (
-                <div key={folder}>
-                  <div style={s.folderHeader}>📁 {folder}</div>
-                  {folderDocs.map(doc => (
-                    <div key={doc.id} onClick={() => viewDoc(doc)} style={s.docItem(selectedDoc?.id === doc.id && !editMode)}>
-                      <div style={{ fontWeight: '500' }}>{doc.title}</div>
-                      {doc.tags?.length > 0 && (
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
-                          {doc.tags.slice(0, 3).map(tag => <span key={tag} style={{ background: '#334155', padding: '0.125rem 0.375rem', borderRadius: '0.25rem', marginRight: '0.25rem' }}>{tag}</span>)}
+              {!showDrafts ? (
+                <>
+                  {Object.entries(docsByFolder).map(([folder, folderDocs]) => (
+                    <div key={folder}>
+                      <div style={s.folderHeader}>📁 {folder}</div>
+                      {folderDocs.map(doc => (
+                        <div key={doc.id} onClick={() => viewDoc(doc)} style={s.docItem(selectedDoc?.id === doc.id && !editMode)}>
+                          <div style={{ fontWeight: '500' }}>{doc.title}</div>
+                          {doc.tags?.length > 0 && (
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                              {doc.tags.slice(0, 3).map(tag => <span key={tag} style={{ background: '#334155', padding: '0.125rem 0.375rem', borderRadius: '0.25rem', marginRight: '0.25rem' }}>{tag}</span>)}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
                   ))}
-                </div>
-              ))}
-              {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No docs found</div>}
+                  {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No docs found</div>}
+                </>
+              ) : (
+                <>
+                  {userDrafts.map(draft => {
+                    const label = draft.content?.title?.trim() || 'Untitled draft';
+                    const isNewDoc = !draft.record_id;
+                    return (
+                      <div key={draft.id} onClick={() => resumeDraft(draft)} style={s.docItem(false)}>
+                        <div style={{ fontWeight: '500' }}>{label}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                          {isNewDoc ? '🆕 unpublished new doc' : '✏️ unpublished edit'} · saved {new Date(draft.updated_at).toLocaleString()}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {userDrafts.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No drafts</div>}
+                </>
+              )}
             </div>
           </div>
         </div>
