@@ -153,6 +153,10 @@ export default function Docs() {
   const [draftStatus, setDraftStatus] = useState(''); // '', 'saving', 'saved'
   const [showDrafts, setShowDrafts] = useState(false); // toggles the sidebar list between Published and Drafts
   const [userDrafts, setUserDrafts] = useState([]);
+  // --- Version history state (Piece 3) ---
+  const [showHistory, setShowHistory] = useState(false);
+  const [docVersions, setDocVersions] = useState([]);
+  const [versionAuthors, setVersionAuthors] = useState({}); // user_id -> display name, only for authors actually seen in a version list
   const autosaveTimerRef = useRef(null);
   const skipNextAutosaveRef = useRef(false); // set true right after loading a draft/doc, so loading doesn't immediately re-trigger a save
   // Stable client-generated id for a new, not-yet-published doc's draft.
@@ -259,6 +263,7 @@ export default function Docs() {
     setSelectedDoc(doc);
     setEditMode(true);
     setIsCreatingNew(false);
+    setShowHistory(false);
     skipNextAutosaveRef.current = true;
     setEditTitle(doc.title || '');
     setEditSlug(doc.slug || '');
@@ -306,6 +311,7 @@ export default function Docs() {
     setSelectedDoc(null);
     setEditMode(true);
     setIsCreatingNew(true);
+    setShowHistory(false);
     skipNextAutosaveRef.current = true;
     // Fresh pending id for this new, unpublished doc's drafts - see the
     // comment on pendingNewDocIdRef above for why this can't be null.
@@ -322,7 +328,7 @@ export default function Docs() {
   };
 
   const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); setDraftStatus(''); };
-  const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); };
+  const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); setShowHistory(false); };
   const addTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !editTags.includes(t)) setEditTags([...editTags, t]); setTagInput(''); };
   const removeTag = (tag) => { setEditTags(editTags.filter(t => t !== tag)); };
 
@@ -576,6 +582,42 @@ export default function Docs() {
     }
   };
 
+  // Loads a doc's version history (content_versions), newest first, and
+  // resolves display names only for the authors that actually appear -
+  // avoids pulling every user profile in the system just to show a few names.
+  const loadDocVersions = async (doc) => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/content_versions?table_name=eq.docs&record_id=eq.${doc.id}&select=*&order=created_at.desc`,
+        { headers: getAuthHeaders(false) }
+      );
+      const data = await res.json();
+      const versions = Array.isArray(data) ? data : [];
+      setDocVersions(versions);
+
+      const authorIds = [...new Set(versions.map(v => v.changed_by).filter(Boolean))];
+      const missingIds = authorIds.filter(id => !(id in versionAuthors));
+      if (missingIds.length > 0) {
+        const idList = missingIds.map(id => `"${id}"`).join(',');
+        const profRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/user_profiles?id=in.(${idList})&select=id,display_name,email`,
+          { headers: getAuthHeaders(false) }
+        );
+        const profData = await profRes.json();
+        if (Array.isArray(profData)) {
+          setVersionAuthors(prev => {
+            const next = { ...prev };
+            profData.forEach(p => { next[p.id] = p.display_name || p.email?.split('@')[0] || 'Unknown'; });
+            return next;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading version history:', error);
+      setDocVersions([]);
+    }
+  };
+
   // Resume editing a draft picked from the Drafts list. "Published" here
   // means the draft's record_id actually matches a real doc already loaded
   // in `docs` - that's true for an edit-in-progress on an existing doc, and
@@ -584,6 +626,7 @@ export default function Docs() {
   // still literally null; either way, no real published doc will match it).
   const resumeDraft = (draft) => {
     setEditMode(true);
+    setShowHistory(false);
     skipNextAutosaveRef.current = true;
     setDraftStatus('');
     const liveDoc = draft.record_id ? docs.find(d => d.id === draft.record_id) : null;
@@ -918,11 +961,42 @@ export default function Docs() {
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}>✏️ Edit</button>}
+                    {isAdmin && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}>🕐 History</button>}
                     {isAdmin && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
-                    <button style={s.btnSec} onClick={() => setSelectedDoc(null)}>×</button>
+                    <button style={s.btnSec} onClick={() => { setSelectedDoc(null); setShowHistory(false); }}>×</button>
                   </div>
                 </div>
-                <div className="doc-content" dangerouslySetInnerHTML={{ __html: selectedDoc.content || '<p>No content yet.</p>' }} style={{ lineHeight: '1.7' }} />
+                {showHistory ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                      <h3 style={{ fontWeight: 'bold' }}>Version History</h3>
+                      <button style={s.btnSec} onClick={() => setShowHistory(false)}>← Back to document</button>
+                    </div>
+                    {docVersions.length === 0 ? (
+                      <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                        No version history yet - this doc hasn't been saved & published since version tracking was added, or has never been edited.
+                      </div>
+                    ) : (
+                      <div>
+                        {docVersions.map((v, i) => {
+                          const authorName = v.changed_by ? (versionAuthors[v.changed_by] || 'Loading...') : 'Unknown';
+                          const isCurrent = i === 0;
+                          return (
+                            <div key={v.id} style={{ padding: '0.75rem 1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontWeight: '500' }}>{new Date(v.created_at).toLocaleString()}</span>
+                                {isCurrent && <span style={{ fontSize: '0.7rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Current</span>}
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>by {authorName}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="doc-content" dangerouslySetInnerHTML={{ __html: selectedDoc.content || '<p>No content yet.</p>' }} style={{ lineHeight: '1.7' }} />
+                )}
               </>
             )}
           </div>
