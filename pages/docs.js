@@ -120,6 +120,168 @@ const markdownToHtml = (md) => {
   return html;
 };
 
+// --- Word-level diff (LCS-based) ---
+// Tokenizes into runs of non-whitespace and runs of whitespace, so spacing
+// reconstructs exactly, then finds the longest common subsequence of tokens
+// between old and new text. Anything not part of that shared subsequence is
+// either a removal (only in old) or an addition (only in new). Chosen over a
+// character-level diff because word-level is what's actually readable to a
+// person reviewing "what changed" in prose - it's also the closest analog to
+// how a lawyer's redline works, which is explicitly what this feature is
+// meant to approximate for lyrics/doc-text changes.
+const tokenizeForDiff = (text) => (text || '').match(/\S+|\s+/g) || [];
+
+const diffTokens = (oldText, newText) => {
+  const a = tokenizeForDiff(oldText);
+  const b = tokenizeForDiff(newText);
+  const n = a.length, m = b.length;
+  // LCS length table
+  const lcs = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  // Backtrack to build the segment sequence
+  const segments = [];
+  let i = 0, j = 0;
+  const push = (type, text) => {
+    const last = segments[segments.length - 1];
+    if (last && last.type === type) { last.text += text; } else { segments.push({ type, text }); }
+  };
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { push('same', a[i]); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) { push('removed', a[i]); i++; }
+    else { push('added', b[j]); j++; }
+  }
+  while (i < n) { push('removed', a[i]); i++; }
+  while (j < m) { push('added', b[j]); j++; }
+  return segments;
+};
+
+// --- Rendered markdown diff (line-level structure + word-level detail) ---
+// A pure word-level diff across the whole text can place a highlighted span
+// across a structural boundary (e.g. a whole new list item), which breaks
+// markdownToHtml's regex-based list/header detection and produces malformed,
+// overlapping HTML - tested and confirmed during development. The fix: diff
+// at the LINE level first, so unchanged structural lines (list items,
+// headers) are never touched at all; only within a single replaced line is
+// word-level diffing applied, with any markdown structural prefix (list
+// marker, header hashes) stripped before diffing and re-attached unmarked
+// afterward, so it's always recognized correctly regardless of what's
+// highlighted within the line.
+
+const lineLCS = (oldLines, newLines) => {
+  const n = oldLines.length, m = newLines.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = oldLines[i] === newLines[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (oldLines[i] === newLines[j]) { ops.push({ type: 'same', line: oldLines[i] }); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) { ops.push({ type: 'del', line: oldLines[i] }); i++; }
+    else { ops.push({ type: 'ins', line: newLines[j] }); j++; }
+  }
+  while (i < n) { ops.push({ type: 'del', line: oldLines[i] }); i++; }
+  while (j < m) { ops.push({ type: 'ins', line: newLines[j] }); j++; }
+  return ops;
+};
+
+// Coalesce raw line ops: a run of deletions immediately followed by a run of
+// insertions is a "replace" block (a line that was edited, worth word-diffing);
+// a del or ins run with no adjacent partner is a pure removal/addition.
+const coalesceLineOps = (ops) => {
+  const blocks = [];
+  let i = 0;
+  while (i < ops.length) {
+    if (ops[i].type === 'same') {
+      const lines = [];
+      while (i < ops.length && ops[i].type === 'same') { lines.push(ops[i].line); i++; }
+      blocks.push({ type: 'same', lines });
+    } else {
+      const delLines = [];
+      while (i < ops.length && ops[i].type === 'del') { delLines.push(ops[i].line); i++; }
+      const insLines = [];
+      while (i < ops.length && ops[i].type === 'ins') { insLines.push(ops[i].line); i++; }
+      if (delLines.length && insLines.length) blocks.push({ type: 'replace', oldLines: delLines, newLines: insLines });
+      else if (delLines.length) blocks.push({ type: 'removed', lines: delLines });
+      else blocks.push({ type: 'added', lines: insLines });
+    }
+  }
+  return blocks;
+};
+
+// Strip a leading list marker or header prefix from a line, so it can be
+// re-attached unmarked - structural regexes must see it at the true start
+// of the line regardless of what's highlighted in the rest of the line.
+const splitMarkdownPrefix = (line) => {
+  const m = line.match(/^(\s*(?:[-*]\s+|#{1,3}\s+))(.*)$/);
+  return m ? [m[1], m[2]] : ['', line];
+};
+
+const buildDiffMarkdown = (segments) => segments.map(seg => {
+  if (seg.type === 'same') return seg.text;
+  if (seg.type === 'added') return `@@DIFFADD@@${seg.text}@@/DIFFADD@@`;
+  return `@@DIFFDEL@@${seg.text}@@/DIFFDEL@@`;
+}).join('');
+
+const applyDiffStyling = (html) => html
+  .replace(/@@DIFFADD@@/g, '<span class="diff-added">')
+  .replace(/@@\/DIFFADD@@/g, '</span>')
+  .replace(/@@DIFFDEL@@/g, '<span class="diff-removed">')
+  .replace(/@@\/DIFFDEL@@/g, '</span>');
+
+// The main entry point: takes two markdown strings, returns fully-rendered,
+// diff-highlighted HTML (via the existing markdownToHtml pipeline), safe to
+// drop into dangerouslySetInnerHTML alongside the .doc-content styles.
+const renderMarkdownDiff = (oldMd, newMd) => {
+  const oldLines = (oldMd || '').split('\n');
+  const newLines = (newMd || '').split('\n');
+  const blocks = coalesceLineOps(lineLCS(oldLines, newLines));
+
+  const outputLines = [];
+  for (const block of blocks) {
+    if (block.type === 'same') {
+      outputLines.push(...block.lines);
+    } else if (block.type === 'replace') {
+      if (block.oldLines.length === 1 && block.newLines.length === 1) {
+        const [, oldRest] = splitMarkdownPrefix(block.oldLines[0]);
+        const [newPrefix, newRest] = splitMarkdownPrefix(block.newLines[0]);
+        outputLines.push(newPrefix + buildDiffMarkdown(diffTokens(oldRest, newRest)));
+      } else {
+        outputLines.push(buildDiffMarkdown(diffTokens(block.oldLines.join('\n'), block.newLines.join('\n'))));
+      }
+    } else if (block.type === 'removed') {
+      block.lines.forEach(line => {
+        const [prefix, rest] = splitMarkdownPrefix(line);
+        outputLines.push(`${prefix}@@DIFFDEL@@${rest}@@/DIFFDEL@@`);
+      });
+    } else if (block.type === 'added') {
+      block.lines.forEach(line => {
+        const [prefix, rest] = splitMarkdownPrefix(line);
+        outputLines.push(`${prefix}@@DIFFADD@@${rest}@@/DIFFADD@@`);
+      });
+    }
+  }
+  return applyDiffStyling(markdownToHtml(outputLines.join('\n')));
+};
+
+// Simple added/removed set comparison for list-shaped fields (tags), where
+// word-level diffing inside a comma-joined string wouldn't read cleanly.
+const diffTags = (oldTags, newTags) => {
+  const oldSet = new Set(oldTags || []);
+  const newSet = new Set(newTags || []);
+  return {
+    removed: (oldTags || []).filter(t => !newSet.has(t)),
+    added: (newTags || []).filter(t => !oldSet.has(t)),
+    unchanged: (oldTags || []).filter(t => newSet.has(t))
+  };
+};
+
 export default function Docs() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -157,6 +319,10 @@ export default function Docs() {
   const [showHistory, setShowHistory] = useState(false);
   const [docVersions, setDocVersions] = useState([]);
   const [versionAuthors, setVersionAuthors] = useState({}); // user_id -> display name, only for authors actually seen in a version list
+  // --- Diff/comparison state ---
+  const [compareSelection, setCompareSelection] = useState([]); // up to 2 version ids being compared
+  const [showDiff, setShowDiff] = useState(false);
+  const [diffMode, setDiffMode] = useState('wysiwyg'); // 'wysiwyg' | 'markdown' | 'code' - mirrors the editor's tab order/preference
   const autosaveTimerRef = useRef(null);
   const skipNextAutosaveRef = useRef(false); // set true right after loading a draft/doc, so loading doesn't immediately re-trigger a save
   // Stable client-generated id for a new, not-yet-published doc's draft.
@@ -263,7 +429,7 @@ export default function Docs() {
     setSelectedDoc(doc);
     setEditMode(true);
     setIsCreatingNew(false);
-    setShowHistory(false);
+    resetHistoryView();
     skipNextAutosaveRef.current = true;
     setEditTitle(doc.title || '');
     setEditSlug(doc.slug || '');
@@ -311,7 +477,7 @@ export default function Docs() {
     setSelectedDoc(null);
     setEditMode(true);
     setIsCreatingNew(true);
-    setShowHistory(false);
+    resetHistoryView();
     skipNextAutosaveRef.current = true;
     // Fresh pending id for this new, unpublished doc's drafts - see the
     // comment on pendingNewDocIdRef above for why this can't be null.
@@ -328,7 +494,7 @@ export default function Docs() {
   };
 
   const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); setDraftStatus(''); };
-  const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); setShowHistory(false); };
+  const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); resetHistoryView(); };
   const addTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !editTags.includes(t)) setEditTags([...editTags, t]); setTagInput(''); };
   const removeTag = (tag) => { setEditTags(editTags.filter(t => t !== tag)); };
 
@@ -634,6 +800,28 @@ export default function Docs() {
     }
   };
 
+  // Toggle a version's selection for comparison. Caps at 2: picking a 3rd
+  // drops the older of the two currently selected, so the person can just
+  // keep clicking through versions rather than having to manually deselect first.
+  const toggleCompareSelection = (versionId) => {
+    setCompareSelection(prev => {
+      if (prev.includes(versionId)) return prev.filter(id => id !== versionId);
+      if (prev.length < 2) return [...prev, versionId];
+      return [prev[1], versionId];
+    });
+  };
+
+  // Shared reset for all History/diff-related view state - called any time
+  // the main panel switches away from "viewing this doc's history" (entering
+  // edit mode, switching to a different doc, closing the doc entirely), so
+  // a stale selection or an open diff view never resurfaces somewhere it
+  // doesn't belong.
+  const resetHistoryView = () => {
+    setShowHistory(false);
+    setShowDiff(false);
+    setCompareSelection([]);
+  };
+
   // Resume editing a draft picked from the Drafts list. "Published" here
   // means the draft's record_id actually matches a real doc already loaded
   // in `docs` - that's true for an edit-in-progress on an existing doc, and
@@ -642,7 +830,7 @@ export default function Docs() {
   // still literally null; either way, no real published doc will match it).
   const resumeDraft = (draft) => {
     setEditMode(true);
-    setShowHistory(false);
+    resetHistoryView();
     skipNextAutosaveRef.current = true;
     setDraftStatus('');
     const liveDoc = draft.record_id ? docs.find(d => d.id === draft.record_id) : null;
@@ -979,14 +1167,87 @@ export default function Docs() {
                     {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}>✏️ Edit</button>}
                     {isAdmin && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}>🕐 History</button>}
                     {isAdmin && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
-                    <button style={s.btnSec} onClick={() => { setSelectedDoc(null); setShowHistory(false); }}>×</button>
+                    <button style={s.btnSec} onClick={() => { setSelectedDoc(null); resetHistoryView(); }}>×</button>
                   </div>
                 </div>
                 {showHistory ? (
+                  showDiff ? (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <h3 style={{ fontWeight: 'bold' }}>Comparing Versions</h3>
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          <button style={s.editorTab(diffMode === 'wysiwyg')} onClick={() => setDiffMode('wysiwyg')}>Visual</button>
+                          <button style={s.editorTab(diffMode === 'markdown')} onClick={() => setDiffMode('markdown')}>Markdown</button>
+                          <button style={s.editorTab(diffMode === 'code')} onClick={() => setDiffMode('code')}>HTML</button>
+                        </div>
+                        <button style={s.btnSec} onClick={() => setShowDiff(false)}>← Back to version list</button>
+                      </div>
+                      {(() => {
+                        // compareSelection order isn't chronological (whichever was
+                        // clicked first) - sort so "old"/"new" always means what they say.
+                        const [vA, vB] = compareSelection.map(id => docVersions.find(v => v.id === id)).filter(Boolean);
+                        if (!vA || !vB) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Select two versions to compare.</div>;
+                        const [older, newer] = new Date(vA.created_at) <= new Date(vB.created_at) ? [vA, vB] : [vB, vA];
+                        const oldC = older.content || {}, newC = newer.content || {};
+                        const tagDiff = diffTags(oldC.tags, newC.tags);
+                        return (
+                          <div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
+                              Comparing {new Date(older.created_at).toLocaleString()} → {new Date(newer.created_at).toLocaleString()}
+                            </div>
+                            {oldC.title !== newC.title && (
+                              <div style={{ marginBottom: '0.75rem' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>Title</div>
+                                <div dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.title || '', newC.title || ''))) }} />
+                              </div>
+                            )}
+                            {oldC.slug !== newC.slug && (
+                              <div style={{ marginBottom: '0.75rem' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>Slug</div>
+                                <div style={{ fontFamily: 'monospace', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.slug || '', newC.slug || ''))) }} />
+                              </div>
+                            )}
+                            {oldC.folder !== newC.folder && (
+                              <div style={{ marginBottom: '0.75rem' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>Folder</div>
+                                <div dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.folder || '', newC.folder || ''))) }} />
+                              </div>
+                            )}
+                            {(tagDiff.added.length > 0 || tagDiff.removed.length > 0) && (
+                              <div style={{ marginBottom: '0.75rem' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tags</div>
+                                {tagDiff.removed.map(t => <span key={'del-' + t} className="diff-removed" style={{ marginRight: '0.375rem' }}>{t}</span>)}
+                                {tagDiff.added.map(t => <span key={'add-' + t} className="diff-added" style={{ marginRight: '0.375rem' }}>{t}</span>)}
+                              </div>
+                            )}
+                            <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Content</div>
+                            {diffMode === 'wysiwyg' && (
+                              <div className="doc-content" style={{ lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: renderMarkdownDiff(oldC.content_md || '', newC.content_md || '') }} />
+                            )}
+                            {diffMode === 'markdown' && (
+                              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.85rem', background: '#0f172a', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                                {diffTokens(oldC.content_md || '', newC.content_md || '').map((seg, idx) => (
+                                  <span key={idx} className={seg.type === 'added' ? 'diff-added' : seg.type === 'removed' ? 'diff-removed' : undefined}>{seg.text}</span>
+                                ))}
+                              </pre>
+                            )}
+                            {diffMode === 'code' && (
+                              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', background: '#0f172a', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
+                                {renderMarkdownDiff(oldC.content_md || '', newC.content_md || '')}
+                              </pre>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                       <h3 style={{ fontWeight: 'bold' }}>Version History</h3>
-                      <button style={s.btnSec} onClick={() => setShowHistory(false)}>← Back to document</button>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {compareSelection.length === 2 && <button style={s.btn} onClick={() => setShowDiff(true)}>Compare Selected</button>}
+                        <button style={s.btnSec} onClick={() => resetHistoryView()}>← Back to document</button>
+                      </div>
                     </div>
                     {docVersions.length === 0 ? (
                       <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
@@ -994,13 +1255,23 @@ export default function Docs() {
                       </div>
                     ) : (
                       <div>
+                        {docVersions.length >= 2 && (
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                            Select two versions to compare them ({compareSelection.length}/2 selected)
+                          </div>
+                        )}
                         {docVersions.map((v, i) => {
                           const authorName = v.changed_by ? (versionAuthors[v.changed_by] || 'Loading...') : 'Unknown';
                           const isCurrent = i === 0;
+                          const isSelected = compareSelection.includes(v.id);
                           return (
-                            <div key={v.id} style={{ padding: '0.75rem 1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
+                            <div
+                              key={v.id}
+                              onClick={() => toggleCompareSelection(v.id)}
+                              style={{ padding: '0.75rem 1rem', background: '#0f172a', border: isSelected ? '2px solid #22c55e' : '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}
+                            >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontWeight: '500' }}>{new Date(v.created_at).toLocaleString()}</span>
+                                <span style={{ fontWeight: '500' }}>{isSelected ? '✓ ' : ''}{new Date(v.created_at).toLocaleString()}</span>
                                 {isCurrent && <span style={{ fontSize: '0.7rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Current</span>}
                               </div>
                               <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>by {authorName}</div>
@@ -1010,6 +1281,7 @@ export default function Docs() {
                       </div>
                     )}
                   </div>
+                  )
                 ) : (
                   <div className="doc-content" dangerouslySetInnerHTML={{ __html: selectedDoc.content || '<p>No content yet.</p>' }} style={{ lineHeight: '1.7' }} />
                 )}
@@ -1028,6 +1300,8 @@ export default function Docs() {
       </div>
 
       <style jsx global>{`
+        .diff-added { background: #22c55e33; color: #86efac; text-decoration: none; padding: 0.05em 0.15em; border-radius: 0.15em; }
+        .diff-removed { background: #ef444433; color: #fca5a5; text-decoration: line-through; padding: 0.05em 0.15em; border-radius: 0.15em; }
         .doc-content h1 { font-size: 1.75rem; font-weight: bold; margin: 1.5rem 0 0.75rem 0; color: #fff; }
         .doc-content h2 { font-size: 1.5rem; font-weight: bold; margin: 1.5rem 0 0.75rem 0; color: #fff; }
         .doc-content h3 { font-size: 1.25rem; font-weight: bold; margin: 1.25rem 0 0.5rem 0; color: #fff; }
