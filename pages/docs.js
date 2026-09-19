@@ -605,15 +605,19 @@ export default function Docs() {
         // returned zero rows (silently, no error) and the "Loading..."
         // label in the UI never resolved.
         const idList = missingIds.join(',');
+        // FIX: user_profiles has no email column at all (confirmed against
+        // the live schema) - selecting it made this query fail outright,
+        // which is the real reason names were stuck as 'Unknown'. Only
+        // display_name actually exists here to fall back on.
         const profRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/user_profiles?id=in.(${idList})&select=id,display_name,email`,
+          `${SUPABASE_URL}/rest/v1/user_profiles?id=in.(${idList})&select=id,display_name`,
           { headers: getAuthHeaders(false) }
         );
         const profData = profRes.ok ? await profRes.json() : [];
         setVersionAuthors(prev => {
           const next = { ...prev };
           if (Array.isArray(profData)) {
-            profData.forEach(p => { next[p.id] = p.display_name || p.email?.split('@')[0] || 'Unknown'; });
+            profData.forEach(p => { next[p.id] = p.display_name || 'Unknown'; });
           }
           // FIX: whether or not the lookup found every id, fall back to
           // 'Unknown' for any that are still missing afterward - previously
