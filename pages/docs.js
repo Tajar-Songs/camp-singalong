@@ -324,6 +324,16 @@ export default function Docs() {
   const [docAudienceOptions, setDocAudienceOptions] = useState([]); // option_lists rows, list_key='doc_audiences'
   const [savingOrganize, setSavingOrganize] = useState(false);
 
+  // --- Bulk Organize tab (mirrors Tags' "Manage Tags" / "Apply Tags to
+  // Songs" two-tabs-in-one-page pattern, not a separate route) ---
+  const [pageMode, setPageMode] = useState('browse'); // 'browse' | 'bulkOrganize'
+  const [bulkSelectedIds, setBulkSelectedIds] = useState([]);
+  const [bulkFolder, setBulkFolder] = useState('');
+  const [bulkVisibility, setBulkVisibility] = useState('admin');
+  const [bulkTag, setBulkTag] = useState('');
+  const [bulkAudience, setBulkAudience] = useState('');
+  const [bulkApplying, setBulkApplying] = useState(false);
+
   // --- Draft autosave state (Piece 1 of version history/publishing work) ---
   // A draft is a private, unpublished snapshot of in-progress edits, stored
   // separately from the real doc so it never overwrites published content.
@@ -927,6 +937,94 @@ export default function Docs() {
     setSavingOrganize(false);
   };
 
+  // --- Bulk Organize actions ---
+  // Reuses loadDocs/loadAllDocAudiences (already used everywhere else in
+  // this component) to refresh after a change, rather than duplicating a
+  // separate data-loading path just for this tab.
+  const toggleBulkSelect = (id) => {
+    setBulkSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const bulkSelectAllVisible = () => setBulkSelectedIds(filteredDocs.map(d => d.id));
+  const bulkClearSelection = () => setBulkSelectedIds([]);
+
+  const applyBulkFolder = async () => {
+    if (bulkSelectedIds.length === 0) return;
+    setBulkApplying(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=in.(${bulkSelectedIds.join(',')})`, {
+        method: 'PATCH', headers: getAuthHeaders(),
+        body: JSON.stringify({ folder: bulkFolder.trim() || null })
+      });
+      if (res.ok) { showMessage(`✅ Folder set for ${bulkSelectedIds.length} doc(s)`); await loadDocs(); }
+      else { showMessage('❌ Error setting folder'); }
+    } catch (error) { console.error(error); showMessage('❌ Error setting folder'); }
+    setBulkApplying(false);
+  };
+
+  const applyBulkVisibility = async () => {
+    if (bulkSelectedIds.length === 0) return;
+    setBulkApplying(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=in.(${bulkSelectedIds.join(',')})`, {
+        method: 'PATCH', headers: getAuthHeaders(),
+        body: JSON.stringify({ visibility: bulkVisibility })
+      });
+      if (res.ok) { showMessage(`✅ Visibility set for ${bulkSelectedIds.length} doc(s)`); await loadDocs(); }
+      else { showMessage('❌ Error setting visibility'); }
+    } catch (error) { console.error(error); showMessage('❌ Error setting visibility'); }
+    setBulkApplying(false);
+  };
+
+  // Tags live directly on the docs row as an array, so applying/removing
+  // across many docs means patching each one's array individually - no bulk
+  // array-append operation in PostgREST, so this is N sequential requests.
+  const applyBulkTag = async (add) => {
+    const tag = bulkTag.trim().toLowerCase();
+    if (!tag || bulkSelectedIds.length === 0) return;
+    setBulkApplying(true);
+    try {
+      const targets = docs.filter(d => bulkSelectedIds.includes(d.id));
+      for (const doc of targets) {
+        const current = doc.tags || [];
+        const hasIt = current.includes(tag);
+        if (add && hasIt) continue;
+        if (!add && !hasIt) continue;
+        const nextTags = add ? [...current, tag] : current.filter(t => t !== tag);
+        await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${doc.id}`, {
+          method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ tags: nextTags })
+        });
+      }
+      showMessage(`✅ Tag ${add ? 'applied' : 'removed'} for ${targets.length} doc(s)`);
+      await loadDocs();
+    } catch (error) { console.error(error); showMessage('❌ Error updating tag'); }
+    setBulkApplying(false);
+  };
+
+  const applyBulkAudience = async (add) => {
+    if (!bulkAudience || bulkSelectedIds.length === 0) return;
+    setBulkApplying(true);
+    try {
+      if (add) {
+        // Only insert for docs that don't already have it - avoids violating
+        // the (doc_id, audience_value_key) unique constraint.
+        const toInsert = bulkSelectedIds.filter(id => !(allDocAudiences[id] || []).includes(bulkAudience));
+        if (toInsert.length > 0) {
+          await fetch(`${SUPABASE_URL}/rest/v1/doc_audiences`, {
+            method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+            body: JSON.stringify(toInsert.map(id => ({ doc_id: id, audience_value_key: bulkAudience })))
+          });
+        }
+      } else {
+        await fetch(`${SUPABASE_URL}/rest/v1/doc_audiences?doc_id=in.(${bulkSelectedIds.join(',')})&audience_value_key=eq.${bulkAudience}`, {
+          method: 'DELETE', headers: getAuthHeaders(false)
+        });
+      }
+      showMessage(`✅ Audience ${add ? 'applied' : 'removed'} for ${bulkSelectedIds.length} doc(s)`);
+      await loadAllDocAudiences();
+    } catch (error) { console.error(error); showMessage('❌ Error updating audience'); }
+    setBulkApplying(false);
+  };
+
   // Loads a doc's version history (content_versions), newest first, and
   // resolves display names only for the authors that actually appear -
   // avoids pulling every user profile in the system just to show a few names.
@@ -1200,6 +1298,21 @@ export default function Docs() {
           </div>
         </div>
       )}
+      {/* Top-level tab toggle - mirrors Tags' "Manage Tags" / "Apply Tags to
+          Songs" pattern: two tabs within one page, not separate routes. */}
+      {isAdmin && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem 2rem 0 2rem', display: 'flex', gap: '0.5rem' }}>
+          <button
+            style={{ ...s.btnSec, background: pageMode === 'browse' ? '#22c55e' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
+            onClick={() => setPageMode('browse')}
+          >📚 Browse Docs</button>
+          <button
+            style={{ ...s.btnSec, background: pageMode === 'bulkOrganize' ? '#22c55e' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
+            onClick={() => setPageMode('bulkOrganize')}
+          >🗂 Bulk Organize</button>
+        </div>
+      )}
+      {pageMode === 'browse' && (
       <div style={s.wrapper}>
         {/* Sidebar */}
         <div>
@@ -1604,6 +1717,103 @@ export default function Docs() {
           </div>
         )}
       </div>
+      )}
+
+      {pageMode === 'bulkOrganize' && (
+        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '1.5rem 2rem 2rem 2rem' }}>
+          <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+            Filter to a set of docs, select as many as you need, then apply a folder, visibility, tag, or audience change to all of them at once.
+          </p>
+
+          {/* Reuses the same filter dropdowns/state as the Browse tab - one
+              filtering concept for the whole page, not a separate one here. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
+            <input type="text" placeholder="Search title..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...s.input, marginBottom: 0 }} />
+            <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+              <option value="">All Folders</option>
+              {folders.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <select value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+              <option value="">All Visibility</option>
+              <option value="admin">🔒 Admin Only</option>
+              <option value="user">👤 All Users</option>
+            </select>
+            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+              <option value="">All Tags</option>
+              {allExistingTags.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+              <option value="">All Audiences</option>
+              {docAudienceOptions.map(a => <option key={a.value_key} value={a.value_key}>{a.label}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>{filteredDocs.length} docs shown · {bulkSelectedIds.length} selected</span>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button style={s.btnSec} onClick={bulkSelectAllVisible}>Select all shown</button>
+              <button style={s.btnSec} onClick={bulkClearSelection}>Clear selection</button>
+            </div>
+          </div>
+
+          <div style={{ ...s.card, maxHeight: '40vh', overflowY: 'auto', marginBottom: '1.5rem' }}>
+            {filteredDocs.map(doc => (
+              <div
+                key={doc.id}
+                onClick={() => toggleBulkSelect(doc.id)}
+                style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '0.75rem', background: bulkSelectedIds.includes(doc.id) ? '#22c55e11' : 'transparent', cursor: 'pointer' }}
+              >
+                <input type="checkbox" checked={bulkSelectedIds.includes(doc.id)} onChange={() => toggleBulkSelect(doc.id)} onClick={(e) => e.stopPropagation()} />
+                <span style={{ flex: 1 }}>{doc.title}</span>
+                {doc.folder && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>📁 {doc.folder}</span>}
+              </div>
+            ))}
+            {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No docs match these filters</div>}
+          </div>
+
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>Apply to {bulkSelectedIds.length} selected</h2>
+          <div style={{ opacity: bulkSelectedIds.length === 0 ? 0.5 : 1, pointerEvents: bulkSelectedIds.length === 0 ? 'none' : 'auto' }}>
+            <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Set Folder</div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input type="text" value={bulkFolder} onChange={(e) => setBulkFolder(e.target.value)} placeholder="Folder name (blank = remove)" style={{ ...s.input, flex: 1, marginBottom: 0 }} list="bulk-folders-list" />
+                <datalist id="bulk-folders-list">{folders.map(f => <option key={f} value={f} />)}</datalist>
+                <button style={s.btn} onClick={applyBulkFolder} disabled={bulkApplying}>Apply</button>
+              </div>
+            </div>
+            <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Set Visibility</div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <select value={bulkVisibility} onChange={(e) => setBulkVisibility(e.target.value)} style={{ ...s.select, flex: 1, marginBottom: 0 }}>
+                  <option value="admin">🔒 Admin Only</option>
+                  <option value="user">👤 All Users</option>
+                </select>
+                <button style={s.btn} onClick={applyBulkVisibility} disabled={bulkApplying}>Apply</button>
+              </div>
+            </div>
+            <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Tag</div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input type="text" value={bulkTag} onChange={(e) => setBulkTag(e.target.value)} placeholder="Tag name" style={{ ...s.input, flex: 1, marginBottom: 0 }} list="bulk-tags-list" />
+                <datalist id="bulk-tags-list">{allExistingTags.map(t => <option key={t} value={t} />)}</datalist>
+                <button style={s.btn} onClick={() => applyBulkTag(true)} disabled={bulkApplying}>Add</button>
+                <button style={s.btnSec} onClick={() => applyBulkTag(false)} disabled={bulkApplying}>Remove</button>
+              </div>
+            </div>
+            <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Audience</div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <select value={bulkAudience} onChange={(e) => setBulkAudience(e.target.value)} style={{ ...s.select, flex: 1, marginBottom: 0 }}>
+                  <option value="">Choose an audience...</option>
+                  {docAudienceOptions.map(a => <option key={a.value_key} value={a.value_key}>{a.label}</option>)}
+                </select>
+                <button style={s.btn} onClick={() => applyBulkAudience(true)} disabled={bulkApplying}>Add</button>
+                <button style={s.btnSec} onClick={() => applyBulkAudience(false)} disabled={bulkApplying}>Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx global>{`
         .diff-added { background: #22c55e33; color: #86efac; text-decoration: none; padding: 0.05em 0.15em; border-radius: 0.15em; }
