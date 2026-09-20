@@ -302,10 +302,23 @@ export default function Docs() {
   const [editSlug, setEditSlug] = useState('');
   const [editContentHtml, setEditContentHtml] = useState(''); // HTML content
   const [editContentMd, setEditContentMd] = useState(''); // Markdown content
-  const [editFolder, setEditFolder] = useState('');
-  const [editVisibility, setEditVisibility] = useState('admin');
-  const [editTags, setEditTags] = useState([]);
-  const [tagInput, setTagInput] = useState('');
+
+  // --- Organize panel state (folder/tags/visibility/audience) ---
+  // Pulled out of the content editor entirely - these are organizational
+  // metadata, not content, and are edited/saved independently. For an
+  // existing doc, saving here writes straight to the database immediately
+  // (no draft, no publish step). For a not-yet-published new doc, this same
+  // state just rides along in the autosaved draft (see currentDraftContent)
+  // until first publish applies it for real - there's no live doc row to
+  // write to yet, so there's nothing else it could do in the meantime.
+  const [showOrganize, setShowOrganize] = useState(false);
+  const [orgFolder, setOrgFolder] = useState('');
+  const [orgVisibility, setOrgVisibility] = useState('admin');
+  const [orgTags, setOrgTags] = useState([]);
+  const [orgTagInput, setOrgTagInput] = useState('');
+  const [orgAudienceKeys, setOrgAudienceKeys] = useState([]);
+  const [docAudienceOptions, setDocAudienceOptions] = useState([]); // option_lists rows, list_key='doc_audiences'
+  const [savingOrganize, setSavingOrganize] = useState(false);
 
   // --- Draft autosave state (Piece 1 of version history/publishing work) ---
   // A draft is a private, unpublished snapshot of in-progress edits, stored
@@ -345,7 +358,7 @@ export default function Docs() {
     return headers;
   };
 
-  useEffect(() => { checkAuth(); loadDocs(); }, []);
+  useEffect(() => { checkAuth(); loadDocs(); loadAudienceOptions(); }, []);
   useEffect(() => { if (user) loadDocs(); }, [user, userRoleKeys]); // Reload when roles are known, to get admin-only docs
   useEffect(() => { if (currentUserId) loadUserDrafts(); }, [currentUserId]); // populate the Drafts count badge as soon as we know who's logged in
 
@@ -446,9 +459,6 @@ export default function Docs() {
       setEditContentMd(htmlToMarkdown(doc.content || ''));
     }
     setEditorMode('wysiwyg');
-    setEditFolder(doc.folder || '');
-    setEditVisibility(doc.visibility || 'admin');
-    setEditTags(doc.tags || []);
     setDraftStatus('');
 
     // Check for a newer unpublished draft than what's actually live, and
@@ -486,17 +496,20 @@ export default function Docs() {
     setEditSlug('');
     setEditContentHtml('');
     setEditContentMd('');
-    setEditFolder('');
-    setEditVisibility('admin');
-    setEditTags([]);
     setEditorMode('wysiwyg');
     setDraftStatus('');
+    // Org fields for THIS new doc reset to defaults too - a fresh "+ New"
+    // starts a genuinely blank doc in every respect, not just its content.
+    setOrgFolder('');
+    setOrgVisibility('admin');
+    setOrgTags([]);
+    setOrgAudienceKeys([]);
   };
 
   const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); setDraftStatus(''); };
   const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); resetHistoryView(); };
-  const addTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !editTags.includes(t)) setEditTags([...editTags, t]); setTagInput(''); };
-  const removeTag = (tag) => { setEditTags(editTags.filter(t => t !== tag)); };
+  const addOrgTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !orgTags.includes(t)) setOrgTags([...orgTags, t]); setOrgTagInput(''); };
+  const removeOrgTag = (tag) => { setOrgTags(orgTags.filter(t => t !== tag)); };
 
   // Sync content when switching modes
   const switchEditorMode = (newMode) => {
@@ -556,19 +569,29 @@ export default function Docs() {
     
     setSaving(true);
     try {
+      // NOTE: folder/visibility/tags are deliberately NOT part of this
+      // shared payload anymore - they're pure organization, not content
+      // (see the Organize panel). For an existing doc they're saved
+      // separately and immediately, never touched by publishing. For a
+      // brand-new doc there's no live row yet for Organize to write to, so
+      // the current org* state (already captured in the draft) is included
+      // just this once, at creation time, below.
       const docData = {
         title: editTitle.trim(),
         slug: editSlug.trim(),
         content_md: finalMd,
         content: finalHtml,
-        visibility: editVisibility,
-        folder: editFolder.trim() || null,
-        tags: editTags,
         updated_at: new Date().toISOString(),
         updated_by: userProfile?.display_name || user?.email || 'unknown'
       };
       if (isCreatingNew) {
         docData.created_by = userProfile?.display_name || user?.email || 'unknown';
+        // Org fields included here ONLY because this is the one moment a new
+        // doc's organization becomes real - it has never had a live row to
+        // save directly to before now.
+        docData.folder = orgFolder.trim() || null;
+        docData.visibility = orgVisibility;
+        docData.tags = orgTags;
         const res = await fetch(`${SUPABASE_URL}/rest/v1/docs`, {
           method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' }, body: JSON.stringify(docData)
         });
@@ -577,14 +600,24 @@ export default function Docs() {
           const newDoc = created[0];
           // First publish of a new doc = version 1. No prior version to
           // compare against, but recorded the same way for consistency.
+          // Content only - folder/tags/visibility are organization, not
+          // content, and aren't part of version history at all anymore.
           if (newDoc) {
             await fetch(`${SUPABASE_URL}/rest/v1/content_versions`, {
               method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
               body: JSON.stringify({
                 table_name: 'docs', record_id: newDoc.id, changed_by: currentUserId,
-                content: { title: newDoc.title, slug: newDoc.slug, content: newDoc.content, content_md: newDoc.content_md, folder: newDoc.folder, tags: newDoc.tags }
+                content: { title: newDoc.title, slug: newDoc.slug, content: newDoc.content, content_md: newDoc.content_md }
               })
             });
+            // Apply the audience selection captured during drafting, now
+            // that a real doc_id finally exists to attach it to.
+            if (orgAudienceKeys.length > 0) {
+              await fetch(`${SUPABASE_URL}/rest/v1/doc_audiences`, {
+                method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+                body: JSON.stringify(orgAudienceKeys.map(k => ({ doc_id: newDoc.id, audience_value_key: k })))
+              });
+            }
           }
           await clearDraft(pendingNewDocIdRef.current); // clears the pending-id draft now that it's really published
           pendingNewDocIdRef.current = null;
@@ -594,9 +627,8 @@ export default function Docs() {
         } else { const error = await res.json(); showMessage(`❌ Error: ${error.message || 'Could not create'}`); }
       } else {
         // Only create a new version if a field that actually counts as
-        // "meaningful content" changed (title/slug/content/content_md) -
-        // folder/tags/visibility changing alone does not trigger a version,
-        // per the platform's Content Versioning design.
+        // "meaningful content" changed - folder/tags/visibility are pure
+        // organization now and were never part of this check to begin with.
         const meaningfulChange =
           selectedDoc.title !== docData.title ||
           selectedDoc.slug !== docData.slug ||
@@ -612,7 +644,7 @@ export default function Docs() {
               method: 'POST', headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
               body: JSON.stringify({
                 table_name: 'docs', record_id: selectedDoc.id, changed_by: currentUserId,
-                content: { title: docData.title, slug: docData.slug, content: docData.content, content_md: docData.content_md, folder: docData.folder, tags: docData.tags }
+                content: { title: docData.title, slug: docData.slug, content: docData.content, content_md: docData.content_md }
               })
             });
           }
@@ -629,17 +661,17 @@ export default function Docs() {
   // Drafts capture everything being edited (not just the fields that trigger
   // a real version) - the goal here is "don't lose my in-progress work,"
   // which is a broader concern than "what counts as a meaningful content
-  // change" (see content_versions, which only captures title/slug/content/
-  // content_md - drafts capture folder/tags/visibility too since losing
-  // those mid-edit would still be a real loss of work).
+  // change". Org fields (folder/tags/visibility/audience) are only included
+  // here for a NOT-YET-PUBLISHED new doc - once a doc is published,
+  // organization is saved directly and immediately via the Organize panel,
+  // independent of the draft/publish content cycle entirely, so there's
+  // nothing useful to capture here for an existing doc's draft.
   const currentDraftContent = () => ({
     title: editTitle,
     slug: editSlug,
     content: editorMode === 'wysiwyg' && editorRef.current ? editorRef.current.innerHTML : editContentHtml,
     content_md: editContentMd,
-    folder: editFolder,
-    visibility: editVisibility,
-    tags: editTags
+    ...(isCreatingNew ? { folder: orgFolder, visibility: orgVisibility, tags: orgTags, audienceKeys: orgAudienceKeys } : {})
   });
 
   const saveDraft = async () => {
@@ -719,7 +751,8 @@ export default function Docs() {
     }
   };
 
-  // Apply a draft's saved content into the editor's live state.
+  // Apply a draft's saved content into the editor's live state. Content
+  // only - org fields (for a new doc) are restored separately in resumeDraft.
   const applyDraft = (draft) => {
     skipNextAutosaveRef.current = true;
     const c = draft.content || {};
@@ -727,9 +760,6 @@ export default function Docs() {
     setEditSlug(c.slug || '');
     setEditContentHtml(c.content || '');
     setEditContentMd(c.content_md || '');
-    setEditFolder(c.folder || '');
-    setEditVisibility(c.visibility || 'admin');
-    setEditTags(c.tags || []);
   };
 
   // Loads every draft the current user owns for docs (across ALL records,
@@ -746,6 +776,101 @@ export default function Docs() {
     } catch (error) {
       console.error('Error loading drafts list:', error);
     }
+  };
+
+  // --- Organize panel functions ---
+  const loadAudienceOptions = async () => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/option_lists?list_key=eq.doc_audiences&select=*&order=display_order.asc`,
+        { headers: getAuthHeaders(false) }
+      );
+      const data = await res.json();
+      setDocAudienceOptions(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error loading audience options:', error);
+    }
+  };
+
+  const loadDocAudiencesFor = async (docId) => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/doc_audiences?doc_id=eq.${docId}&select=audience_value_key`,
+        { headers: getAuthHeaders(false) }
+      );
+      const data = await res.json();
+      return Array.isArray(data) ? data.map(r => r.audience_value_key) : [];
+    } catch (error) {
+      console.error('Error loading doc audiences:', error);
+      return [];
+    }
+  };
+
+  // Opens the panel. For an existing, already-published doc, always loads
+  // fresh values from the live doc + doc_audiences (so it reflects reality,
+  // not stale local state). For a not-yet-published new doc, deliberately
+  // does NOT reset - org* state is already the working draft for this
+  // in-progress doc, carried since startCreate or restored by resumeDraft.
+  const openOrganize = async () => {
+    if (!isCreatingNew && selectedDoc) {
+      setOrgFolder(selectedDoc.folder || '');
+      setOrgVisibility(selectedDoc.visibility || 'admin');
+      setOrgTags(selectedDoc.tags || []);
+      const audienceKeys = await loadDocAudiencesFor(selectedDoc.id);
+      setOrgAudienceKeys(audienceKeys);
+    }
+    setShowOrganize(true);
+  };
+
+  // Saves the panel's values. For an existing doc: writes directly to the
+  // database immediately (folder/visibility/tags on the docs row, plus
+  // reconciling doc_audiences to match the selection) - organization is no
+  // longer tied to the content draft/publish cycle at all. For a new,
+  // unpublished doc: there's no live row yet, so this just closes the panel
+  // - the values are already captured in org* state and will ride along in
+  // the next autosave (see currentDraftContent) and get applied for real
+  // when the doc is actually published.
+  const saveOrganize = async () => {
+    if (isCreatingNew || !selectedDoc) { setShowOrganize(false); return; }
+    setSavingOrganize(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
+        method: 'PATCH',
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ folder: orgFolder.trim() || null, visibility: orgVisibility, tags: orgTags })
+      });
+      if (!res.ok) { showMessage('❌ Error saving organization'); setSavingOrganize(false); return; }
+
+      // Reconcile doc_audiences: delete rows no longer selected, insert rows
+      // newly selected. Simpler and safer than trying to diff precisely,
+      // given the small scale (a handful of audience values at most).
+      const currentKeys = await loadDocAudiencesFor(selectedDoc.id);
+      const toRemove = currentKeys.filter(k => !orgAudienceKeys.includes(k));
+      const toAdd = orgAudienceKeys.filter(k => !currentKeys.includes(k));
+      if (toRemove.length > 0) {
+        const keyList = toRemove.map(k => `"${k}"`).join(',');
+        await fetch(`${SUPABASE_URL}/rest/v1/doc_audiences?doc_id=eq.${selectedDoc.id}&audience_value_key=in.(${keyList})`, {
+          method: 'DELETE', headers: getAuthHeaders(false)
+        });
+      }
+      if (toAdd.length > 0) {
+        await fetch(`${SUPABASE_URL}/rest/v1/doc_audiences`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify(toAdd.map(k => ({ doc_id: selectedDoc.id, audience_value_key: k })))
+        });
+      }
+
+      const updatedDoc = { ...selectedDoc, folder: orgFolder.trim() || null, visibility: orgVisibility, tags: orgTags };
+      setSelectedDoc(updatedDoc);
+      await loadDocs();
+      showMessage('✅ Organization saved');
+      setShowOrganize(false);
+    } catch (error) {
+      console.error('Error saving organization:', error);
+      showMessage('❌ Error saving organization');
+    }
+    setSavingOrganize(false);
   };
 
   // Loads a doc's version history (content_versions), newest first, and
@@ -843,6 +968,14 @@ export default function Docs() {
       setSelectedDoc(null);
       setIsCreatingNew(true);
       pendingNewDocIdRef.current = draft.record_id || crypto.randomUUID();
+      // Org fields only ever got captured in the draft for this exact case
+      // (see currentDraftContent) - restore them here too, so a resumed
+      // new-doc draft doesn't lose organization the person already set.
+      const c = draft.content || {};
+      setOrgFolder(c.folder || '');
+      setOrgVisibility(c.visibility || 'admin');
+      setOrgTags(c.tags || []);
+      setOrgAudienceKeys(c.audienceKeys || []);
     }
     setEditorMode('wysiwyg');
     applyDraft(draft);
@@ -861,7 +994,7 @@ export default function Docs() {
     autosaveTimerRef.current = setTimeout(() => { saveDraft(); }, 4000);
     return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editTitle, editSlug, editContentMd, editContentHtml, editFolder, editVisibility, editTags]);
+  }, [editTitle, editSlug, editContentMd, editContentHtml, orgFolder, orgVisibility, orgTags, orgAudienceKeys]);
 
   const deleteDoc = async () => {
     if (!confirm(`Delete "${selectedDoc.title}"?`)) return;
@@ -874,8 +1007,28 @@ export default function Docs() {
     } catch (error) { showMessage('❌ Error deleting'); }
   };
 
+  // Discards the in-progress DRAFT only - never touches the published doc.
+  // Distinct from Cancel (which just exits editing but leaves the autosaved
+  // draft intact for next time) - Discard is the destructive, confirm-gated
+  // action that actually deletes it.
+  const discardDraft = async () => {
+    if (!confirm('Discard this draft? Any unsaved changes will be permanently lost.')) return;
+    const recordId = isCreatingNew ? pendingNewDocIdRef.current : (selectedDoc?.id || null);
+    await clearDraft(recordId);
+    if (isCreatingNew) {
+      setEditMode(false);
+      setIsCreatingNew(false);
+    } else {
+      cancelEdit();
+    }
+  };
+
   const s = {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
+    // Full-screen dim backdrop; clicking it closes the panel (stopPropagation
+    // on the panel itself prevents clicks inside from bubbling up and closing it).
+    organizeOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' },
+    organizePanel: { background: '#1e293b', border: '1px solid #334155', borderRadius: '0.75rem', padding: '1.5rem', width: '100%', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto' },
     wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '2rem', display: 'grid', gridTemplateColumns: selectedDoc || isCreatingNew ? '280px 1fr' : '1fr', gap: '2rem' },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' },
     title: { fontSize: '1.5rem', fontWeight: 'bold' },
@@ -924,6 +1077,75 @@ export default function Docs() {
   return (
     <div style={s.container}>
       {message && <div style={s.message}>{message}</div>}
+      {showOrganize && (
+        <div style={s.organizeOverlay} onClick={() => setShowOrganize(false)}>
+          <div style={s.organizePanel} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>🗂 Organize</h3>
+              <button style={s.btnSec} onClick={() => setShowOrganize(false)}>×</button>
+            </div>
+            {isCreatingNew && (
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '1rem' }}>
+                This doc has not been published yet - these settings are saved once you Save &amp; Publish.
+              </div>
+            )}
+            <div style={s.formGroup}>
+              <label style={s.label}>Folder</label>
+              <input type="text" value={orgFolder} onChange={(e) => setOrgFolder(e.target.value)} style={{ ...s.input, marginBottom: 0 }} placeholder="e.g. Getting Started" list="doc-folders-list" />
+              <datalist id="doc-folders-list">{folders.map(f => <option key={f} value={f} />)}</datalist>
+            </div>
+            <div style={s.formGroup}>
+              <label style={s.label}>Visibility</label>
+              <select value={orgVisibility} onChange={(e) => setOrgVisibility(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+                <option value="admin">🔒 Admin Only</option>
+                <option value="user">👤 All Users</option>
+              </select>
+            </div>
+            <div style={s.formGroup}>
+              <label style={s.label}>Audience</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                {docAudienceOptions.map(opt => {
+                  const isSelected = orgAudienceKeys.includes(opt.value_key);
+                  return (
+                    <button
+                      key={opt.value_key}
+                      type="button"
+                      onClick={() => setOrgAudienceKeys(prev => isSelected ? prev.filter(k => k !== opt.value_key) : [...prev, opt.value_key])}
+                      style={{
+                        padding: '0.3rem 0.6rem', borderRadius: '1rem', fontSize: '0.75rem', cursor: 'pointer',
+                        border: isSelected ? '2px solid #22c55e' : '1px solid #334155',
+                        background: isSelected ? '#22c55e20' : '#1e293b',
+                        color: isSelected ? '#22c55e' : '#94a3b8'
+                      }}
+                    >{isSelected ? '✓ ' : ''}{opt.label}</button>
+                  );
+                })}
+                {docAudienceOptions.length === 0 && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>No audience options configured yet.</div>}
+              </div>
+            </div>
+            <div style={s.formGroup}>
+              <label style={s.label}>Tags</label>
+              <div style={{ marginBottom: '0.5rem' }}>
+                {orgTags.map(tag => <span key={tag} style={s.tag}>{tag}<button style={s.tagRemove} onClick={() => removeOrgTag(tag)}>×</button></span>)}
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <input type="text" value={orgTagInput} onChange={(e) => setOrgTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOrgTag(orgTagInput); } }} style={{ ...s.input, marginBottom: 0, flex: 1 }} placeholder="Add tag and press Enter" />
+                <button style={s.btnSmall} onClick={() => addOrgTag(orgTagInput)}>Add</button>
+              </div>
+              {allExistingTags.filter(t => !orgTags.includes(t)).length > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>Existing tags:</div>
+                  <div>{allExistingTags.filter(t => !orgTags.includes(t)).map(tag => <button key={tag} style={s.existingTag} onClick={() => addOrgTag(tag)}>{tag}</button>)}</div>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #334155' }}>
+              <button style={s.btn} onClick={saveOrganize} disabled={savingOrganize}>{savingOrganize ? 'Saving...' : (isCreatingNew ? 'Done' : 'Save')}</button>
+              <button style={s.btnSec} onClick={() => setShowOrganize(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={s.wrapper}>
         {/* Sidebar */}
         <div>
@@ -1024,7 +1246,14 @@ export default function Docs() {
                     <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save'}</button>
                     <button style={s.btn} onClick={savePublish} disabled={saving}>{saving ? 'Publishing...' : 'Save & Publish'}</button>
                     <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
-                    {!isCreatingNew && <button style={s.btnDanger} onClick={deleteDoc}>Delete</button>}
+                    {/* Available while editing (including a brand-new, not-yet-
+                        published doc) so organization can be set from the very
+                        start, without a separate trip after publishing. */}
+                    <button style={s.btnSec} onClick={openOrganize}>🗂 Organize</button>
+                    {/* Discard replaces the old Delete here - this only ever
+                        removes the in-progress DRAFT, never the published doc
+                        itself. Real deletion lives in view mode now (see below). */}
+                    <button style={s.btnDanger} onClick={discardDraft}>Discard</button>
                     {/* "+ New" while already editing/viewing a doc - previously only
                         available from the sidebar or the view-mode header, not from
                         inside the editor itself. */}
@@ -1045,39 +1274,10 @@ export default function Docs() {
                   </div>
                 </div>
 
-                {/* Folder & Visibility */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div style={s.formGroup}>
-                    <label style={s.label}>Folder</label>
-                    <input type="text" value={editFolder} onChange={(e) => setEditFolder(e.target.value)} style={{ ...s.input, marginBottom: 0 }} placeholder="e.g. Getting Started" list="doc-folders-list" />
-                    <datalist id="doc-folders-list">{folders.map(f => <option key={f} value={f} />)}</datalist>
-                  </div>
-                  <div style={s.formGroup}>
-                    <label style={s.label}>Visibility</label>
-                    <select value={editVisibility} onChange={(e) => setEditVisibility(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-                      <option value="admin">🔒 Admin Only</option>
-                      <option value="user">👤 All Users</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Tags */}
-                <div style={s.formGroup}>
-                  <label style={s.label}>Tags</label>
-                  <div style={{ marginBottom: '0.5rem' }}>
-                    {editTags.map(tag => <span key={tag} style={s.tag}>{tag}<button style={s.tagRemove} onClick={() => removeTag(tag)}>×</button></span>)}
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <input type="text" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} style={{ ...s.input, marginBottom: 0, flex: 1 }} placeholder="Add tag and press Enter" />
-                    <button style={s.btnSmall} onClick={() => addTag(tagInput)}>Add</button>
-                  </div>
-                  {allExistingTags.filter(t => !editTags.includes(t)).length > 0 && (
-                    <div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>Existing tags:</div>
-                      <div>{allExistingTags.filter(t => !editTags.includes(t)).map(tag => <button key={tag} style={s.existingTag} onClick={() => addTag(tag)}>{tag}</button>)}</div>
-                    </div>
-                  )}
-                </div>
+                {/* Folder, Visibility, Tags, and Audience moved out of editing
+                    entirely - see the Organize panel (button in the toolbar
+                    above), reachable during editing without leaving the
+                    content form. */}
 
                 {/* Content Editor */}
                 <div style={s.formGroup}>
@@ -1166,7 +1366,12 @@ export default function Docs() {
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}>✏️ Edit</button>}
                     {isAdmin && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}>🕐 History</button>}
+                    {isAdmin && <button style={s.btnSec} onClick={openOrganize}>🗂 Organize</button>}
                     {isAdmin && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
+                    {/* Real deletion, moved here from the editor toolbar - it now
+                        only ever appears alongside an already-published doc, never
+                        implied to be "just discard my edits" the way it read before. */}
+                    {isAdmin && <button style={s.btnDanger} onClick={deleteDoc}>🗑 Delete</button>}
                     <button style={s.btnSec} onClick={() => { setSelectedDoc(null); resetHistoryView(); }}>×</button>
                   </div>
                 </div>
@@ -1205,7 +1410,6 @@ export default function Docs() {
                         if (!vA || !vB) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Select two versions to compare.</div>;
                         const [older, newer] = new Date(vA.created_at) <= new Date(vB.created_at) ? [vA, vB] : [vB, vA];
                         const oldC = older.content || {}, newC = newer.content || {};
-                        const tagDiff = diffTags(oldC.tags, newC.tags);
                         return (
                           <div>
                             <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
@@ -1223,19 +1427,9 @@ export default function Docs() {
                                 <div style={{ fontFamily: 'monospace', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.slug || '', newC.slug || ''))) }} />
                               </div>
                             )}
-                            {oldC.folder !== newC.folder && (
-                              <div style={{ marginBottom: '0.75rem' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>Folder</div>
-                                <div dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.folder || '', newC.folder || ''))) }} />
-                              </div>
-                            )}
-                            {(tagDiff.added.length > 0 || tagDiff.removed.length > 0) && (
-                              <div style={{ marginBottom: '0.75rem' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tags</div>
-                                {tagDiff.removed.map(t => <span key={'del-' + t} className="diff-removed" style={{ marginRight: '0.375rem' }}>{t}</span>)}
-                                {tagDiff.added.map(t => <span key={'add-' + t} className="diff-added" style={{ marginRight: '0.375rem' }}>{t}</span>)}
-                              </div>
-                            )}
+                            {/* Folder/Tags/Visibility deliberately not diffed here anymore -
+                                they're pure organization now (see the Organize panel),
+                                not content, and aren't captured in version snapshots at all. */}
                             <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Content</div>
                             {diffMode === 'wysiwyg' && (
                               <div className="doc-content" style={{ lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: renderMarkdownDiff(oldC.content_md || '', newC.content_md || '') }} />
@@ -1291,7 +1485,7 @@ export default function Docs() {
                       })()}
                       {docVersions.length === 0 ? (
                         <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-                          No saved version history yet - this doc hasn't been saved & published since version tracking was added, or has never been edited.
+                          No saved version history yet - this doc has not been saved & published since version tracking was added, or has never been edited.
                         </div>
                       ) : (
                         docVersions.map((v, i) => {
