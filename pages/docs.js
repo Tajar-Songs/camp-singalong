@@ -291,6 +291,10 @@ export default function Docs() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [folderFilter, setFolderFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState('');
+  const [audienceFilter, setAudienceFilter] = useState('');
+  const [allDocAudiences, setAllDocAudiences] = useState({}); // doc_id -> [audience_value_key, ...], for ALL docs at once
   
   const [editMode, setEditMode] = useState(false);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -358,7 +362,7 @@ export default function Docs() {
     return headers;
   };
 
-  useEffect(() => { checkAuth(); loadDocs(); loadAudienceOptions(); }, []);
+  useEffect(() => { checkAuth(); loadDocs(); loadAudienceOptions(); loadAllDocAudiences(); }, []);
   useEffect(() => { if (user) loadDocs(); }, [user, userRoleKeys]); // Reload when roles are known, to get admin-only docs
   useEffect(() => { if (currentUserId) loadUserDrafts(); }, [currentUserId]); // populate the Drafts count badge as soon as we know who's logged in
 
@@ -417,8 +421,20 @@ export default function Docs() {
     return [...tagSet].sort();
   }, [docs]);
 
+  // Shared filter-matching, used both for the Published list (against each
+  // doc's real fields + allDocAudiences) and the Drafts list (against either
+  // the parent published doc's fields, for an edit-in-progress, or the
+  // draft's own captured org fields, for a still-unpublished new doc).
+  const matchesOrgFilters = ({ folder, visibility, tags, audienceKeys }) => {
+    if (folderFilter && folder !== folderFilter) return false;
+    if (visibilityFilter && visibility !== visibilityFilter) return false;
+    if (tagFilter && !(tags || []).includes(tagFilter)) return false;
+    if (audienceFilter && !(audienceKeys || []).includes(audienceFilter)) return false;
+    return true;
+  };
+
   const filteredDocs = docs.filter(doc => {
-    if (folderFilter && doc.folder !== folderFilter) return false;
+    if (!matchesOrgFilters({ folder: doc.folder, visibility: doc.visibility, tags: doc.tags, audienceKeys: allDocAudiences[doc.id] })) return false;
     if (search) {
       const s = search.toLowerCase();
       const matchTitle = doc.title?.toLowerCase().includes(s);
@@ -427,6 +443,20 @@ export default function Docs() {
       if (!matchTitle && !matchContent && !matchTags) return false;
     }
     return true;
+  });
+
+  // A draft "matches" the active filters based on whichever doc it actually
+  // belongs to: the real published doc, for an edit-in-progress (org fields
+  // are no longer part of the draft itself in that case - see Stage 2); or
+  // the draft's own captured org fields, for a still-unpublished new doc
+  // (which has no real doc row for its organization to live on yet).
+  const filteredDrafts = userDrafts.filter(draft => {
+    const liveDoc = draft.record_id ? docs.find(d => d.id === draft.record_id) : null;
+    if (liveDoc) {
+      return matchesOrgFilters({ folder: liveDoc.folder, visibility: liveDoc.visibility, tags: liveDoc.tags, audienceKeys: allDocAudiences[liveDoc.id] });
+    }
+    const c = draft.content || {};
+    return matchesOrgFilters({ folder: c.folder, visibility: c.visibility, tags: c.tags, audienceKeys: c.audienceKeys });
   });
 
   const docsByFolder = {};
@@ -623,6 +653,7 @@ export default function Docs() {
           pendingNewDocIdRef.current = null;
           showMessage('✅ Document created!');
           await loadDocs();
+          await loadAllDocAudiences();
           if (newDoc) { setSelectedDoc(newDoc); setIsCreatingNew(false); setEditMode(false); }
         } else { const error = await res.json(); showMessage(`❌ Error: ${error.message || 'Could not create'}`); }
       } else {
@@ -792,6 +823,28 @@ export default function Docs() {
     }
   };
 
+  // Loads every doc's audience assignment at once (doc_id -> [keys]) - used
+  // for filtering, where checking N docs one at a time would mean N queries.
+  const loadAllDocAudiences = async () => {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/doc_audiences?select=doc_id,audience_value_key`,
+        { headers: getAuthHeaders(false) }
+      );
+      const data = await res.json();
+      const map = {};
+      if (Array.isArray(data)) {
+        data.forEach(row => {
+          if (!map[row.doc_id]) map[row.doc_id] = [];
+          map[row.doc_id].push(row.audience_value_key);
+        });
+      }
+      setAllDocAudiences(map);
+    } catch (error) {
+      console.error('Error loading all doc audiences:', error);
+    }
+  };
+
   const loadDocAudiencesFor = async (docId) => {
     try {
       const res = await fetch(
@@ -864,6 +917,7 @@ export default function Docs() {
       const updatedDoc = { ...selectedDoc, folder: orgFolder.trim() || null, visibility: orgVisibility, tags: orgTags };
       setSelectedDoc(updatedDoc);
       await loadDocs();
+      await loadAllDocAudiences(); // so audience filtering reflects this change immediately
       showMessage('✅ Organization saved');
       setShowOrganize(false);
     } catch (error) {
@@ -1154,30 +1208,51 @@ export default function Docs() {
             {isAdmin && !editMode && <button style={s.btn} onClick={startCreate}>+ New</button>}
           </div>
           {/* Published / Drafts toggle - reuses the same list styling below,
-              just swaps the data source, rather than building a separate UI. */}
+              just swaps the data source, rather than building a separate UI.
+              Counts reflect the currently active filters below, not totals. */}
           {isAdmin && (
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <button
                 style={{ ...s.btnSec, flex: 1, background: !showDrafts ? '#22c55e' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
                 onClick={() => setShowDrafts(false)}
-              >Published{docs.length > 0 ? ` (${docs.length})` : ''}</button>
+              >Published{filteredDocs.length > 0 ? ` (${filteredDocs.length})` : ''}</button>
               <button
                 style={{ ...s.btnSec, flex: 1, background: showDrafts ? '#22c55e' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
                 onClick={() => { setShowDrafts(true); loadUserDrafts(); }}
-              >Drafts{userDrafts.length > 0 ? ` (${userDrafts.length})` : ''}</button>
+              >Drafts{filteredDrafts.length > 0 ? ` (${filteredDrafts.length})` : ''}</button>
             </div>
           )}
           {!showDrafts && (
-            <>
-              <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={s.input} />
-              {folders.length > 0 && (
-                <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={s.select}>
-                  <option value="">All Folders</option>
-                  {folders.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              )}
-            </>
+            <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={s.input} />
           )}
+          {/* Filters apply to both Published and Drafts (a draft "matches" via
+              its parent doc's org fields, or its own if not yet published -
+              see matchesOrgFilters/filteredDrafts). */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            {folders.length > 0 && (
+              <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+                <option value="">All Folders</option>
+                {folders.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            )}
+            <select value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+              <option value="">All Visibility</option>
+              <option value="admin">🔒 Admin Only</option>
+              <option value="user">👤 All Users</option>
+            </select>
+            {allExistingTags.length > 0 && (
+              <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+                <option value="">All Tags</option>
+                {allExistingTags.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
+            {docAudienceOptions.length > 0 && (
+              <select value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+                <option value="">All Audiences</option>
+                {docAudienceOptions.map(a => <option key={a.value_key} value={a.value_key}>{a.label}</option>)}
+              </select>
+            )}
+          </div>
           <div style={s.card}>
             <div style={s.docList}>
               {!showDrafts ? (
@@ -1201,7 +1276,7 @@ export default function Docs() {
                 </>
               ) : (
                 <>
-                  {userDrafts.map(draft => {
+                  {filteredDrafts.map(draft => {
                     const label = draft.content?.title?.trim() || 'Untitled draft';
                     const isNewDoc = !docs.find(d => d.id === draft.record_id);
                     return (
@@ -1225,7 +1300,7 @@ export default function Docs() {
                       </div>
                     );
                   })}
-                  {userDrafts.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No drafts</div>}
+                  {filteredDrafts.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>{userDrafts.length === 0 ? 'No drafts' : 'No drafts match the current filters'}</div>}
                 </>
               )}
             </div>
