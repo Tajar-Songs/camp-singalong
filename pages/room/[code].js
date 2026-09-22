@@ -1417,7 +1417,7 @@ if (view === 'display' && showLyrics && currentSong) {
         {/* Desktop/TV Layout - two columns with sidebar */}
         <div className="hidden xl:flex min-h-screen">
           {/* Left Sidebar - Controls & Options */}
-          <div className="w-72 tv:w-80 shrink-0 p-4 tv:p-6 flex flex-col border-r border-white/10">
+          <div className="w-80 tv:w-96 shrink-0 p-4 tv:p-6 flex flex-col border-r border-white/10">
             {/* Room Code */}
             <div className="bg-white/10 p-4 tv:p-6 rounded-xl border border-white/10 mb-4">
               <div className="text-xs tv:text-sm uppercase font-bold opacity-60 mb-1">Room Code</div>
@@ -1443,14 +1443,21 @@ if (view === 'display' && showLyrics && currentSong) {
             )}
 
             {/* Now Singing - title & page, moved here from the main content
-                area to free up vertical space there for lyrics and Up Next */}
+                area to free up vertical space there for lyrics and Up Next.
+                Given the moonlight glow treatment from the style guide -
+                this is exactly the kind of rare, special callout it's meant
+                for, and it needed to stand out more than flat sidebar text. */}
             {currentSong && (
-              <div className="mb-4">
-                <div className="text-[10px] tv:text-xs uppercase font-bold opacity-40 mb-1">Now Singing</div>
-                <div className="text-lg tv:text-2xl font-black leading-tight mb-1">
+              <div
+                className="mb-5 p-3 rounded-xl relative"
+                style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 16px rgba(226,232,245,0.35)' }}
+              >
+                <span style={{ fontSize: '12px', position: 'absolute', top: '-6px', right: '2px' }} aria-hidden="true">✨</span>
+                <div className="text-xs tv:text-sm uppercase font-bold opacity-60 mb-2" style={{ color: '#E2E8F5' }}>Now Singing</div>
+                <div className="text-xl tv:text-3xl font-black leading-tight mb-2" style={{ color: '#E2E8F5' }}>
                   {currentSong.title} {currentSong.has_lyrics && '📄'}
                 </div>
-                <div className="text-sm tv:text-lg text-green-400 font-bold">
+                <div className="text-base tv:text-xl text-green-400 font-bold">
                   Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
                 </div>
               </div>
