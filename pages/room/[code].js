@@ -1248,7 +1248,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {/* Lyrics */}
             <div className="text-center mb-8">
               {currentSong.lyrics_text ? (
-                <div className="text-2xl tv:text-4xl leading-relaxed whitespace-pre-wrap text-left columns-1 tv:columns-2 gap-8 tv:gap-12">
+                <div className="text-2xl tv:text-4xl leading-relaxed whitespace-pre-wrap text-left columns-2 gap-8 tv:gap-12">
                   {currentSong.lyrics_text}
                 </div>
               ) : (
@@ -1552,7 +1552,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           that's an acceptable, deliberate tradeoff rather
                           than trying to force every song's full lyrics to
                           always be visible. */}
-                      <div className="mt-8 text-2xl tv:text-4xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap columns-1 tv:columns-2 gap-8 tv:gap-12">
+                      <div className="mt-8 text-2xl tv:text-4xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap columns-2 gap-8 tv:gap-12">
                         {currentSong.lyrics_text}
                       </div>
                       {/* Year written */}
