@@ -292,10 +292,23 @@ export default function Docs() {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [folderFilter, setFolderFilter] = useState('');
-  const [tagFilter, setTagFilter] = useState('');
-  const [visibilityFilter, setVisibilityFilter] = useState('');
-  const [audienceFilter, setAudienceFilter] = useState('');
+  // Filter state, rebuilt to actually match the documented Filtering pattern:
+  // - Folder/Visibility are single-valued per doc, so multi-select only ever
+  //   means "any of these" - no any/all toggle needed, matching the pattern's
+  //   own logic (a toggle only makes sense when an ITEM can hold multiple
+  //   values for that dimension).
+  // - Tags and Audience are genuinely multi-valued per doc (a doc can have
+  //   several tags, several audiences), so they get a real any/all toggle.
+  // - Tags gets typeahead + chips (option count can grow large over time);
+  //   Audience stays checkboxes (small, fixed option set).
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [folderFilters, setFolderFilters] = useState([]);
+  const [visibilityFilters, setVisibilityFilters] = useState([]);
+  const [tagFilters, setTagFilters] = useState([]);
+  const [tagFilterMode, setTagFilterMode] = useState('any');
+  const [tagFilterInput, setTagFilterInput] = useState('');
+  const [audienceFilters, setAudienceFilters] = useState([]);
+  const [audienceFilterMode, setAudienceFilterMode] = useState('any');
   const [allDocAudiences, setAllDocAudiences] = useState({}); // doc_id -> [audience_value_key, ...], for ALL docs at once
   
   const [editMode, setEditMode] = useState(false);
@@ -452,15 +465,34 @@ export default function Docs() {
     return [...tagSet].sort();
   }, [docs]);
 
+  // Toggle helper for the checkbox-based filters (Folder, Visibility, Audience).
+  const toggleInFilter = (setter) => (value) => {
+    setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+  };
+  const activeFilterCount = folderFilters.length + visibilityFilters.length + tagFilters.length + audienceFilters.length;
+
   // Shared filter-matching, used both for the Published list (against each
   // doc's real fields + allDocAudiences) and the Drafts list (against either
   // the parent published doc's fields, for an edit-in-progress, or the
   // draft's own captured org fields, for a still-unpublished new doc).
   const matchesOrgFilters = ({ folder, visibility, tags, audienceKeys }) => {
-    if (folderFilter && folder !== folderFilter) return false;
-    if (visibilityFilter && visibility !== visibilityFilter) return false;
-    if (tagFilter && !(tags || []).includes(tagFilter)) return false;
-    if (audienceFilter && !(audienceKeys || []).includes(audienceFilter)) return false;
+    if (folderFilters.length > 0 && !folderFilters.includes(folder)) return false;
+    if (visibilityFilters.length > 0 && !visibilityFilters.includes(visibility)) return false;
+    // Tags/Audience: genuinely multi-valued per doc, so any/all actually means something.
+    const docTags = tags || [];
+    if (tagFilters.length > 0) {
+      const matches = tagFilterMode === 'all'
+        ? tagFilters.every(t => docTags.includes(t))
+        : tagFilters.some(t => docTags.includes(t));
+      if (!matches) return false;
+    }
+    const docAudienceKeys = audienceKeys || [];
+    if (audienceFilters.length > 0) {
+      const matches = audienceFilterMode === 'all'
+        ? audienceFilters.every(a => docAudienceKeys.includes(a))
+        : audienceFilters.some(a => docAudienceKeys.includes(a));
+      if (!matches) return false;
+    }
     return true;
   };
 
@@ -1247,6 +1279,121 @@ export default function Docs() {
 
   if (loading) return <div style={{ ...s.container, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
 
+  const renderFilterPanel = () => (
+    <>
+          {/* Filters apply to both Published and Drafts (a draft "matches" via
+              its parent doc's org fields, or its own if not yet published -
+              see matchesOrgFilters/filteredDrafts). Collapsible by default,
+              matching progressive disclosure; small checkbox groups for
+              Folder/Visibility (single-valued per doc, so only "any" ever
+              applies); typeahead+chips for Tags (can grow large); checkboxes
+              for Audience (small, fixed set) - both of the latter get a real
+              any/all toggle since a doc can hold several of each. */}
+          <div style={{ marginBottom: '0.75rem' }}>
+            <button
+              onClick={() => setFiltersExpanded(!filtersExpanded)}
+              style={{ ...s.btnSec, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <span>Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</span>
+              <i className={`ti ti-chevron-${filtersExpanded ? 'up' : 'down'}`} aria-hidden="true"></i>
+            </button>
+            {filtersExpanded && (
+              <div style={{ ...s.card, padding: '0.75rem', marginTop: '0.5rem' }}>
+                {folders.length > 0 && (
+                  <div style={{ marginBottom: '0.75rem' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.375rem' }}>Folder</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {folders.map(f => (
+                        <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={folderFilters.includes(f)} onChange={() => toggleInFilter(setFolderFilters)(f)} />
+                          {f}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.375rem' }}>Visibility</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={visibilityFilters.includes('admin')} onChange={() => toggleInFilter(setVisibilityFilters)('admin')} />
+                      Admin Only
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={visibilityFilters.includes('user')} onChange={() => toggleInFilter(setVisibilityFilters)('user')} />
+                      All Users
+                    </label>
+                  </div>
+                </div>
+                {allExistingTags.length > 0 && (
+                  <div style={{ marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Tags</div>
+                      <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                          <input type="radio" name="tagFilterMode" checked={tagFilterMode === 'any'} onChange={() => setTagFilterMode('any')} /> any
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                          <input type="radio" name="tagFilterMode" checked={tagFilterMode === 'all'} onChange={() => setTagFilterMode('all')} /> all
+                        </label>
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: '0.375rem' }}>
+                      {tagFilters.map(t => (
+                        <span key={t} style={s.tag}>{t}<button style={s.tagRemove} onClick={() => toggleInFilter(setTagFilters)(t)}>×</button></span>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search tags..."
+                      value={tagFilterInput}
+                      onChange={(e) => setTagFilterInput(e.target.value)}
+                      style={{ ...s.input, marginBottom: '0.375rem' }}
+                    />
+                    {tagFilterInput && (
+                      <div>
+                        {allExistingTags.filter(t => !tagFilters.includes(t) && t.toLowerCase().includes(tagFilterInput.toLowerCase())).map(t => (
+                          <button key={t} style={s.existingTag} onClick={() => { toggleInFilter(setTagFilters)(t); setTagFilterInput(''); }}>{t}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {docAudienceOptions.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Audience</div>
+                      <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                          <input type="radio" name="audienceFilterMode" checked={audienceFilterMode === 'any'} onChange={() => setAudienceFilterMode('any')} /> any
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                          <input type="radio" name="audienceFilterMode" checked={audienceFilterMode === 'all'} onChange={() => setAudienceFilterMode('all')} /> all
+                        </label>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {docAudienceOptions.map(a => (
+                        <label key={a.value_key} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={audienceFilters.includes(a.value_key)} onChange={() => toggleInFilter(setAudienceFilters)(a.value_key)} />
+                          {a.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => { setFolderFilters([]); setVisibilityFilters([]); setTagFilters([]); setAudienceFilters([]); }}
+                    style={{ ...s.btnSec, marginTop: '0.75rem', width: '100%', fontSize: '0.8rem' }}
+                  >Clear all filters</button>
+                )}
+              </div>
+            )}
+          </div>
+    </>
+  );
+
   return (
     <div style={s.container}>
       {message && <div style={s.message}>{message}</div>}
@@ -1387,34 +1534,7 @@ export default function Docs() {
           {!showDrafts && (
             <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={s.input} />
           )}
-          {/* Filters apply to both Published and Drafts (a draft "matches" via
-              its parent doc's org fields, or its own if not yet published -
-              see matchesOrgFilters/filteredDrafts). */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
-            {folders.length > 0 && (
-              <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-                <option value="">All Folders</option>
-                {folders.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
-            )}
-            <select value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-              <option value="">All Visibility</option>
-              <option value="admin">🔒 Admin Only</option>
-              <option value="user">👤 All Users</option>
-            </select>
-            {allExistingTags.length > 0 && (
-              <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-                <option value="">All Tags</option>
-                {allExistingTags.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            )}
-            {docAudienceOptions.length > 0 && (
-              <select value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-                <option value="">All Audiences</option>
-                {docAudienceOptions.map(a => <option key={a.value_key} value={a.value_key}>{a.label}</option>)}
-              </select>
-            )}
-          </div>
+          {renderFilterPanel()}
           <div style={s.card}>
             <div style={s.docList}>
               {!showDrafts ? (
@@ -1774,28 +1894,11 @@ export default function Docs() {
             Filter to a set of docs, select as many as you need, then apply a folder, visibility, tag, or audience change to all of them at once.
           </p>
 
-          {/* Reuses the same filter dropdowns/state as the Browse tab - one
-              filtering concept for the whole page, not a separate one here. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
-            <input type="text" placeholder="Search title..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...s.input, marginBottom: 0 }} />
-            <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-              <option value="">All Folders</option>
-              {folders.map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
-            <select value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-              <option value="">All Visibility</option>
-              <option value="admin">🔒 Admin Only</option>
-              <option value="user">👤 All Users</option>
-            </select>
-            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-              <option value="">All Tags</option>
-              {allExistingTags.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
-              <option value="">All Audiences</option>
-              {docAudienceOptions.map(a => <option key={a.value_key} value={a.value_key}>{a.label}</option>)}
-            </select>
-          </div>
+          {/* Reuses the exact same filter panel as the Browse tab via
+              renderFilterPanel() - one real filtering concept for the whole
+              page, not a slightly-different copy living here. */}
+          <input type="text" placeholder="Search title..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ ...s.input, marginBottom: '0.75rem' }} />
+          {renderFilterPanel()}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
             <span style={{ fontSize: '0.875rem', color: '#838C95' }}>{filteredDocs.length} docs shown · {bulkSelectedIds.length} selected</span>
