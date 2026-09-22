@@ -1207,22 +1207,22 @@ export default function Docs() {
     title: { fontSize: '1.5rem', fontWeight: 'bold' },
     input: { width: '100%', padding: '0.75rem 1rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', marginBottom: '0.75rem', outline: 'none' },
     select: { width: '100%', padding: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', marginBottom: '1rem' },
-    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
+    btn: { background: '#256B45', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
-    btnDanger: { background: '#dc2626', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
+    btnDanger: { background: '#C35522', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
     btnSmall: { background: '#334155', color: '#fff', border: 'none', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' },
     toolbarBtn: { padding: '0.375rem 0.625rem', background: '#334155', border: 'none', borderRadius: '0.25rem', color: '#fff', cursor: 'pointer', fontSize: '0.875rem' },
     card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', overflow: 'hidden' },
     docList: { maxHeight: '60vh', overflowY: 'auto' },
-    docItem: (active) => ({ padding: '0.75rem 1rem', borderBottom: '1px solid #334155', cursor: 'pointer', background: active ? '#22c55e22' : 'transparent', borderLeft: active ? '3px solid #22c55e' : '3px solid transparent' }),
-    folderHeader: { padding: '0.75rem 1rem', background: '#0f172a', fontWeight: 'bold', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' },
+    docItem: (active) => ({ padding: '0.75rem 1rem', borderBottom: '1px solid #334155', cursor: 'pointer', background: active ? '#3B9B7322' : 'transparent', borderLeft: active ? '3px solid #3B9B73' : '3px solid transparent' }),
+    folderHeader: { padding: '0.75rem 1rem', background: '#0f172a', fontWeight: 'bold', fontSize: '0.75rem', color: '#838C95', textTransform: 'uppercase', letterSpacing: '0.05em' },
     // Fix: min-width 0 lets this grid child shrink below its content's natural
     // width (the CSS grid default is min-width: auto, which is what silently
     // let wide tables push the whole panel past the viewport with no way to
     // reach the cut-off content). This, combined with the table CSS below,
     // means wide content now reflows/wraps to fit instead of overflowing.
     main: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', padding: '1.5rem', minHeight: '70vh', minWidth: 0 },
-    label: { display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem', fontWeight: '500' },
+    label: { display: 'block', fontSize: '0.75rem', color: '#838C95', marginBottom: '0.25rem', fontWeight: '500' },
     formGroup: { marginBottom: '1rem' },
     textarea: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#e2e8f0', fontFamily: 'monospace', fontSize: '0.875rem', lineHeight: '1.6', resize: 'vertical', outline: 'none' },
     wysiwygEditor: { width: '100%', minHeight: '400px', padding: '1rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', borderTop: 'none', borderTopLeftRadius: 0, borderTopRightRadius: 0, color: '#e2e8f0', fontSize: '1rem', lineHeight: '1.7', outline: 'none' },
@@ -1234,10 +1234,10 @@ export default function Docs() {
     // the page itself was scrolling past the toolbar instead.
     wysiwygScrollBox: { maxHeight: '65vh', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.5rem' },
     tag: { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: '#334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', marginRight: '0.25rem', marginBottom: '0.25rem' },
-    tagRemove: { background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0', fontSize: '1rem', lineHeight: 1 },
-    existingTag: { background: '#1e293b', border: '1px solid #334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', marginRight: '0.25rem', marginBottom: '0.25rem', color: '#94a3b8' },
+    tagRemove: { background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', padding: '0', fontSize: '1rem', lineHeight: 1 },
+    existingTag: { background: '#1e293b', border: '1px solid #334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', marginRight: '0.25rem', marginBottom: '0.25rem', color: '#838C95' },
     message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
-    editorTab: (active) => ({ padding: '0.5rem 1rem', background: active ? '#22c55e' : '#334155', border: 'none', borderRadius: '0.375rem', color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: active ? '600' : '400' }),
+    editorTab: (active) => ({ padding: '0.5rem 1rem', background: active ? '#256B45' : '#334155', border: 'none', borderRadius: '0.375rem', color: '#fff', cursor: 'pointer', fontSize: '0.875rem', fontWeight: active ? '600' : '400' }),
     // Sticky WYSIWYG toolbar: stays pinned to the top of the editor panel while
     // scrolling through long content, rather than scrolling away with the text.
     // Stuck to the editor panel (not the page/viewport) per explicit preference -
@@ -1254,11 +1254,11 @@ export default function Docs() {
         <div style={s.organizeOverlay} onClick={() => setShowOrganize(false)}>
           <div style={s.organizePanel} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>🗂 Organize</h3>
+              <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Organize</h3>
               <button style={s.btnSec} onClick={() => setShowOrganize(false)}>×</button>
             </div>
             {isCreatingNew && (
-              <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '1rem' }}>
                 This doc has not been published yet - these settings are saved once you Save &amp; Publish.
               </div>
             )}
@@ -1286,14 +1286,14 @@ export default function Docs() {
                       onClick={() => setOrgAudienceKeys(prev => isSelected ? prev.filter(k => k !== opt.value_key) : [...prev, opt.value_key])}
                       style={{
                         padding: '0.3rem 0.6rem', borderRadius: '1rem', fontSize: '0.75rem', cursor: 'pointer',
-                        border: isSelected ? '2px solid #22c55e' : '1px solid #334155',
-                        background: isSelected ? '#22c55e20' : '#1e293b',
-                        color: isSelected ? '#22c55e' : '#94a3b8'
+                        border: isSelected ? '2px solid #3B9B73' : '1px solid #334155',
+                        background: isSelected ? '#3B9B7320' : '#1e293b',
+                        color: isSelected ? '#3B9B73' : '#838C95'
                       }}
                     >{isSelected ? '✓ ' : ''}{opt.label}</button>
                   );
                 })}
-                {docAudienceOptions.length === 0 && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>No audience options configured yet.</div>}
+                {docAudienceOptions.length === 0 && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>No audience options configured yet.</div>}
               </div>
             </div>
             <div style={s.formGroup}>
@@ -1307,7 +1307,7 @@ export default function Docs() {
               </div>
               {allExistingTags.filter(t => !orgTags.includes(t)).length > 0 && (
                 <div>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>Existing tags:</div>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.25rem' }}>Existing tags:</div>
                   <div>{allExistingTags.filter(t => !orgTags.includes(t)).map(tag => <button key={tag} style={s.existingTag} onClick={() => addOrgTag(tag)}>{tag}</button>)}</div>
                 </div>
               )}
@@ -1324,13 +1324,13 @@ export default function Docs() {
       {isAdmin && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem 2rem 0 2rem', display: 'flex', gap: '0.5rem' }}>
           <button
-            style={{ ...s.btnSec, background: pageMode === 'browse' ? '#22c55e' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
+            style={{ ...s.btnSec, background: pageMode === 'browse' ? '#256B45' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
             onClick={() => setPageMode('browse')}
-          >📚 Browse Docs</button>
+          ><i className="ti ti-books" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Browse Docs</button>
           <button
-            style={{ ...s.btnSec, background: pageMode === 'bulkOrganize' ? '#22c55e' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
+            style={{ ...s.btnSec, background: pageMode === 'bulkOrganize' ? '#256B45' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
             onClick={() => setPageMode('bulkOrganize')}
-          >🗂 Bulk Organize</button>
+          ><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Bulk Organize</button>
         </div>
       )}
       {pageMode === 'browse' && (
@@ -1338,20 +1338,45 @@ export default function Docs() {
         {/* Sidebar */}
         <div>
           <div style={s.header}>
-            <h1 style={s.title}>📚 Docs</h1>
+            <h1 style={{ ...s.title, fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-books" aria-hidden="true"></i> Docs</h1>
             {isAdmin && !editMode && <button style={s.btn} onClick={startCreate}>+ New</button>}
           </div>
+          {/* About/Credits/Disclaimer - pinned here, always visible regardless
+              of filters, rather than living behind a separate nav dropdown
+              (which created two confusing paths to the same pages). These
+              stay genuinely inside Docs (editable the same way as anything
+              else here) but are surfaced prominently since they're not just
+              another content folder. */}
+          {(() => {
+            const aboutDocs = ['about', 'credits', 'disclaimer']
+              .map(slug => docs.find(d => d.slug === slug))
+              .filter(Boolean);
+            if (aboutDocs.length === 0) return null;
+            return (
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                {aboutDocs.map(doc => (
+                  <button
+                    key={doc.id}
+                    onClick={() => viewDoc(doc)}
+                    style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.375rem 0.6rem' }}
+                  >
+                    {doc.title}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           {/* Published / Drafts toggle - reuses the same list styling below,
               just swaps the data source, rather than building a separate UI.
               Counts reflect the currently active filters below, not totals. */}
           {isAdmin && (
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <button
-                style={{ ...s.btnSec, flex: 1, background: !showDrafts ? '#22c55e' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
+                style={{ ...s.btnSec, flex: 1, background: !showDrafts ? '#256B45' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
                 onClick={() => setShowDrafts(false)}
               >Published{filteredDocs.length > 0 ? ` (${filteredDocs.length})` : ''}</button>
               <button
-                style={{ ...s.btnSec, flex: 1, background: showDrafts ? '#22c55e' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
+                style={{ ...s.btnSec, flex: 1, background: showDrafts ? '#256B45' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
                 onClick={() => { setShowDrafts(true); loadUserDrafts(); }}
               >Drafts{filteredDrafts.length > 0 ? ` (${filteredDrafts.length})` : ''}</button>
             </div>
@@ -1393,12 +1418,12 @@ export default function Docs() {
                 <>
                   {Object.entries(docsByFolder).map(([folder, folderDocs]) => (
                     <div key={folder}>
-                      <div style={s.folderHeader}>📁 {folder}</div>
+                      <div style={s.folderHeader}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {folder}</div>
                       {folderDocs.map(doc => (
                         <div key={doc.id} onClick={() => viewDoc(doc)} style={s.docItem(selectedDoc?.id === doc.id && !editMode)}>
                           <div style={{ fontWeight: '500' }}>{doc.title}</div>
                           {doc.tags?.length > 0 && (
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>
                               {doc.tags.slice(0, 3).map(tag => <span key={tag} style={{ background: '#334155', padding: '0.125rem 0.375rem', borderRadius: '0.25rem', marginRight: '0.25rem' }}>{tag}</span>)}
                             </div>
                           )}
@@ -1406,7 +1431,7 @@ export default function Docs() {
                       ))}
                     </div>
                   ))}
-                  {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No docs found</div>}
+                  {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#838C95' }}>No docs found</div>}
                 </>
               ) : (
                 <>
@@ -1417,8 +1442,8 @@ export default function Docs() {
                       <div key={draft.id} onClick={() => resumeDraft(draft)} style={{ ...s.docItem(false), display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: '500' }}>{label}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
-                            {isNewDoc ? '🆕 unpublished new doc' : '✏️ unpublished edit'} · saved {new Date(draft.updated_at).toLocaleString()}
+                          <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>
+                            {isNewDoc ? <><i className="ti ti-file-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> unpublished new doc</> : <><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> unpublished edit</>} · saved {new Date(draft.updated_at).toLocaleString()}
                           </div>
                         </div>
                         <button
@@ -1430,11 +1455,11 @@ export default function Docs() {
                           }}
                           style={{ ...s.btnSmall, background: '#334155', flexShrink: 0 }}
                           title="Discard draft"
-                        >🗑</button>
+                        ><i className="ti ti-trash" aria-hidden="true"></i></button>
                       </div>
                     );
                   })}
-                  {filteredDrafts.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>{userDrafts.length === 0 ? 'No drafts' : 'No drafts match the current filters'}</div>}
+                  {filteredDrafts.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#838C95' }}>{userDrafts.length === 0 ? 'No drafts' : 'No drafts match the current filters'}</div>}
                 </>
               )}
             </div>
@@ -1448,7 +1473,7 @@ export default function Docs() {
               <>
                 {/* Top toolbar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid #334155', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isCreatingNew ? '📝 New Document' : '📝 Editing'}</h2>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {isCreatingNew ? 'New Document' : 'Editing'}</h2>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     {/* Save = draft only, private, does not touch the live doc or
                         create a version. Save & Publish = the real save, as before. */}
@@ -1458,7 +1483,7 @@ export default function Docs() {
                     {/* Available while editing (including a brand-new, not-yet-
                         published doc) so organization can be set from the very
                         start, without a separate trip after publishing. */}
-                    <button style={s.btnSec} onClick={openOrganize}>🗂 Organize</button>
+                    <button style={s.btnSec} onClick={openOrganize}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Organize</button>
                     {/* Discard replaces the old Delete here - this only ever
                         removes the in-progress DRAFT, never the published doc
                         itself. Real deletion lives in view mode now (see below). */}
@@ -1467,7 +1492,7 @@ export default function Docs() {
                         available from the sidebar or the view-mode header, not from
                         inside the editor itself. */}
                     <button style={s.btnSec} onClick={startCreate}>+ New</button>
-                    {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Draft saved</span>}
+                    {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#838C95' }}>Draft saved</span>}
                   </div>
                 </div>
 
@@ -1509,17 +1534,17 @@ export default function Docs() {
                           <button style={s.toolbarBtn} onClick={() => execCommand('bold')} title="Bold"><b>B</b></button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('italic')} title="Italic"><i>I</i></button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('underline')} title="Underline"><u>U</u></button>
-                          <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
                           <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h1')} title="Heading 1">H1</button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h2')} title="Heading 2">H2</button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h3')} title="Heading 3">H3</button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'p')} title="Paragraph">P</button>
-                          <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
+                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
                           <button style={s.toolbarBtn} onClick={() => execCommand('insertUnorderedList')} title="Bullet List">• List</button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('insertOrderedList')} title="Numbered List">1. List</button>
-                          <span style={{ borderLeft: '1px solid #475569', margin: '0 0.25rem' }}></span>
-                          <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link">🔗 Link</button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting">✖ Clear</button>
+                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
+                          <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link"><i className="ti ti-link" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Link</button>
+                          <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting"><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Clear</button>
                         </div>
                         <div
                           ref={editorRef}
@@ -1557,7 +1582,7 @@ export default function Docs() {
                   <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save'}</button>
                   <button style={s.btn} onClick={savePublish} disabled={saving}>{saving ? 'Publishing...' : 'Save & Publish'}</button>
                   <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
-                  {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Draft saved</span>}
+                  {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#838C95' }}>Draft saved</span>}
                 </div>
               </>
             ) : (
@@ -1565,22 +1590,22 @@ export default function Docs() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid #334155' }}>
                   <div>
                     <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{selectedDoc.title}</h1>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                      {selectedDoc.folder && <span>📁 {selectedDoc.folder} • </span>}
+                    <div style={{ fontSize: '0.75rem', color: '#838C95' }}>
+                      {selectedDoc.folder && <span><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {selectedDoc.folder} • </span>}
                       Updated {new Date(selectedDoc.updated_at || selectedDoc.created_at).toLocaleDateString()}
-                      {selectedDoc.visibility === 'admin' && <span style={{ marginLeft: '0.5rem', background: '#f59e0b33', color: '#f59e0b', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Admin Only</span>}
+                      {selectedDoc.visibility === 'admin' && <span style={{ marginLeft: '0.5rem', background: '#C3552233', color: '#C35522', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Admin Only</span>}
                     </div>
                     {selectedDoc.tags?.length > 0 && <div style={{ marginTop: '0.5rem' }}>{selectedDoc.tags.map(tag => <span key={tag} style={s.tag}>{tag}</span>)}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}>✏️ Edit</button>}
-                    {isAdmin && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}>🕐 History</button>}
-                    {isAdmin && <button style={s.btnSec} onClick={openOrganize}>🗂 Organize</button>}
+                    {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Edit</button>}
+                    {isAdmin && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}><i className="ti ti-clock" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> History</button>}
+                    {isAdmin && <button style={s.btnSec} onClick={openOrganize}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Organize</button>}
                     {isAdmin && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
                     {/* Real deletion, moved here from the editor toolbar - it now
                         only ever appears alongside an already-published doc, never
                         implied to be "just discard my edits" the way it read before. */}
-                    {isAdmin && <button style={s.btnDanger} onClick={deleteDoc}>🗑 Delete</button>}
+                    {isAdmin && <button style={s.btnDanger} onClick={deleteDoc}><i className="ti ti-trash" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Delete</button>}
                     <button style={s.btnSec} onClick={() => { setSelectedDoc(null); resetHistoryView(); }}>×</button>
                   </div>
                 </div>
@@ -1616,30 +1641,30 @@ export default function Docs() {
                         // compareSelection order isn't chronological (whichever was
                         // clicked first) - sort so "old"/"new" always means what they say.
                         const [vA, vB] = compareSelection.map(resolveVersion).filter(Boolean);
-                        if (!vA || !vB) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Select two versions to compare.</div>;
+                        if (!vA || !vB) return <div style={{ padding: '2rem', textAlign: 'center', color: '#838C95' }}>Select two versions to compare.</div>;
                         const [older, newer] = new Date(vA.created_at) <= new Date(vB.created_at) ? [vA, vB] : [vB, vA];
                         const oldC = older.content || {}, newC = newer.content || {};
                         return (
                           <div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
+                            <div style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '1rem' }}>
                               Comparing {older.id === '__current__' ? 'Current' : new Date(older.created_at).toLocaleString()} → {newer.id === '__current__' ? 'Current' : new Date(newer.created_at).toLocaleString()}
                             </div>
                             {oldC.title !== newC.title && (
                               <div style={{ marginBottom: '0.75rem' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>Title</div>
+                                <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Title</div>
                                 <div dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.title || '', newC.title || ''))) }} />
                               </div>
                             )}
                             {oldC.slug !== newC.slug && (
                               <div style={{ marginBottom: '0.75rem' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>Slug</div>
+                                <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Slug</div>
                                 <div style={{ fontFamily: 'monospace', fontSize: '0.85rem' }} dangerouslySetInnerHTML={{ __html: applyDiffStyling(buildDiffMarkdown(diffTokens(oldC.slug || '', newC.slug || ''))) }} />
                               </div>
                             )}
                             {/* Folder/Tags/Visibility deliberately not diffed here anymore -
                                 they're pure organization now (see the Organize panel),
                                 not content, and aren't captured in version snapshots at all. */}
-                            <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Content</div>
+                            <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Content</div>
                             {diffMode === 'wysiwyg' && (
                               <div className="doc-content" style={{ lineHeight: '1.7' }} dangerouslySetInnerHTML={{ __html: renderMarkdownDiff(oldC.content_md || '', newC.content_md || '') }} />
                             )}
@@ -1668,7 +1693,7 @@ export default function Docs() {
                         <button style={s.btnSec} onClick={() => resetHistoryView()}>← Back to document</button>
                       </div>
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.75rem' }}>
                       Select two to compare them ({compareSelection.length}/2 selected)
                     </div>
                     <div>
@@ -1682,18 +1707,18 @@ export default function Docs() {
                         return (
                           <div
                             onClick={() => toggleCompareSelection('__current__')}
-                            style={{ padding: '0.75rem 1rem', background: '#0f172a', border: isSelected ? '2px solid #22c55e' : '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}
+                            style={{ padding: '0.75rem 1rem', background: '#0f172a', border: isSelected ? '2px solid #3B9B73' : '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontWeight: '500' }}>{isSelected ? '✓ ' : ''}Current (Live)</span>
-                              <span style={{ fontSize: '0.7rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Current</span>
+                              <span style={{ fontSize: '0.7rem', background: '#3B9B7333', color: '#3B9B73', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Current</span>
                             </div>
-                            <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>what's actually live right now</div>
+                            <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>what's actually live right now</div>
                           </div>
                         );
                       })()}
                       {docVersions.length === 0 ? (
-                        <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#838C95' }}>
                           No saved version history yet - this doc has not been saved & published since version tracking was added, or has never been edited.
                         </div>
                       ) : (
@@ -1705,16 +1730,16 @@ export default function Docs() {
                             <div
                               key={v.id}
                               onClick={() => toggleCompareSelection(v.id)}
-                              style={{ padding: '0.75rem 1rem', background: '#0f172a', border: isSelected ? '2px solid #22c55e' : '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}
+                              style={{ padding: '0.75rem 1rem', background: '#0f172a', border: isSelected ? '2px solid #3B9B73' : '1px solid #334155', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' }}
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontWeight: '500' }}>{isSelected ? '✓ ' : ''}{new Date(v.created_at).toLocaleString()}</span>
                                 {/* Renamed from "Current" to avoid implying this saved
                                     row necessarily matches live state exactly - see the
                                     Current (Live) entry above for that. */}
-                                {isLatestSaved && <span style={{ fontSize: '0.7rem', background: '#334155', color: '#94a3b8', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Latest saved</span>}
+                                {isLatestSaved && <span style={{ fontSize: '0.7rem', background: '#334155', color: '#838C95', padding: '0.125rem 0.5rem', borderRadius: '0.25rem' }}>Latest saved</span>}
                               </div>
-                              <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>by {authorName}</div>
+                              <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>by {authorName}</div>
                             </div>
                           );
                         })
@@ -1731,8 +1756,8 @@ export default function Docs() {
         )}
 
         {!selectedDoc && !isCreatingNew && (
-          <div style={{ ...s.main, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', color: '#64748b' }}>
-            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📖</div>
+          <div style={{ ...s.main, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', color: '#838C95' }}>
+            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}><i className="ti ti-book" aria-hidden="true"></i></div>
             <div style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Select a document</div>
             <div>Choose a document from the list to view it</div>
           </div>
@@ -1742,7 +1767,7 @@ export default function Docs() {
 
       {pageMode === 'bulkOrganize' && (
         <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '1.5rem 2rem 2rem 2rem' }}>
-          <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+          <p style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
             Filter to a set of docs, select as many as you need, then apply a folder, visibility, tag, or audience change to all of them at once.
           </p>
 
@@ -1770,7 +1795,7 @@ export default function Docs() {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-            <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>{filteredDocs.length} docs shown · {bulkSelectedIds.length} selected</span>
+            <span style={{ fontSize: '0.875rem', color: '#838C95' }}>{filteredDocs.length} docs shown · {bulkSelectedIds.length} selected</span>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button style={s.btnSec} onClick={bulkSelectAllVisible}>Select all shown</button>
               <button style={s.btnSec} onClick={bulkClearSelection}>Clear selection</button>
@@ -1782,20 +1807,20 @@ export default function Docs() {
               <div
                 key={doc.id}
                 onClick={() => toggleBulkSelect(doc.id)}
-                style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '0.75rem', background: bulkSelectedIds.includes(doc.id) ? '#22c55e11' : 'transparent', cursor: 'pointer' }}
+                style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '0.75rem', background: bulkSelectedIds.includes(doc.id) ? '#3B9B7311' : 'transparent', cursor: 'pointer' }}
               >
                 <input type="checkbox" checked={bulkSelectedIds.includes(doc.id)} onChange={() => toggleBulkSelect(doc.id)} onClick={(e) => e.stopPropagation()} />
                 <span style={{ flex: 1 }}>{doc.title}</span>
-                {doc.folder && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>📁 {doc.folder}</span>}
+                {doc.folder && <span style={{ fontSize: '0.75rem', color: '#838C95' }}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {doc.folder}</span>}
               </div>
             ))}
-            {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No docs match these filters</div>}
+            {filteredDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#838C95' }}>No docs match these filters</div>}
           </div>
 
           <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>Apply to {bulkSelectedIds.length} selected</h2>
           <div style={{ opacity: bulkSelectedIds.length === 0 ? 0.5 : 1, pointerEvents: bulkSelectedIds.length === 0 ? 'none' : 'auto' }}>
             <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
-              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Set Folder</div>
+              <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Set Folder</div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input type="text" value={bulkFolder} onChange={(e) => setBulkFolder(e.target.value)} placeholder="Folder name (blank = remove)" style={{ ...s.input, flex: 1, marginBottom: 0 }} list="bulk-folders-list" />
                 <datalist id="bulk-folders-list">{folders.map(f => <option key={f} value={f} />)}</datalist>
@@ -1803,7 +1828,7 @@ export default function Docs() {
               </div>
             </div>
             <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
-              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Set Visibility</div>
+              <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Set Visibility</div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <select value={bulkVisibility} onChange={(e) => setBulkVisibility(e.target.value)} style={{ ...s.select, flex: 1, marginBottom: 0 }}>
                   <option value="admin">🔒 Admin Only</option>
@@ -1813,7 +1838,7 @@ export default function Docs() {
               </div>
             </div>
             <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
-              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Tag</div>
+              <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Tag</div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input type="text" value={bulkTag} onChange={(e) => setBulkTag(e.target.value)} placeholder="Tag name" style={{ ...s.input, flex: 1, marginBottom: 0 }} list="bulk-tags-list" />
                 <datalist id="bulk-tags-list">{allExistingTags.map(t => <option key={t} value={t} />)}</datalist>
@@ -1822,7 +1847,7 @@ export default function Docs() {
               </div>
             </div>
             <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
-              <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Audience</div>
+              <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Audience</div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <select value={bulkAudience} onChange={(e) => setBulkAudience(e.target.value)} style={{ ...s.select, flex: 1, marginBottom: 0 }}>
                   <option value="">Choose an audience...</option>
@@ -1837,16 +1862,16 @@ export default function Docs() {
       )}
 
       <style jsx global>{`
-        .diff-added { background: #22c55e33; color: #86efac; text-decoration: none; padding: 0.05em 0.15em; border-radius: 0.15em; }
-        .diff-removed { background: #ef444433; color: #fca5a5; text-decoration: line-through; padding: 0.05em 0.15em; border-radius: 0.15em; }
+        .diff-added { background: #3B9B7333; color: #3B9B73; text-decoration: none; padding: 0.05em 0.15em; border-radius: 0.15em; }
+        .diff-removed { background: #D45D2533; color: #D45D25; text-decoration: line-through; padding: 0.05em 0.15em; border-radius: 0.15em; }
         .doc-content h1 { font-size: 1.75rem; font-weight: bold; margin: 1.5rem 0 0.75rem 0; color: #fff; }
         .doc-content h2 { font-size: 1.5rem; font-weight: bold; margin: 1.5rem 0 0.75rem 0; color: #fff; }
         .doc-content h3 { font-size: 1.25rem; font-weight: bold; margin: 1.25rem 0 0.5rem 0; color: #fff; }
         .doc-content p { margin: 0.75rem 0; color: #e2e8f0; }
         .doc-content ul, .doc-content ol { margin: 0.75rem 0; padding-left: 1.5rem; color: #e2e8f0; }
         .doc-content li { margin: 0.25rem 0; }
-        .doc-content a { color: #22c55e; text-decoration: underline; }
-        .doc-content a:hover { color: #4ade80; }
+        .doc-content a { color: #3B9B73; text-decoration: underline; }
+        .doc-content a:hover { color: #3B9B73; }
         .doc-content strong, .doc-content b { font-weight: bold; color: #fff; }
         .doc-content em, .doc-content i { font-style: italic; }
         .doc-content code { background: #334155; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-family: monospace; }
