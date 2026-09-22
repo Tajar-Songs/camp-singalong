@@ -1661,7 +1661,13 @@ if (view === 'display' && showLyrics && currentSong) {
 
   // Control View
   return (
-    <div className={`min-h-screen p-2 sm:p-4 pb-20 ${isDark ? 'bg-slate-950 text-white' : 'bg-green-50 text-slate-900'}`}>
+    <>
+      <Head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+        <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet" />
+      </Head>
+    <div className={`min-h-screen p-2 sm:p-4 pb-20 ${isDark ? 'bg-slate-950 text-white' : 'bg-[#256B45]/5 text-[#0f172a]'}`} style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
       
       {/* Group Prompt Modal */}
       {groupPrompt && (
@@ -1677,7 +1683,7 @@ if (view === 'display' && showLyrics && currentSong) {
               {/* Option: Add just this song */}
               <button
                 onClick={() => handleGroupPromptChoice('song')}
-                className={`w-full p-4 rounded-xl text-left border-2 transition-colors ${isDark ? 'border-slate-700 hover:border-slate-500' : 'border-gray-200 hover:border-gray-400'}`}
+                className={`w-full p-4 rounded-xl text-left border-2 transition-colors ${isDark ? 'border-[#838C95]/30 hover:border-[#838C95]/35' : 'border-[#838C95]/25 hover:border-[#838C95]/40'}`}
               >
                 <div className="font-bold">Just this song</div>
                 <div className="text-sm opacity-60">{groupPrompt.song.title} • Page {getSongPage(groupPrompt.song.id).page || 'N/A'}</div>
@@ -1691,9 +1697,9 @@ if (view === 'display' && showLyrics && currentSong) {
                   <button
                     key={group.id}
                     onClick={() => handleGroupPromptChoice('group', group)}
-                    className="w-full p-4 rounded-xl text-left border-2 border-green-600 bg-green-600/10 hover:bg-green-600/20 transition-colors"
+                    className="w-full p-4 rounded-xl text-left border-2 border-[#256B45] bg-[#256B45]/10 hover:bg-[#256B45]/20 transition-colors"
                   >
-                    <div className="font-bold text-green-600">{group.group_name}</div>
+                    <div className="font-bold text-[#256B45]">{group.group_name}</div>
                     <div className="text-sm opacity-60">
                       Page {pageInfo?.page || 'N/A'} • {members.length} songs
                     </div>
@@ -1720,14 +1726,14 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className={`rounded-2xl p-6 w-full max-w-sm ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
             <div className="flex justify-between items-center mb-4">
-              <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-[#0f172a]'}`}>
                 {authMode === 'signup' ? 'Create Account' : authMode === 'magic' ? 'Magic Link' : 'Sign In'}
               </h2>
-              <button onClick={() => { setShowAuthModal(false); resetAuthForm(); }} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+              <button onClick={() => { setShowAuthModal(false); resetAuthForm(); }} className="text-[#838C95] hover:text-[#6E7881] text-2xl">&times;</button>
             </div>
             
-            {authError && <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{authError}</div>}
-            {authMessage && <div className="bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
+            {authError && <div className="bg-[#C35522]/10 text-[#C35522] p-3 rounded-lg mb-4 text-sm">{authError}</div>}
+            {authMessage && <div className="bg-[#256B45]/10 text-[#256B45] p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
             
             <div className="space-y-3">
               {authMode === 'signup' && (
@@ -1736,7 +1742,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   placeholder="Display Name"
                   value={authDisplayName}
                   onChange={(e) => setAuthDisplayName(e.target.value)}
-                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
                 />
               )}
               <input
@@ -1744,7 +1750,7 @@ if (view === 'display' && showLyrics && currentSong) {
                 placeholder="Email"
                 value={authEmail}
                 onChange={(e) => setAuthEmail(e.target.value)}
-                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
               />
               {authMode !== 'magic' && (
                 <input
@@ -1752,31 +1758,31 @@ if (view === 'display' && showLyrics && currentSong) {
                   placeholder="Password"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
-                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
                 />
               )}
               <button
                 onClick={authMode === 'signup' ? handleSignUp : authMode === 'magic' ? handleMagicLink : handleLogin}
                 disabled={authLoading || !authEmail || (authMode !== 'magic' && !authPassword)}
-                className="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-lg font-bold transition-all disabled:opacity-50"
+                className="w-full bg-[#256B45] hover:bg-[#2f8058] text-white py-3 rounded-lg font-bold transition-all disabled:opacity-50"
               >
                 {authLoading ? 'Loading...' : authMode === 'signup' ? 'Create Account' : authMode === 'magic' ? 'Send Magic Link' : 'Sign In'}
               </button>
             </div>
             
-            <div className={`mt-4 pt-4 border-t ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
+            <div className={`mt-4 pt-4 border-t ${isDark ? 'border-[#838C95]/30' : 'border-[#838C95]/25'}`}>
               <div className="flex flex-col gap-2 text-sm text-center">
                 {authMode === 'login' && (
                   <>
-                    <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-green-600 hover:underline">Need an account? Sign up</button>
-                    <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-blue-600 hover:underline">Use magic link instead</button>
+                    <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-[#256B45] hover:underline">Need an account? Sign up</button>
+                    <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-[#5371AC] hover:underline">Use magic link instead</button>
                   </>
                 )}
                 {authMode === 'signup' && (
-                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-green-600 hover:underline">Already have an account? Sign in</button>
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#256B45] hover:underline">Already have an account? Sign in</button>
                 )}
                 {authMode === 'magic' && (
-                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-green-600 hover:underline">Use password instead</button>
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#256B45] hover:underline">Use password instead</button>
                 )}
               </div>
             </div>
@@ -1787,19 +1793,19 @@ if (view === 'display' && showLyrics && currentSong) {
       <div className="max-w-4xl mx-auto space-y-4">
         
         {/* Header Section */}
-        <div className={`rounded-3xl shadow-xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-green-100'}`}>
+        <div className={`rounded-3xl shadow-xl p-6 ${isDark ? 'bg-slate-900 border border-[#838C95]/20' : 'bg-white border border-[#256B45]/20'}`}>
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-xl font-black tracking-tight">🎵 Tajar's Songbook</h1>
+            <h1 className="text-xl font-black tracking-tight" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>🎵 Tajar's Songbook</h1>
             <div className="flex items-center gap-2">
               {/* User status */}
               {user ? (
-                <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <span className={`text-xs ${isDark ? 'text-[#838C95]' : 'text-[#838C95]'}`}>
                   {userProfile?.display_name || user.email?.split('@')[0]}
                 </span>
               ) : (
                 <button 
                   onClick={() => setShowAuthModal(true)}
-                  className="px-3 py-2 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-500"
+                  className="px-3 py-2 rounded-xl font-bold text-sm bg-[#256B45] text-white hover:bg-[#2f8058]"
                 >
                   Sign in
                 </button>
@@ -1815,7 +1821,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   {showAdminMenu && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowAdminMenu(false)} />
-                      <div className={`absolute right-0 top-full mt-2 w-48 rounded-xl shadow-lg z-50 overflow-hidden ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'}`}>
+                      <div className={`absolute right-0 top-full mt-2 w-48 rounded-xl shadow-lg z-50 overflow-hidden ${isDark ? 'bg-slate-800 border border-[#838C95]/30' : 'bg-white border border-[#838C95]/25'}`}>
                         <a href="/admin" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
                           📝 Song Management
                         </a>
@@ -1833,21 +1839,21 @@ if (view === 'display' && showLyrics && currentSong) {
                   )}
                 </div>
               )}
-              <button onClick={() => setView('display')} className="bg-green-600 px-4 py-2 rounded-xl text-white font-bold text-sm">📺 Display View</button>
+              <button onClick={() => setView('display')} className="bg-[#256B45] px-4 py-2 rounded-xl text-white font-bold text-sm">📺 Display View</button>
             </div>
           </div>
-          <div className={`p-4 rounded-2xl mb-4 border-2 ${isDark ? 'bg-green-950/20 border-green-900/50' : 'bg-green-50 border-green-100'}`}>
+          <div className={`p-4 rounded-2xl mb-4 border-2 ${isDark ? 'bg-[#256B45]/20/20 border-[#256B45]/50' : 'bg-[#256B45]/5 border-[#256B45]/20'}`}>
              <div className="text-[10px] font-black uppercase opacity-60 mb-1">Room Code</div>
              <div className="flex justify-between items-center">
                <span className="text-3xl font-black tracking-tighter">{roomCode}</span>
                <div className="flex gap-2">
                  <button onClick={copyRoomCode} className="text-xs font-bold opacity-70 hover:opacity-100">{copied ? 'Copied!' : 'Copy'}</button>
-                 <button onClick={() => router.push('/')} className="text-xs font-bold text-red-500 opacity-70 hover:opacity-100">Exit</button>
+                 <button onClick={() => router.push('/')} className="text-xs font-bold text-[#D45D25] opacity-70 hover:opacity-100">Exit</button>
                </div>
              </div>
           </div>
           {currentSong && (
-            <div className={`p-4 rounded-2xl border-2 ${isDark ? 'bg-blue-950/20 border-blue-900/50' : 'bg-blue-50 border-blue-100'}`}>
+            <div className={`p-4 rounded-2xl border-2 ${isDark ? 'bg-[#5371AC]/20/20 border-[#5371AC]/50' : 'bg-[#5371AC]/5 border-[#5371AC]/20'}`}>
               <div className="text-[10px] font-black uppercase opacity-60 mb-1">Now Singing</div>
               <div className="text-xl font-bold mb-2">{currentSong.title} {currentSong.has_lyrics && '📄'}</div>
               {currentSong.has_lyrics && (
@@ -1857,7 +1863,7 @@ if (view === 'display' && showLyrics && currentSong) {
                     setShowLyricsOnTV(newValue);
                     await updateRoom({ show_lyrics_on_tv: newValue });
                   }}
-                  className={`w-full py-2 rounded-xl font-bold text-sm transition-colors border ${showLyricsOnTV ? 'bg-blue-600 text-white border-blue-600' : 'bg-transparent border-slate-400 opacity-60'}`}
+                  className={`w-full py-2 rounded-xl font-bold text-sm transition-colors border ${showLyricsOnTV ? 'bg-[#5371AC] text-white border-[#5371AC]' : 'bg-transparent border-[#838C95]/40 opacity-60'}`}
                 >
                   {showLyricsOnTV ? '📄 Lyrics on TV: ON' : '📄 Lyrics on TV: OFF'}
                 </button>
@@ -1872,13 +1878,13 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={() => setShowQueue(!showQueue)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="font-black text-lg">👥 Up Next ({queue.length})</h2>
+            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>👥 Up Next ({queue.length})</h2>
             <span className="text-xl opacity-50">{showQueue ? '▼' : '▶'}</span>
           </button>
           {showQueue && (
             <div className="space-y-3 mt-4">
               {queue.map(song => (
-                <div key={song.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                <div key={song.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isDark ? 'bg-slate-800 border-[#838C95]/30' : 'bg-slate-50 border-[#838C95]/20'}`}>
                   <div className="flex flex-col gap-1">
                     <button onClick={() => moveInQueue(song, -1)} className="opacity-40 hover:opacity-100">▲</button>
                     <button onClick={() => moveInQueue(song, 1)} className="opacity-40 hover:opacity-100">▼</button>
@@ -1890,8 +1896,8 @@ if (view === 'display' && showLyrics && currentSong) {
                     <div className="text-[10px] opacity-60 uppercase font-black tracking-wide">P.{song.song_page} • {song.requester}</div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => playSong(song)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
-                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-red-500 transition-all">🗑️</button>
+                    <button onClick={() => playSong(song)} className="bg-[#256B45] text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
+                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-[#D45D25] transition-all">🗑️</button>
                   </div>
                 </div>
               ))}
@@ -1906,7 +1912,7 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={() => setShowSectionFilter(!showSectionFilter)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="font-black text-lg">🎯 Filters</h2>
+            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>🎯 Filters</h2>
             <div className="flex items-center gap-3">
               {!showSectionFilter && (
                 <span className="text-xs opacity-50">
@@ -1940,7 +1946,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider opacity-60">Songbook{songbookIds.length > 0 ? ` (${songbookIds.length})` : ''}</span>
                     {songbookIds.length > 0 && (
-                      <button onClick={() => setSongbookIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      <button onClick={() => setSongbookIds([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1951,7 +1957,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           key={sb.id}
                           onClick={() => setSongbookIds(prev => toggleInArray(prev, sb.id))}
                           className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
-                            isSelected ? 'bg-blue-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            isSelected ? 'bg-[#5371AC] text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
                           {isSelected ? '✓ ' : ''}{sb.name}
@@ -1967,13 +1973,13 @@ if (view === 'display' && showLyrics && currentSong) {
                 <div className="flex gap-2 mb-4">
                   <button 
                       onClick={() => setSelectedSections(availableSections.map(s => s.id))} 
-                      className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-[#838C95]/30 hover:bg-slate-700' : 'bg-slate-100 border-[#838C95]/25 hover:bg-slate-200'}`}
                   >
                       Select All
                   </button>
                   <button 
                       onClick={() => setSelectedSections([])} 
-                      className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 hover:bg-slate-200'}`}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${isDark ? 'bg-slate-800 border-[#838C95]/30 hover:bg-slate-700' : 'bg-slate-100 border-[#838C95]/25 hover:bg-slate-200'}`}
                   >
                       Clear All
                   </button>
@@ -1992,7 +1998,7 @@ if (view === 'display' && showLyrics && currentSong) {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
                           {theseSections.map(s2 => (
                             <label key={s2.id} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
-                              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(s2.id)} onChange={() => toggleSection(s2.id)} />
+                              <input type="checkbox" className="w-5 h-5 rounded border-[#838C95]/40 accent-[#5371AC]" checked={selectedSections.includes(s2.id)} onChange={() => toggleSection(s2.id)} />
                               <span className="text-xs font-medium leading-tight">{sectionLabel(s2)}</span>
                             </label>
                           ))}
@@ -2004,7 +2010,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
                     {availableSections.map(s2 => (
                       <label key={s2.id} className="flex items-center gap-3 p-2 hover:bg-black/5 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-black/5">
-                        <input type="checkbox" className="w-5 h-5 rounded border-slate-300 accent-blue-600" checked={selectedSections.includes(s2.id)} onChange={() => toggleSection(s2.id)} />
+                        <input type="checkbox" className="w-5 h-5 rounded border-[#838C95]/40 accent-[#5371AC]" checked={selectedSections.includes(s2.id)} onChange={() => toggleSection(s2.id)} />
                         <span className="text-xs font-medium leading-tight">{sectionLabel(s2)}</span>
                       </label>
                     ))}
@@ -2024,21 +2030,21 @@ if (view === 'display' && showLyrics && currentSong) {
                       </span>
                       <div className="flex items-center gap-3">
                         {includeTagIds.length > 1 && (
-                          <div className="flex rounded-full overflow-hidden border border-slate-600 text-[10px] font-black uppercase">
+                          <div className="flex rounded-full overflow-hidden border border-[#838C95]/35 text-[10px] font-black uppercase">
                             <button
                               onClick={() => setIncludeMode('any')}
-                              className={`px-2 py-1 ${includeMode === 'any' ? 'bg-green-600 text-white' : isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                              className={`px-2 py-1 ${includeMode === 'any' ? 'bg-[#256B45] text-white' : isDark ? 'bg-slate-800 text-[#838C95]' : 'bg-slate-100 text-[#838C95]'}`}
                               title="Song matches if it has ANY of the selected tags"
                             >Any</button>
                             <button
                               onClick={() => setIncludeMode('all')}
-                              className={`px-2 py-1 ${includeMode === 'all' ? 'bg-green-600 text-white' : isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                              className={`px-2 py-1 ${includeMode === 'all' ? 'bg-[#256B45] text-white' : isDark ? 'bg-slate-800 text-[#838C95]' : 'bg-slate-100 text-[#838C95]'}`}
                               title="Song matches only if it has ALL of the selected tags"
                             >All</button>
                           </div>
                         )}
                         {includeTagIds.length > 0 && (
-                          <button onClick={() => setIncludeTagIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                          <button onClick={() => setIncludeTagIds([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                         )}
                       </div>
                     </div>
@@ -2053,10 +2059,10 @@ if (view === 'display' && showLyrics && currentSong) {
                             )}
                             className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
                               isSelected 
-                                ? 'bg-green-600 text-white' 
+                                ? 'bg-[#256B45] text-white' 
                                 : isDark 
-                                  ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' 
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                  ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' 
+                                  : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                             }`}
                           >
                             {isSelected ? '✓ ' : '+ '}{tag.name}
@@ -2074,7 +2080,7 @@ if (view === 'display' && showLyrics && currentSong) {
                         <span className="sm:hidden">Exclude</span>
                       </span>
                       {excludeTagIds.length > 0 && (
-                        <button onClick={() => setExcludeTagIds([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                        <button onClick={() => setExcludeTagIds([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2088,10 +2094,10 @@ if (view === 'display' && showLyrics && currentSong) {
                             )}
                             className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
                               isSelected 
-                                ? 'bg-red-600 text-white' 
+                                ? 'bg-[#C35522] text-white' 
                                 : isDark 
-                                  ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' 
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                  ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' 
+                                  : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                             }`}
                           >
                             {isSelected ? '✗ ' : '− '}{tag.name}
@@ -2109,7 +2115,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider opacity-60">My Tags</span>
                     {personalTagValues.length > 0 && (
-                      <button onClick={() => setPersonalTagValues([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      <button onClick={() => setPersonalTagValues([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -2120,7 +2126,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           key={tag}
                           onClick={() => setPersonalTagValues(prev => toggleInArray(prev, tag))}
                           className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
-                            isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
                           {isSelected ? '✓ ' : '+ '}{tag}
@@ -2137,7 +2143,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider opacity-60">Exclude My Tags</span>
                     {excludePersonalTagValues.length > 0 && (
-                      <button onClick={() => setExcludePersonalTagValues([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      <button onClick={() => setExcludePersonalTagValues([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -2148,7 +2154,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           key={tag}
                           onClick={() => setExcludePersonalTagValues(prev => toggleInArray(prev, tag))}
                           className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
-                            isSelected ? 'bg-red-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            isSelected ? 'bg-[#C35522] text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
                           {isSelected ? '✗ ' : '− '}{tag}
@@ -2165,7 +2171,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider opacity-60">My Songs</span>
                     {statusFilter.length > 0 && (
-                      <button onClick={() => setStatusFilter([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      <button onClick={() => setStatusFilter([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -2176,7 +2182,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           key={opt.value_key}
                           onClick={() => setStatusFilter(prev => toggleInArray(prev, opt.value_key))}
                           className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
-                            isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
                           {isSelected ? '✓ ' : ''}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
@@ -2193,7 +2199,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider opacity-60">Exclude My Songs</span>
                     {excludeStatusFilter.length > 0 && (
-                      <button onClick={() => setExcludeStatusFilter([])} className="text-xs text-slate-500 hover:text-slate-400">Clear</button>
+                      <button onClick={() => setExcludeStatusFilter([])} className="text-xs text-[#838C95] hover:text-[#838C95]">Clear</button>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -2204,7 +2210,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           key={opt.value_key}
                           onClick={() => setExcludeStatusFilter(prev => toggleInArray(prev, opt.value_key))}
                           className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
-                            isSelected ? 'bg-red-600 text-white' : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            isSelected ? 'bg-[#C35522] text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
                           {isSelected ? '✗ ' : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
@@ -2222,7 +2228,7 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className={`rounded-3xl shadow-lg p-6 ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
           <button 
             onClick={generateRandomSong} 
-            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg shadow-blue-900/20 active:scale-[0.98] transition-all"
+            className="w-full bg-[#5371AC] text-white py-4 rounded-2xl font-black text-lg shadow-lg shadow-[#5371AC]/20 active:scale-[0.98] transition-all"
           >
             🎲 Pick Random Song
           </button>
@@ -2246,14 +2252,14 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={() => setShowAddSong(!showAddSong)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="font-black text-lg">🔍 Add a Song</h2>
+            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>🔍 Add a Song</h2>
             <span className="text-xl opacity-50">{showAddSong ? '▼' : '▶'}</span>
           </button>
           {showAddSong && (
             <div className="mt-4">
               <input 
                 type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30' : 'bg-slate-50 border-[#838C95]/25'}`}
               />
               <div className="max-h-80 overflow-y-auto space-y-2 mb-6">
                 {filteredSongs.map(song => {
@@ -2267,14 +2273,14 @@ if (view === 'display' && showLyrics && currentSong) {
                   const alreadySung = sungSongs.some(s => s.title === song.title);
                   
                   return (
-                    <div key={song.id} className={`p-3 rounded-xl border ${inQueue || alreadySung ? 'opacity-50' : ''} ${isDark ? 'border-slate-700 bg-slate-800/50' : 'border-black/5 bg-black/5'}`}>
+                    <div key={song.id} className={`p-3 rounded-xl border ${inQueue || alreadySung ? 'opacity-50' : ''} ${isDark ? 'border-[#838C95]/30 bg-slate-800/50' : 'border-black/5 bg-black/5'}`}>
                       <div className="flex justify-between items-start">
                         <div className="min-w-0 flex-1">
                           <div className="font-bold text-sm flex items-center gap-1 flex-wrap">
                             {song.title}
                             {hasLyrics && '📄'}
-                            {inQueue && <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded">in queue</span>}
-                            {alreadySung && <span className="text-[10px] bg-gray-500 text-white px-1.5 py-0.5 rounded">sung</span>}
+                            {inQueue && <span className="text-[10px] bg-[#5371AC]/50 text-white px-1.5 py-0.5 rounded">in queue</span>}
+                            {alreadySung && <span className="text-[10px] bg-[#838C95] text-white px-1.5 py-0.5 rounded">sung</span>}
                           </div>
                           <div className="text-[10px] opacity-50 font-black uppercase tracking-tighter">Section {pageInfo.section} • Page {displayPage}</div>
                           {flags.length > 0 && (
@@ -2286,7 +2292,7 @@ if (view === 'display' && showLyrics && currentSong) {
                                     key={flag.id}
                                     onClick={() => setExpandedFlags(prev => isExpanded ? prev.filter(id => id !== flag.id) : [...prev, flag.id])}
                                     className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all ${
-                                      isDark ? 'bg-amber-900/50 text-amber-400 hover:bg-amber-900' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                      isDark ? 'bg-[#C35522]/20 text-[#D45D25] hover:bg-[#C35522]/40' : 'bg-[#C35522]/15 text-[#C35522] hover:bg-[#C35522]/25'
                                     }`}
                                   >
                                     ⚠️ {flag.flag_type} {isExpanded ? '▲' : '▼'}
@@ -2296,7 +2302,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             </div>
                           )}
                           {flags.filter(f => expandedFlags.includes(f.id)).map(flag => (
-                            <div key={`detail-${flag.id}`} className={`text-[10px] mt-1 p-2 rounded ${isDark ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-50 text-amber-800'}`}>
+                            <div key={`detail-${flag.id}`} className={`text-[10px] mt-1 p-2 rounded ${isDark ? 'bg-[#C35522]/15 text-[#D45D25]' : 'bg-[#C35522]/10 text-[#C35522]'}`}>
                               {flag.explanation || 'No additional details'}
                             </div>
                           ))}
@@ -2310,7 +2316,7 @@ if (view === 'display' && showLyrics && currentSong) {
                               {isExpanded ? '▲' : '▼'}
                             </button>
                           )}
-                          <button onClick={() => addToQueue(song)} className="bg-green-600 text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
+                          <button onClick={() => addToQueue(song)} className="bg-[#256B45] text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
                         </div>
                       </div>
                       {isExpanded && version?.lyrics_content && (
@@ -2325,8 +2331,8 @@ if (view === 'display' && showLyrics && currentSong) {
               <div className="border-t pt-4">
                 <p className="text-[10px] font-black uppercase opacity-40 mb-2">Unlisted Song</p>
                 <div className="flex gap-2">
-                  <input type="text" value={customSongInput} onChange={(e) => setCustomSongInput(e.target.value)} placeholder="Enter song title..." className={`flex-1 p-3 rounded-xl border text-sm ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`} />
-                  <button onClick={addCustomSong} className="bg-blue-600 text-white px-5 rounded-xl font-bold text-sm">Add</button>
+                  <input type="text" value={customSongInput} onChange={(e) => setCustomSongInput(e.target.value)} placeholder="Enter song title..." className={`flex-1 p-3 rounded-xl border text-sm ${isDark ? 'bg-slate-800 border-[#838C95]/30' : 'bg-slate-50 border-[#838C95]/25'}`} />
+                  <button onClick={addCustomSong} className="bg-[#5371AC] text-white px-5 rounded-xl font-bold text-sm">Add</button>
                 </div>
               </div>
             </div>
@@ -2337,11 +2343,12 @@ if (view === 'display' && showLyrics && currentSong) {
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg font-bold text-sm z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
-          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+          toast.type === 'success' ? 'bg-[#256B45] text-white' : 'bg-[#C35522] text-white'
         }`}>
           {toast.message}
         </div>
       )}
     </div>
+    </>
   );
 }
