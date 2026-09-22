@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import { getFilterableSongbooks, getAvailableSections, toggleInArray, sectionLabel } from '../../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
@@ -1022,7 +1023,13 @@ if (view === 'display' && showLyrics && currentSong) {
   const otherTypes = availableNoteTypes.filter(t => !INSTRUCTION_TYPES.includes(t));
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-slate-900' : 'bg-green-900'} text-white`}>
+    <>
+      <Head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+        <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet" />
+      </Head>
+    <div className={`min-h-screen ${isDark ? 'bg-[#0f172a]' : 'bg-[#f8fafc]'} text-white`} style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
       {/* Mobile Layout (column) - show on screens smaller than xl (1280px) */}
       <div className="xl:hidden flex flex-col min-h-screen">
         {/* Mobile Header */}
@@ -1036,7 +1043,7 @@ if (view === 'display' && showLyrics && currentSong) {
             </button>
             <div className="text-center flex-1 mx-4">
               <div className="text-base font-bold truncate">{currentSong.title}</div>
-              <div className="text-xs text-green-300">
+              <div className="text-xs text-[#3B9B73]">
                 Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}
               </div>
             </div>
@@ -1051,8 +1058,8 @@ if (view === 'display' && showLyrics && currentSong) {
             <div className="space-y-2 mb-4">
               {/* Group instructions (if this is a group) */}
               {isGroup && groupInstructions && (
-                <div className="p-4 bg-green-900/30 rounded-xl text-green-100 text-sm mb-4 border border-green-600/30">
-                  <div className="font-bold text-green-400 mb-2">Group Instructions</div>
+                <div className="p-4 bg-[#256B45]/15 rounded-xl text-[#D4EDE1] text-sm mb-4 border border-[#256B45]/40">
+                  <div className="font-bold text-[#3B9B73] mb-2">Group Instructions</div>
                   <p className="whitespace-pre-wrap">{groupInstructions}</p>
                 </div>
               )}
@@ -1063,17 +1070,17 @@ if (view === 'display' && showLyrics && currentSong) {
                     onClick={() => toggleNoteType(noteType)}
                     className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors ${
                       expandedNotes.includes(noteType) 
-                        ? 'bg-yellow-600 text-white' 
-                        : 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/50'
+                        ? 'bg-[#C35522] text-white' 
+                        : 'bg-[#C35522]/20 text-[#D45D25] hover:bg-[#C35522]/40'
                     }`}
                   >
                     {expandedNotes.includes(noteType) ? '▼' : '▶'} {NOTE_TYPE_LABELS[noteType] || noteType}
                   </button>
                   {expandedNotes.includes(noteType) && (
-                    <div className="mt-2 p-4 bg-yellow-900/30 rounded-xl text-yellow-100 text-sm">
+                    <div className="mt-2 p-4 bg-[#C35522]/15 rounded-xl text-[#F3DCC9] text-sm">
                       {currentNotes.filter(n => n.note_type === noteType).map((note, i) => (
                         <p key={i} className={i > 0 ? 'mt-2' : ''}>
-                          {note.songTitle && isGroup && <span className="text-yellow-400 font-bold">{note.songTitle}: </span>}
+                          {note.songTitle && isGroup && <span className="text-[#D45D25] font-bold">{note.songTitle}: </span>}
                           {note.note_content}
                         </p>
                       ))}
@@ -1091,7 +1098,7 @@ if (view === 'display' && showLyrics && currentSong) {
                 {currentSong.lyrics_text}
               </div>
             ) : (
-              <div className="text-gray-400 py-8">
+              <div className="text-[#838C95] py-8">
                 <div className="text-5xl mb-4">📄</div>
                 <div>No lyrics available for this song</div>
               </div>
@@ -1099,7 +1106,7 @@ if (view === 'display' && showLyrics && currentSong) {
             
             {/* Year(s) written */}
             {yearsWritten.length > 0 && (
-              <div className="mt-6 text-sm text-gray-400 italic">
+              <div className="mt-6 text-sm text-[#838C95] italic">
                 {yearsWritten.length === 1 ? (
                   `Written: ${yearsWritten[0].year}`
                 ) : (
@@ -1120,17 +1127,17 @@ if (view === 'display' && showLyrics && currentSong) {
                     onClick={() => toggleNoteType(noteType)}
                     className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors ${
                       expandedNotes.includes(noteType) 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-blue-600/30 text-blue-200 hover:bg-blue-600/50'
+                        ? 'bg-[#5371AC] text-white' 
+                        : 'bg-[#5371AC]/20 text-[#6882B6] hover:bg-[#5371AC]/40'
                     }`}
                   >
                     {expandedNotes.includes(noteType) ? '▼' : '▶'} {NOTE_TYPE_LABELS[noteType] || noteType}
                   </button>
                   {expandedNotes.includes(noteType) && (
-                    <div className="mt-2 p-4 bg-blue-900/30 rounded-xl text-blue-100 text-sm">
+                    <div className="mt-2 p-4 bg-[#5371AC]/15 rounded-xl text-[#D6DEF0] text-sm">
                       {currentNotes.filter(n => n.note_type === noteType).map((note, i) => (
                         <p key={i} className={i > 0 ? 'mt-2' : ''}>
-                          {note.songTitle && isGroup && <span className="text-blue-400 font-bold">{note.songTitle}: </span>}
+                          {note.songTitle && isGroup && <span className="text-[#6882B6] font-bold">{note.songTitle}: </span>}
                           {note.note_content}
                         </p>
                       ))}
@@ -1146,7 +1153,7 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className="p-4 bg-black/80 border-t border-white/10">
           <button 
             onClick={() => setShowLyrics(false)}
-            className="w-full py-3 rounded-xl font-bold bg-green-600 hover:bg-green-500 text-white transition-colors"
+            className="w-full py-3 rounded-xl font-bold bg-[#256B45] hover:bg-[#2f8058] text-white transition-colors"
           >
             Back to Display
           </button>
@@ -1181,8 +1188,8 @@ if (view === 'display' && showLyrics && currentSong) {
                   onClick={() => toggleNoteType(noteType)}
                   className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors mb-2 ${
                     expandedNotes.includes(noteType) 
-                      ? 'bg-yellow-600 text-white' 
-                      : 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/50'
+                      ? 'bg-[#C35522] text-white' 
+                      : 'bg-[#C35522]/20 text-[#D45D25] hover:bg-[#C35522]/40'
                   }`}
                 >
                   {NOTE_TYPE_LABELS[noteType] || noteType}
@@ -1201,8 +1208,8 @@ if (view === 'display' && showLyrics && currentSong) {
                   onClick={() => toggleNoteType(noteType)}
                   className={`w-full text-left px-4 py-3 rounded-xl font-bold transition-colors mb-2 ${
                     expandedNotes.includes(noteType) 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600/30 text-blue-200 hover:bg-blue-600/50'
+                      ? 'bg-[#5371AC] text-white' 
+                      : 'bg-[#5371AC]/20 text-[#6882B6] hover:bg-[#5371AC]/40'
                   }`}
                 >
                   {NOTE_TYPE_LABELS[noteType] || noteType}
@@ -1216,8 +1223,8 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="p-6 border-b border-white/10">
-            <h1 className="text-4xl font-black mb-1">{currentSong.title}</h1>
-            <div className="text-xl text-green-400">
+            <h1 className="text-4xl font-black mb-1" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>{currentSong.title}</h1>
+            <div className="text-xl text-[#3B9B73]">
               Page {currentSong.page}{currentSong.old_page ? ` (${currentSong.old_page})` : ''}
             </div>
           </div>
@@ -1226,19 +1233,19 @@ if (view === 'display' && showLyrics && currentSong) {
           <div className="flex-1 overflow-y-auto p-6">
             {/* Group Instructions (if this is a group) */}
             {isGroup && groupInstructions && (
-              <div className="mb-6 p-4 bg-green-900/30 rounded-xl border border-green-600/30">
-                <div className="text-sm font-bold text-green-400 mb-2">Group Instructions</div>
-                <p className="text-green-100 text-lg whitespace-pre-wrap">{groupInstructions}</p>
+              <div className="mb-6 p-4 bg-[#256B45]/15 rounded-xl border border-[#256B45]/40">
+                <div className="text-sm font-bold text-[#3B9B73] mb-2">Group Instructions</div>
+                <p className="text-[#D4EDE1] text-lg whitespace-pre-wrap">{groupInstructions}</p>
               </div>
             )}
             
             {/* Expanded Instruction Notes (above lyrics) */}
             {instructionTypes.filter(t => expandedNotes.includes(t)).map(noteType => (
-              <div key={noteType} className="mb-6 p-4 bg-yellow-900/30 rounded-xl border border-yellow-600/30">
-                <div className="text-sm font-bold text-yellow-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+              <div key={noteType} className="mb-6 p-4 bg-[#C35522]/15 rounded-xl border border-[#C35522]/40">
+                <div className="text-sm font-bold text-[#D45D25] mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
                 {currentNotes.filter(n => n.note_type === noteType).map((note, i) => (
-                  <p key={i} className="text-yellow-100 text-lg">
-                    {note.songTitle && isGroup && <span className="text-yellow-400 font-bold">{note.songTitle}: </span>}
+                  <p key={i} className="text-[#F3DCC9] text-lg">
+                    {note.songTitle && isGroup && <span className="text-[#D45D25] font-bold">{note.songTitle}: </span>}
                     {note.note_content}
                   </p>
                 ))}
@@ -1252,7 +1259,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   {currentSong.lyrics_text}
                 </div>
               ) : (
-                <div className="text-gray-400 py-8">
+                <div className="text-[#838C95] py-8">
                   <div className="text-5xl mb-4">📄</div>
                   <div>No lyrics available for this song</div>
                 </div>
@@ -1260,7 +1267,7 @@ if (view === 'display' && showLyrics && currentSong) {
               
               {/* Year(s) written */}
               {yearsWritten.length > 0 && (
-                <div className="mt-8 text-lg text-gray-400 italic">
+                <div className="mt-8 text-lg text-[#838C95] italic">
                   {yearsWritten.length === 1 ? (
                     `Written: ${yearsWritten[0].year}`
                   ) : (
@@ -1274,11 +1281,11 @@ if (view === 'display' && showLyrics && currentSong) {
             
             {/* Expanded Other Notes (below lyrics) */}
             {otherTypes.filter(t => expandedNotes.includes(t)).map(noteType => (
-              <div key={noteType} className="mb-6 p-4 bg-blue-900/30 rounded-xl border border-blue-600/30">
-                <div className="text-sm font-bold text-blue-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+              <div key={noteType} className="mb-6 p-4 bg-[#5371AC]/15 rounded-xl border border-[#5371AC]/40">
+                <div className="text-sm font-bold text-[#6882B6] mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
                 {currentNotes.filter(n => n.note_type === noteType).map((note, i) => (
-                  <p key={i} className="text-blue-100 text-lg">
-                    {note.songTitle && isGroup && <span className="text-blue-400 font-bold">{note.songTitle}: </span>}
+                  <p key={i} className="text-[#D6DEF0] text-lg">
+                    {note.songTitle && isGroup && <span className="text-[#6882B6] font-bold">{note.songTitle}: </span>}
                     {note.note_content}
                   </p>
                 ))}
@@ -1288,13 +1295,20 @@ if (view === 'display' && showLyrics && currentSong) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
   // Display View - Main (TV Safe)
   if (view === 'display') {
     return (
-      <div className={`min-h-screen ${isDark ? 'bg-slate-950' : 'bg-green-900'} text-white`}>
+      <>
+      <Head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+        <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet" />
+      </Head>
+      <div className={`min-h-screen ${isDark ? 'bg-[#0f172a]' : 'bg-[#f8fafc]'} text-white`} style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
         
         {/* Mobile Layout - stacked, no sidebar */}
         <div className="xl:hidden min-h-screen flex flex-col">
@@ -1311,13 +1325,13 @@ if (view === 'display' && showLyrics && currentSong) {
           
           {/* Mobile Content */}
           <div className="flex-1 p-4 flex flex-col justify-center">
-            <h1 className="text-lg font-black mb-2 opacity-40 uppercase tracking-widest">Now Singing</h1>
+            <h1 className="text-lg font-black mb-2 opacity-40 uppercase tracking-widest" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</h1>
             {currentSong ? (
               <div>
-                <div className="text-2xl font-black mb-1 leading-tight">
+                <div className="text-2xl font-black mb-1 leading-tight" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>
                   {currentSong.title} {currentSong.has_lyrics && '📄'}
                 </div>
-                <div className="text-xl text-green-400 font-bold mb-4">
+                <div className="text-xl text-[#3B9B73] font-bold mb-4">
                   Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
                 </div>
                 
@@ -1326,7 +1340,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   {currentSong?.has_lyrics && (
                     <button 
                       onClick={() => setShowLyrics(true)}
-                      className="bg-green-600 hover:bg-green-500 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      className="bg-[#256B45] hover:bg-[#2f8058] px-4 py-2 rounded-lg text-sm font-bold transition-colors"
                     >
                       📄 Lyrics
                     </button>
@@ -1346,8 +1360,8 @@ if (view === 'display' && showLyrics && currentSong) {
                         onClick={() => toggleNoteType(noteType)}
                         className={`px-3 py-2 rounded-lg text-sm font-bold transition-colors ${
                           expandedNotes.includes(noteType) 
-                            ? INSTRUCTION_TYPES.includes(noteType) ? 'bg-yellow-600 text-white' : 'bg-blue-600 text-white'
-                            : INSTRUCTION_TYPES.includes(noteType) ? 'bg-yellow-600/30 text-yellow-200' : 'bg-blue-600/30 text-blue-200'
+                            ? INSTRUCTION_TYPES.includes(noteType) ? 'bg-[#C35522] text-white' : 'bg-[#5371AC] text-white'
+                            : INSTRUCTION_TYPES.includes(noteType) ? 'bg-[#C35522]/20 text-[#D45D25]' : 'bg-[#5371AC]/20 text-[#6882B6]'
                         }`}
                       >
                         {NOTE_TYPE_LABELS[noteType] || noteType}
@@ -1370,15 +1384,15 @@ if (view === 'display' && showLyrics && currentSong) {
                       {expandedTypes.map(noteType => (
                         <div key={noteType} className={`p-3 rounded-xl border ${
                           INSTRUCTION_TYPES.includes(noteType) 
-                            ? 'bg-yellow-900/30 border-yellow-600/30' 
-                            : 'bg-blue-900/30 border-blue-600/30'
+                            ? 'bg-[#C35522]/15 border-[#C35522]/40' 
+                            : 'bg-[#5371AC]/15 border-[#5371AC]/40'
                         }`}>
                           <div className={`text-xs font-bold mb-1 ${
-                            INSTRUCTION_TYPES.includes(noteType) ? 'text-yellow-400' : 'text-blue-400'
+                            INSTRUCTION_TYPES.includes(noteType) ? 'text-[#D45D25]' : 'text-[#6882B6]'
                           }`}>{NOTE_TYPE_LABELS[noteType]}</div>
                           {getNotesByType(songId, noteType).map((note, i) => (
                             <p key={i} className={`text-sm ${
-                              INSTRUCTION_TYPES.includes(noteType) ? 'text-yellow-100' : 'text-blue-100'
+                              INSTRUCTION_TYPES.includes(noteType) ? 'text-[#F3DCC9]' : 'text-[#D6DEF0]'
                             }`}>{note.note_content}</p>
                           ))}
                         </div>
@@ -1395,7 +1409,7 @@ if (view === 'display' && showLyrics && currentSong) {
           {/* Mobile Queue */}
           {queue.length > 0 && (
             <div className="p-4 border-t border-white/10">
-              <h2 className="text-sm font-bold mb-2 opacity-40">Up Next</h2>
+              <h2 className="text-sm font-bold mb-2 opacity-40" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>Up Next</h2>
               <div className="space-y-1">
                 {queue.slice(0, 3).map((song, i) => (
                   <div key={song.id} className="flex justify-between items-center text-sm">
@@ -1403,7 +1417,7 @@ if (view === 'display' && showLyrics && currentSong) {
                       <span className="opacity-50 mr-2">{i+1}.</span>
                       {song.song_title}
                     </div>
-                    <div className="text-green-400 shrink-0 ml-2">pg {song.song_page}</div>
+                    <div className="text-[#3B9B73] shrink-0 ml-2">pg {song.song_page}</div>
                   </div>
                 ))}
                 {queue.length > 3 && (
@@ -1436,7 +1450,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {currentSong?.has_lyrics && (
               <button 
                 onClick={() => setShowLyrics(true)}
-                className="bg-green-600 hover:bg-green-500 px-4 py-3 tv:py-4 rounded-xl text-base tv:text-xl font-bold transition-colors mb-4"
+                className="bg-[#256B45] hover:bg-[#2f8058] px-4 py-3 tv:py-4 rounded-xl text-base tv:text-xl font-bold transition-colors mb-4"
               >
                 📄 Lyrics
               </button>
@@ -1453,11 +1467,11 @@ if (view === 'display' && showLyrics && currentSong) {
                 style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 16px rgba(226,232,245,0.35)' }}
               >
                 <span style={{ fontSize: '12px', position: 'absolute', top: '-6px', right: '2px' }} aria-hidden="true">✨</span>
-                <div className="text-xs tv:text-sm uppercase font-bold opacity-60 mb-2" style={{ color: '#E2E8F5' }}>Now Singing</div>
-                <div className="text-xl tv:text-3xl font-black leading-tight mb-2" style={{ color: '#E2E8F5' }}>
+                <div className="text-sm tv:text-base uppercase font-bold opacity-70 mb-2" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</div>
+                <div className="text-xl tv:text-3xl font-black leading-tight mb-2" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
                   {currentSong.title} {currentSong.has_lyrics && '📄'}
                 </div>
-                <div className="text-base tv:text-xl text-green-400 font-bold">
+                <div className="text-lg tv:text-2xl font-bold" style={{ color: '#3B9B73' }}>
                   Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
                 </div>
               </div>
@@ -1486,8 +1500,8 @@ if (view === 'display' && showLyrics && currentSong) {
                           onClick={() => toggleNoteType(noteType)}
                           className={`w-full text-left px-3 py-2 tv:px-4 tv:py-3 rounded-xl text-sm tv:text-base font-bold transition-colors mb-2 ${
                             expandedNotes.includes(noteType) 
-                              ? 'bg-yellow-600 text-white' 
-                              : 'bg-yellow-600/30 text-yellow-200 hover:bg-yellow-600/50'
+                              ? 'bg-[#C35522] text-white' 
+                              : 'bg-[#C35522]/20 text-[#D45D25] hover:bg-[#C35522]/40'
                           }`}
                         >
                           {NOTE_TYPE_LABELS[noteType] || noteType}
@@ -1504,8 +1518,8 @@ if (view === 'display' && showLyrics && currentSong) {
                           onClick={() => toggleNoteType(noteType)}
                           className={`w-full text-left px-3 py-2 tv:px-4 tv:py-3 rounded-xl text-sm tv:text-base font-bold transition-colors mb-2 ${
                             expandedNotes.includes(noteType) 
-                              ? 'bg-blue-600 text-white' 
-                              : 'bg-blue-600/30 text-blue-200 hover:bg-blue-600/50'
+                              ? 'bg-[#5371AC] text-white' 
+                              : 'bg-[#5371AC]/20 text-[#6882B6] hover:bg-[#5371AC]/40'
                           }`}
                         >
                           {NOTE_TYPE_LABELS[noteType] || noteType}
@@ -1550,10 +1564,10 @@ if (view === 'display' && showLyrics && currentSong) {
                     return (
                       <div className="mt-6 space-y-4">
                         {expandedInstructions.map(noteType => (
-                          <div key={noteType} className="p-4 bg-yellow-900/30 rounded-xl border border-yellow-600/30 text-left">
-                            <div className="text-sm font-bold text-yellow-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+                          <div key={noteType} className="p-4 bg-[#C35522]/15 rounded-xl border border-[#C35522]/40 text-left">
+                            <div className="text-sm font-bold text-[#D45D25] mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
                             {getNotesByType(songId, noteType).map((note, i) => (
-                              <p key={i} className="text-yellow-100 text-xl tv:text-2xl">{note.note_content}</p>
+                              <p key={i} className="text-[#F3DCC9] text-xl tv:text-2xl">{note.note_content}</p>
                             ))}
                           </div>
                         ))}
@@ -1570,7 +1584,7 @@ if (view === 'display' && showLyrics && currentSong) {
                           that's an acceptable, deliberate tradeoff rather
                           than trying to force every song's full lyrics to
                           always be visible. */}
-                      <div className="mt-8 text-2xl tv:text-4xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap columns-2 gap-8 tv:gap-12">
+                      <div className="mt-8 text-2xl tv:text-4xl leading-relaxed text-[#e2e8f0] max-w-4xl whitespace-pre-wrap columns-2 gap-8 tv:gap-12">
                         {currentSong.lyrics_text}
                       </div>
                       {/* Year written */}
@@ -1578,7 +1592,7 @@ if (view === 'display' && showLyrics && currentSong) {
                         const currentSongFull = getCurrentSongFull();
                         if (currentSongFull?.year_written) {
                           return (
-                            <div className="mt-6 text-lg tv:text-xl text-gray-400 italic">
+                            <div className="mt-6 text-lg tv:text-xl text-[#838C95] italic">
                               Written: {currentSongFull.year_written}
                             </div>
                           );
@@ -1600,10 +1614,10 @@ if (view === 'display' && showLyrics && currentSong) {
                     return (
                       <div className="mt-6 space-y-4">
                         {expandedOther.map(noteType => (
-                          <div key={noteType} className="p-4 bg-blue-900/30 rounded-xl border border-blue-600/30 text-left">
-                            <div className="text-sm font-bold text-blue-400 mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
+                          <div key={noteType} className="p-4 bg-[#5371AC]/15 rounded-xl border border-[#5371AC]/40 text-left">
+                            <div className="text-sm font-bold text-[#6882B6] mb-2">{NOTE_TYPE_LABELS[noteType]}</div>
                             {getNotesByType(songId, noteType).map((note, i) => (
-                              <p key={i} className="text-blue-100 text-xl tv:text-2xl">{note.note_content}</p>
+                              <p key={i} className="text-[#D6DEF0] text-xl tv:text-2xl">{note.note_content}</p>
                             ))}
                           </div>
                         ))}
@@ -1624,7 +1638,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {/* Up Next Queue - always gets its natural space, never clipped */}
             {queue.length > 0 && (
               <div className="pt-6 border-t border-white/10 w-full max-w-4xl shrink-0">
-                <h2 className="text-2xl tv:text-4xl font-bold mb-4 opacity-40">Up Next</h2>
+                <h2 className="text-2xl tv:text-4xl font-bold mb-4 opacity-40" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>Up Next</h2>
                 <div className="space-y-3">
                   {queue.slice(0, 5).map((song, i) => (
                     <div key={song.id} className="flex justify-between items-start text-2xl tv:text-4xl font-medium gap-4">
@@ -1632,7 +1646,7 @@ if (view === 'display' && showLyrics && currentSong) {
                         <span className="opacity-50 mr-3">{i+1}.</span>
                         {song.song_title} {song.has_lyrics && '📄'}
                       </div>
-                      <div className="text-green-400 shrink-0 text-right">Page {song.song_page}</div>
+                      <div className="text-[#3B9B73] shrink-0 text-right">Page {song.song_page}</div>
                     </div>
                   ))}
                   {queue.length > 5 && (
@@ -1644,6 +1658,7 @@ if (view === 'display' && showLyrics && currentSong) {
           </div>
         </div>
       </div>
+    </>
     );
   }
 
