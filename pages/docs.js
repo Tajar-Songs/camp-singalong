@@ -1319,26 +1319,29 @@ export default function Docs() {
           </div>
         </div>
       )}
-      {/* Top-level tab toggle - mirrors Tags' "Manage Tags" / "Apply Tags to
-          Songs" pattern: two tabs within one page, not separate routes. */}
-      {isAdmin && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem 2rem 0 2rem', display: 'flex', gap: '0.5rem' }}>
-          <button
-            style={{ ...s.btnSec, background: pageMode === 'browse' ? '#256B45' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
-            onClick={() => setPageMode('browse')}
-          ><i className="ti ti-books" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Browse Docs</button>
-          <button
-            style={{ ...s.btnSec, background: pageMode === 'bulkOrganize' ? '#256B45' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
-            onClick={() => setPageMode('bulkOrganize')}
-          ><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Bulk Organize</button>
-        </div>
-      )}
+      {/* Page header - "Docs" heading + Browse/Bulk Organize toggle, side by
+          side in one shared top bar so the heading actually leads rather
+          than sitting visually under the mode toggle. */}
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem 2rem 0 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <h1 style={{ ...s.title, fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-books" aria-hidden="true"></i> Docs</h1>
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              style={{ ...s.btnSec, background: pageMode === 'browse' ? '#256B45' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
+              onClick={() => setPageMode('browse')}
+            ><i className="ti ti-books" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Browse Docs</button>
+            <button
+              style={{ ...s.btnSec, background: pageMode === 'bulkOrganize' ? '#256B45' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
+              onClick={() => setPageMode('bulkOrganize')}
+            ><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Bulk Organize</button>
+          </div>
+        )}
+      </div>
       {pageMode === 'browse' && (
       <div style={s.wrapper}>
         {/* Sidebar */}
         <div>
           <div style={s.header}>
-            <h1 style={{ ...s.title, fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-books" aria-hidden="true"></i> Docs</h1>
             {isAdmin && !editMode && <button style={s.btn} onClick={startCreate}>+ New</button>}
           </div>
           {/* About/Credits/Disclaimer - pinned here, always visible regardless
