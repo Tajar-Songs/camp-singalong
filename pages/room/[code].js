@@ -1248,7 +1248,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {/* Lyrics */}
             <div className="text-center mb-8">
               {currentSong.lyrics_text ? (
-                <div className="text-2xl tv:text-3xl leading-relaxed whitespace-pre-wrap">
+                <div className="text-2xl tv:text-4xl leading-relaxed whitespace-pre-wrap text-left columns-1 tv:columns-2 gap-8 tv:gap-12">
                   {currentSong.lyrics_text}
                 </div>
               ) : (
