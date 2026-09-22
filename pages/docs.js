@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
@@ -283,6 +284,7 @@ const diffTags = (oldTags, newTags) => {
 };
 
 export default function Docs() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [userRoleKeys, setUserRoleKeys] = useState([]);
@@ -375,6 +377,25 @@ export default function Docs() {
   useEffect(() => { checkAuth(); loadDocs(); loadAudienceOptions(); loadAllDocAudiences(); }, []);
   useEffect(() => { if (user) loadDocs(); }, [user, userRoleKeys]); // Reload when roles are known, to get admin-only docs
   useEffect(() => { if (currentUserId) loadUserDrafts(); }, [currentUserId]); // populate the Drafts count badge as soon as we know who's logged in
+
+  // Narrow, initial-load-only URL support: if the page was reached with
+  // ?slug=..., select that doc once docs have loaded. This is NOT full
+  // URL-based routing - clicking between docs within the page does not
+  // update the URL, and back/forward won't move between docs. It only
+  // makes an external link like /docs?slug=about land on the right doc.
+  // Real routing (URL updates on every click, proper back/forward) is a
+  // separate, larger piece of work - see the Ideas board.
+  const initialSlugHandledRef = useRef(false);
+  useEffect(() => {
+    if (initialSlugHandledRef.current) return;
+    if (!router.isReady) return;
+    if (docs.length === 0) return;
+    const slug = router.query.slug;
+    if (!slug) { initialSlugHandledRef.current = true; return; }
+    const match = docs.find(d => d.slug === slug);
+    if (match) viewDoc(match);
+    initialSlugHandledRef.current = true;
+  }, [router.isReady, router.query.slug, docs]);
 
   const checkAuth = async () => {
     try {
