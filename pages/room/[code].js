@@ -1529,23 +1529,22 @@ if (view === 'display' && showLyrics && currentSong) {
                 overflow rather than pushing Up Next out of view */}
             <div className="w-full max-w-4xl flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
               <div className="mb-8">
-                {/* Now Singing title/page - compact, with the moonlight
-                    treatment, at the top of the content where a title
-                    belongs (reading convention: not worth fighting), but
-                    much smaller than the original text-8xl hero so it still
-                    leaves real room for lyrics + Up Next below. */}
+                {/* Now Singing title/page - three columns, using the width
+                    of the screen instead of stacking vertically, so each
+                    piece can be bigger while the box takes up less height
+                    overall (more room left for lyrics + Up Next below). */}
                 {currentSong ? (
                   <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
                     <div
-                      className="inline-block mb-4 px-4 py-3 rounded-xl relative"
+                      className="w-full mb-4 px-4 py-3 rounded-xl relative flex items-center gap-4 tv:gap-6"
                       style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 16px rgba(226,232,245,0.35)' }}
                     >
                       <span style={{ fontSize: '14px', position: 'absolute', top: '-7px', right: '4px' }} aria-hidden="true">✨</span>
-                      <div className="text-sm tv:text-lg uppercase font-bold opacity-70 mb-1" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</div>
-                      <div className="text-2xl tv:text-4xl font-black leading-tight mb-1" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
+                      <div className="text-sm tv:text-lg uppercase font-bold opacity-70 shrink-0" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</div>
+                      <div className="text-2xl tv:text-5xl font-black leading-tight flex-1 min-w-0 truncate" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
                         {currentSong.title} {currentSong.has_lyrics && '📄'}
                       </div>
-                      <div className="text-lg tv:text-2xl font-bold" style={{ color: '#3B9B73' }}>
+                      <div className="text-lg tv:text-3xl font-bold shrink-0" style={{ color: '#3B9B73' }}>
                         Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
                       </div>
                     </div>
