@@ -1431,7 +1431,7 @@ if (view === 'display' && showLyrics && currentSong) {
         {/* Desktop/TV Layout - two columns with sidebar */}
         <div className="hidden xl:flex min-h-screen">
           {/* Left Sidebar - Controls & Options */}
-          <div className="w-80 tv:w-96 shrink-0 p-4 tv:p-6 flex flex-col border-r border-white/10">
+          <div className="w-72 tv:w-80 shrink-0 p-4 tv:p-6 flex flex-col border-r border-white/10">
             {/* Room Code */}
             <div className="bg-white/10 p-4 tv:p-6 rounded-xl border border-white/10 mb-4">
               <div className="text-xs tv:text-sm uppercase font-bold opacity-60 mb-1">Room Code</div>
@@ -1456,26 +1456,10 @@ if (view === 'display' && showLyrics && currentSong) {
               </button>
             )}
 
-            {/* Now Singing - title & page, moved here from the main content
-                area to free up vertical space there for lyrics and Up Next.
-                Given the moonlight glow treatment from the style guide -
-                this is exactly the kind of rare, special callout it's meant
-                for, and it needed to stand out more than flat sidebar text. */}
-            {currentSong && (
-              <div
-                className="mb-5 p-3 rounded-xl relative"
-                style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 16px rgba(226,232,245,0.35)' }}
-              >
-                <span style={{ fontSize: '12px', position: 'absolute', top: '-6px', right: '2px' }} aria-hidden="true">✨</span>
-                <div className="text-sm tv:text-base uppercase font-bold opacity-70 mb-2" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</div>
-                <div className="text-xl tv:text-3xl font-black leading-tight mb-2" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
-                  {currentSong.title} {currentSong.has_lyrics && '📄'}
-                </div>
-                <div className="text-lg tv:text-2xl font-bold" style={{ color: '#3B9B73' }}>
-                  Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
-                </div>
-              </div>
-            )}
+            {/* Now Singing title/page moved back to the top of the main
+                content area - see below. Sidebar placement violated a real
+                reading convention (title should be at the top of what
+                you're looking at, not in a side column). */}
             
             {/* Note Buttons (when song is playing) */}
             {currentSong && (() => {
@@ -1545,12 +1529,26 @@ if (view === 'display' && showLyrics && currentSong) {
                 overflow rather than pushing Up Next out of view */}
             <div className="w-full max-w-4xl flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
               <div className="mb-8">
-                {/* "Now Singing" label + title + page moved to the sidebar
-                    (see below) to free up vertical space here for lyrics
-                    and Up Next - this used to be a giant text-8xl title
-                    taking up a lot of room that's now available for content. */}
+                {/* Now Singing title/page - compact, with the moonlight
+                    treatment, at the top of the content where a title
+                    belongs (reading convention: not worth fighting), but
+                    much smaller than the original text-8xl hero so it still
+                    leaves real room for lyrics + Up Next below. */}
                 {currentSong ? (
                   <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div
+                      className="inline-block mb-4 px-4 py-3 rounded-xl relative"
+                      style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 16px rgba(226,232,245,0.35)' }}
+                    >
+                      <span style={{ fontSize: '14px', position: 'absolute', top: '-7px', right: '4px' }} aria-hidden="true">✨</span>
+                      <div className="text-sm tv:text-lg uppercase font-bold opacity-70 mb-1" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</div>
+                      <div className="text-2xl tv:text-4xl font-black leading-tight mb-1" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
+                        {currentSong.title} {currentSong.has_lyrics && '📄'}
+                      </div>
+                      <div className="text-lg tv:text-2xl font-bold" style={{ color: '#3B9B73' }}>
+                        Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
+                      </div>
+                    </div>
 
                   {/* Show expanded instruction notes on TV */}
                   {(() => {
