@@ -16,7 +16,6 @@ export default function App({ Component, pageProps }) {
   const [checking, setChecking] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [aboutMenuOpen, setAboutMenuOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -42,22 +41,18 @@ export default function App({ Component, pageProps }) {
   useEffect(() => {
     setNavOpen(false);
     setAdminMenuOpen(false);
-    setAboutMenuOpen(false);
   }, [router.pathname]);
 
-  // Close admin/about menus when clicking outside
+  // Close admin menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (adminMenuOpen && !e.target.closest('.admin-dropdown')) {
         setAdminMenuOpen(false);
       }
-      if (aboutMenuOpen && !e.target.closest('.about-dropdown')) {
-        setAboutMenuOpen(false);
-      }
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [adminMenuOpen, aboutMenuOpen]);
+  }, [adminMenuOpen]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -170,12 +165,6 @@ export default function App({ Component, pageProps }) {
     { href: '/settings', label: 'Settings' },
   ];
 
-  const aboutNavItems = [
-    { href: '/docs?slug=about', label: 'About' },
-    { href: '/docs?slug=credits', label: 'Credits' },
-    { href: '/docs?slug=disclaimer', label: 'Disclaimer' },
-  ];
-
   const visibleUserItems = userNavItems.filter(item => item.show);
   const isOnAdminPage = adminNavItems.some(item => currentPath === item.href);
 
@@ -204,8 +193,8 @@ export default function App({ Component, pageProps }) {
     padding: '0.5rem 0.75rem',
     borderRadius: '0.375rem',
     fontSize: '0.875rem',
-    color: isActive ? '#22c55e' : '#94a3b8',
-    background: isActive ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+    color: isActive ? '#3B9B73' : '#94a3b8',
+    background: isActive ? 'rgba(59, 155, 115, 0.12)' : 'transparent',
     textDecoration: 'none',
   });
 
@@ -261,15 +250,15 @@ export default function App({ Component, pageProps }) {
                       onClick={() => setAdminMenuOpen(!adminMenuOpen)}
                       style={{
                         ...linkStyle(isOnAdminPage),
-                        background: isOnAdminPage ? '#7c3aed' : 'transparent',
-                        border: '1px solid #7c3aed',
+                        background: isOnAdminPage ? '#7959A6' : 'transparent',
+                        border: '1px solid #8F74B4',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.25rem',
                       }}
                     >
-                      ⚙️ Admin {adminMenuOpen ? '▲' : '▼'}
+                      <i className="ti ti-settings" style={{ fontSize: '0.9rem' }} aria-hidden="true"></i> Admin {adminMenuOpen ? '▲' : '▼'}
                     </button>
                     
                     {adminMenuOpen && (
@@ -294,11 +283,11 @@ export default function App({ Component, pageProps }) {
                             style={{
                               display: 'block',
                               padding: '0.5rem 0.75rem',
-                              color: currentPath === item.href ? '#7c3aed' : '#e2e8f0',
+                              color: currentPath === item.href ? '#8F74B4' : '#e2e8f0',
                               textDecoration: 'none',
                               borderRadius: '0.25rem',
                               fontSize: '0.875rem',
-                              background: currentPath === item.href ? '#7c3aed20' : 'transparent',
+                              background: currentPath === item.href ? '#8F74B420' : 'transparent',
                             }}
                           >
                             {item.label}
@@ -308,59 +297,6 @@ export default function App({ Component, pageProps }) {
                     )}
                   </div>
                 )}
-
-                {/* About dropdown - visible to everyone, not admin-gated */}
-                <div className="about-dropdown" style={{ position: 'relative', marginLeft: '0.5rem' }}>
-                  <button
-                    onClick={() => setAboutMenuOpen(!aboutMenuOpen)}
-                    style={{
-                      ...linkStyle(aboutNavItems.some(item => router.asPath === item.href)),
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                      background: 'transparent',
-                      border: '1px solid #334155',
-                    }}
-                  >
-                    About {aboutMenuOpen ? '▲' : '▼'}
-                  </button>
-
-                  {aboutMenuOpen && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      right: 0,
-                      marginTop: '0.25rem',
-                      background: '#1e293b',
-                      border: '1px solid #334155',
-                      borderRadius: '0.5rem',
-                      padding: '0.5rem',
-                      minWidth: '150px',
-                      zIndex: 10000,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                    }}>
-                      {aboutNavItems.map(item => (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => setAboutMenuOpen(false)}
-                          style={{
-                            display: 'block',
-                            padding: '0.5rem 0.75rem',
-                            color: router.asPath === item.href ? '#22c55e' : '#e2e8f0',
-                            textDecoration: 'none',
-                            borderRadius: '0.25rem',
-                            fontSize: '0.875rem',
-                            background: router.asPath === item.href ? '#22c55e20' : 'transparent',
-                          }}
-                        >
-                          {item.label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
             
@@ -368,13 +304,13 @@ export default function App({ Component, pageProps }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               {user ? (
                 <>
-                  <span className="nav-email" style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  <span className="nav-email" style={{ fontSize: '0.75rem', color: '#838C95' }}>
                     {userProfile?.display_name || user?.email || ''}
                   </span>
                   <button
                     onClick={handleLogout}
                     style={{
-                      background: '#dc2626',
+                      background: '#C35522',
                       color: 'white',
                       border: 'none',
                       padding: '0.375rem 0.75rem',
@@ -391,7 +327,7 @@ export default function App({ Component, pageProps }) {
                 <Link 
                   href="/?login=true" 
                   style={{
-                    background: '#22c55e',
+                    background: '#256B45',
                     color: 'white',
                     padding: '0.375rem 0.75rem',
                     borderRadius: '0.375rem',
@@ -408,6 +344,7 @@ export default function App({ Component, pageProps }) {
               <button
                 className="nav-mobile-btn"
                 onClick={() => setNavOpen(!navOpen)}
+                aria-label="Menu"
                 style={{
                   display: 'none',
                   background: 'transparent',
@@ -419,7 +356,7 @@ export default function App({ Component, pageProps }) {
                   fontSize: '1rem',
                 }}
               >
-                ☰
+                <i className="ti ti-menu-2" aria-hidden="true"></i>
               </button>
             </div>
           </div>
@@ -453,59 +390,36 @@ export default function App({ Component, pageProps }) {
                   }}>
                     <span style={{ 
                       fontSize: '0.7rem', 
-                      color: '#7c3aed', 
+                      color: '#8F74B4', 
                       textTransform: 'uppercase', 
                       fontWeight: 'bold',
                       padding: '0 1rem',
                     }}>
-                      ⚙️ Admin
+                      <i className="ti ti-settings" style={{ fontSize: '0.8rem' }} aria-hidden="true"></i> Admin
                     </span>
                   </div>
                   {adminNavItems.map(item => (
                     <Link key={item.href} href={item.href} style={{
                       ...linkStyle(currentPath === item.href),
                       padding: '0.75rem 1rem',
-                      background: currentPath === item.href ? '#7c3aed20' : 'transparent',
+                      background: currentPath === item.href ? '#8F74B420' : 'transparent',
                     }}>
                       {item.label}
                     </Link>
                   ))}
                 </>
               )}
-
-              {/* About section in mobile - visible to everyone */}
-              <div style={{
-                borderTop: '1px solid #334155',
-                marginTop: '0.5rem',
-                paddingTop: '0.5rem',
-                marginBottom: '0.25rem',
-              }}>
-                <span style={{
-                  fontSize: '0.7rem',
-                  color: '#94a3b8',
-                  textTransform: 'uppercase',
-                  fontWeight: 'bold',
-                  padding: '0 1rem',
-                }}>
-                  About
-                </span>
-              </div>
-              {aboutNavItems.map(item => (
-                <Link key={item.href} href={item.href} style={{
-                  ...linkStyle(router.asPath === item.href),
-                  padding: '0.75rem 1rem',
-                  background: router.asPath === item.href ? '#22c55e20' : 'transparent',
-                }}>
-                  {item.label}
-                </Link>
-              ))}
             </div>
           )}
         </nav>
       )}
       
       {/* Add padding to body when nav is visible */}
-      <div style={{ paddingTop: !checking ? '3rem' : 0 }}>
+      {/* Atkinson Hyperlegible as the site-wide default body font - every
+          page inherits this unless it explicitly overrides (like Room's TV
+          display, which has its own reasons to set it directly). Setting
+          it once here means future pages don't need to repeat this. */}
+      <div style={{ paddingTop: !checking ? '3rem' : 0, fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
         <Component {...pageProps} />
       </div>
       
