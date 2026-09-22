@@ -1441,6 +1441,20 @@ if (view === 'display' && showLyrics && currentSong) {
                 📄 Lyrics
               </button>
             )}
+
+            {/* Now Singing - title & page, moved here from the main content
+                area to free up vertical space there for lyrics and Up Next */}
+            {currentSong && (
+              <div className="mb-4">
+                <div className="text-[10px] tv:text-xs uppercase font-bold opacity-40 mb-1">Now Singing</div>
+                <div className="text-lg tv:text-2xl font-black leading-tight mb-1">
+                  {currentSong.title} {currentSong.has_lyrics && '📄'}
+                </div>
+                <div className="text-sm tv:text-lg text-green-400 font-bold">
+                  Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
+                </div>
+              </div>
+            )}
             
             {/* Note Buttons (when song is playing) */}
             {currentSong && (() => {
@@ -1510,15 +1524,12 @@ if (view === 'display' && showLyrics && currentSong) {
                 overflow rather than pushing Up Next out of view */}
             <div className="w-full max-w-4xl flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
               <div className="mb-8">
-                <h1 className="text-3xl tv:text-5xl font-black mb-2 opacity-40 uppercase tracking-widest">Now Singing</h1>
+                {/* "Now Singing" label + title + page moved to the sidebar
+                    (see below) to free up vertical space here for lyrics
+                    and Up Next - this used to be a giant text-8xl title
+                    taking up a lot of room that's now available for content. */}
                 {currentSong ? (
                   <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                    <div className="text-5xl tv:text-8xl font-black mb-2 leading-tight">
-                      {currentSong.title} {currentSong.has_lyrics && '📄'}
-                    </div>
-                    <div className="text-3xl tv:text-6xl text-green-400 font-bold">
-                      Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
-                    </div>
 
                   {/* Show expanded instruction notes on TV */}
                   {(() => {
