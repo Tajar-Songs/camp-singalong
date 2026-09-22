@@ -1497,12 +1497,18 @@ if (view === 'display' && showLyrics && currentSong) {
             })()}
           </div>
           
-          {/* Right Main Content - Now Singing & Queue */}
-          <div className="flex-1 flex flex-col justify-center items-center p-6 tv:p-12 overflow-hidden">
-            
-            {/* Centered content group */}
-            <div className="w-full max-w-4xl">
-              {/* Now Singing Section */}
+          {/* Right Main Content - Now Singing & Queue.
+              Restructured so Up Next always keeps its natural space and is
+              never pushed off-screen by a long song's lyrics: Now Singing is
+              its own flex-1 region that clips ITS OWN overflow (long lyrics
+              can run out of room and that's fine - see the columns below),
+              while Up Next sits outside that region at its natural height,
+              so it always renders. */}
+          <div className="flex-1 flex flex-col p-6 tv:p-12 min-h-0 items-center">
+
+            {/* Now Singing Section - takes remaining space, clips its own
+                overflow rather than pushing Up Next out of view */}
+            <div className="w-full max-w-4xl flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
               <div className="mb-8">
                 <h1 className="text-3xl tv:text-5xl font-black mb-2 opacity-40 uppercase tracking-widest">Now Singing</h1>
                 {currentSong ? (
@@ -1539,7 +1545,14 @@ if (view === 'display' && showLyrics && currentSong) {
 
                   {showLyricsOnTV && currentSong.lyrics_text && (
                     <>
-                      <div className="mt-8 text-xl tv:text-3xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap">
+                      {/* Bigger than before, and flows into two columns so a
+                          wide TV screen is actually put to use instead of
+                          running straight down. Longer songs may still not
+                          fully fit in the space available above Up Next -
+                          that's an acceptable, deliberate tradeoff rather
+                          than trying to force every song's full lyrics to
+                          always be visible. */}
+                      <div className="mt-8 text-2xl tv:text-4xl leading-relaxed text-gray-200 max-w-4xl whitespace-pre-wrap columns-1 tv:columns-2 gap-8 tv:gap-12">
                         {currentSong.lyrics_text}
                       </div>
                       {/* Year written */}
@@ -1584,10 +1597,15 @@ if (view === 'display' && showLyrics && currentSong) {
                 <div className="text-3xl tv:text-5xl opacity-30 italic">Pick a song to begin...</div>
               )}
             </div>
+            </div>
+            {/* ^ closes the Now Singing flex-1 clipping region - everything
+                below this point (Up Next) is a sibling with its own natural
+                height, guaranteed to render regardless of how much space
+                Now Singing's lyrics did or didn't need. */}
 
-            {/* Up Next Queue */}
+            {/* Up Next Queue - always gets its natural space, never clipped */}
             {queue.length > 0 && (
-              <div className="pt-6 border-t border-white/10 w-full">
+              <div className="pt-6 border-t border-white/10 w-full max-w-4xl shrink-0">
                 <h2 className="text-2xl tv:text-4xl font-bold mb-4 opacity-40">Up Next</h2>
                 <div className="space-y-3">
                   {queue.slice(0, 5).map((song, i) => (
@@ -1605,7 +1623,6 @@ if (view === 'display' && showLyrics && currentSong) {
                 </div>
               </div>
             )}
-            </div>
           </div>
         </div>
       </div>
