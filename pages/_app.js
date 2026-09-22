@@ -16,6 +16,7 @@ export default function App({ Component, pageProps }) {
   const [checking, setChecking] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [aboutMenuOpen, setAboutMenuOpen] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -41,18 +42,22 @@ export default function App({ Component, pageProps }) {
   useEffect(() => {
     setNavOpen(false);
     setAdminMenuOpen(false);
+    setAboutMenuOpen(false);
   }, [router.pathname]);
 
-  // Close admin menu when clicking outside
+  // Close admin/about menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (adminMenuOpen && !e.target.closest('.admin-dropdown')) {
         setAdminMenuOpen(false);
       }
+      if (aboutMenuOpen && !e.target.closest('.about-dropdown')) {
+        setAboutMenuOpen(false);
+      }
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [adminMenuOpen]);
+  }, [adminMenuOpen, aboutMenuOpen]);
 
   const refreshAccessToken = async () => {
     const refreshToken = localStorage.getItem('supabase_refresh_token');
@@ -165,6 +170,12 @@ export default function App({ Component, pageProps }) {
     { href: '/settings', label: 'Settings' },
   ];
 
+  const aboutNavItems = [
+    { href: '/docs?slug=about', label: 'About' },
+    { href: '/docs?slug=credits', label: 'Credits' },
+    { href: '/docs?slug=disclaimer', label: 'Disclaimer' },
+  ];
+
   const visibleUserItems = userNavItems.filter(item => item.show);
   const isOnAdminPage = adminNavItems.some(item => currentPath === item.href);
 
@@ -202,16 +213,37 @@ export default function App({ Component, pageProps }) {
     <>
       <Head>
         <meta name="robots" content="noindex, nofollow" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
+        <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
       </Head>
+      <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js" async></script>
       
       {/* Navigation bar - show when done checking */}
       {!checking && (
         <nav style={navStyle}>
           <div style={navContainerStyle}>
-            {/* Left: Logo/Brand */}
+            {/* Left: Logo/Brand - moonlight-treated since there's no real
+                designed logo yet; this gives the wordmark more identity in
+                the meantime. The music icon is from Streamline's Freehand
+                set (CC BY 4.0, attribution below in the footer) via
+                Iconify's web component - hand-drawn, used here because
+                this is a persistent, once-per-page brand mark, not
+                everyday UI (which stays outline/Tabler). */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-              <Link href="/" style={{ fontWeight: 'bold', color: '#22c55e', fontSize: '1.1rem', textDecoration: 'none' }}>
-                🎵 Tajar's Songbook
+              <Link
+                href="/"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                  fontWeight: 'bold', fontSize: '1.1rem', textDecoration: 'none',
+                  color: '#E2E8F5', padding: '0.25rem 0.6rem', borderRadius: '0.5rem',
+                  background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)',
+                  boxShadow: '0 0 12px rgba(226,232,245,0.3)'
+                }}
+              >
+                <iconify-icon icon="streamline-freehand:music-note-1" style={{ fontSize: '1.1rem', color: '#E2E8F5' }} aria-hidden="true"></iconify-icon>
+                Tajar's Songbook
               </Link>
               
               {/* Desktop nav links */}
@@ -276,6 +308,59 @@ export default function App({ Component, pageProps }) {
                     )}
                   </div>
                 )}
+
+                {/* About dropdown - visible to everyone, not admin-gated */}
+                <div className="about-dropdown" style={{ position: 'relative', marginLeft: '0.5rem' }}>
+                  <button
+                    onClick={() => setAboutMenuOpen(!aboutMenuOpen)}
+                    style={{
+                      ...linkStyle(aboutNavItems.some(item => router.asPath === item.href)),
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      background: 'transparent',
+                      border: '1px solid #334155',
+                    }}
+                  >
+                    About {aboutMenuOpen ? '▲' : '▼'}
+                  </button>
+
+                  {aboutMenuOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '0.25rem',
+                      background: '#1e293b',
+                      border: '1px solid #334155',
+                      borderRadius: '0.5rem',
+                      padding: '0.5rem',
+                      minWidth: '150px',
+                      zIndex: 10000,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    }}>
+                      {aboutNavItems.map(item => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setAboutMenuOpen(false)}
+                          style={{
+                            display: 'block',
+                            padding: '0.5rem 0.75rem',
+                            color: router.asPath === item.href ? '#22c55e' : '#e2e8f0',
+                            textDecoration: 'none',
+                            borderRadius: '0.25rem',
+                            fontSize: '0.875rem',
+                            background: router.asPath === item.href ? '#22c55e20' : 'transparent',
+                          }}
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -387,6 +472,33 @@ export default function App({ Component, pageProps }) {
                   ))}
                 </>
               )}
+
+              {/* About section in mobile - visible to everyone */}
+              <div style={{
+                borderTop: '1px solid #334155',
+                marginTop: '0.5rem',
+                paddingTop: '0.5rem',
+                marginBottom: '0.25rem',
+              }}>
+                <span style={{
+                  fontSize: '0.7rem',
+                  color: '#94a3b8',
+                  textTransform: 'uppercase',
+                  fontWeight: 'bold',
+                  padding: '0 1rem',
+                }}>
+                  About
+                </span>
+              </div>
+              {aboutNavItems.map(item => (
+                <Link key={item.href} href={item.href} style={{
+                  ...linkStyle(router.asPath === item.href),
+                  padding: '0.75rem 1rem',
+                  background: router.asPath === item.href ? '#22c55e20' : 'transparent',
+                }}>
+                  {item.label}
+                </Link>
+              ))}
             </div>
           )}
         </nav>
