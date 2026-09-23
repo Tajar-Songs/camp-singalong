@@ -278,7 +278,7 @@ export default function UserManagement() {
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full">
           <div className="text-center mb-6">
             <div className="text-5xl mb-2"><i className="ti ti-users" aria-hidden="true"></i></div>
-            <h1 className="text-2xl font-bold mb-1">User Management</h1>
+            <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>User Management</h1>
             <p className="text-[#838C95] text-sm">Sign in to continue</p>
           </div>
           
@@ -359,7 +359,7 @@ export default function UserManagement() {
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-black flex items-center gap-3">
+            <h1 className="text-3xl font-black flex items-center gap-3" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>
               <i className="ti ti-users" aria-hidden="true"></i> User Management
             </h1>
             <p className="text-[#838C95] mt-1">
