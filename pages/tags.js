@@ -673,10 +673,6 @@ export default function TagManagement() {
               </button>
             )}
           </div>
-          
-          <div className="mt-6 text-center">
-            <a href="/" className="text-[#838C95] text-sm hover:text-[#838C95]">← Back to Singalong</a>
-          </div>
         </div>
       </div>
     );
@@ -703,9 +699,6 @@ export default function TagManagement() {
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
           <p className="text-[#838C95] mb-6">You need admin privileges to access this page.</p>
           <div className="flex flex-col gap-3">
-            <a href="/" className="bg-[#256B45] hover:bg-[#2f8058] text-white p-3 rounded-lg font-bold transition-all">
-              ← Back to Singalong
-            </a>
             <button onClick={handleLogout} className="text-[#D45D25] hover:text-[#D45D25] text-sm">
               Sign out
             </button>
@@ -738,15 +731,6 @@ export default function TagManagement() {
               {tags.length} tags • {songs.length} songs
             </p>
           </div>
-          <div className="flex gap-3 items-center flex-wrap">
-            <a href="/" className="text-[#838C95] hover:text-[#838C95] text-sm">← Singalong</a>
-            <a href="/admin" className="text-[#838C95] hover:text-[#838C95] text-sm">Songs</a>
-            <a href="/admin/users" className="text-[#838C95] hover:text-[#838C95] text-sm">Users</a>
-            <a href="/reports" className="text-[#838C95] hover:text-[#838C95] text-sm">Insights</a>
-            <span className="text-[#838C95]">|</span>
-            <span className="text-[#838C95] text-sm"><i className="ti ti-user" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {userProfile?.display_name}</span>
-            <button onClick={handleLogout} className="text-[#D45D25] hover:text-[#D45D25] text-sm">Sign out</button>
-          </div>
         </header>
 
         {/* Status Message */}
@@ -756,28 +740,44 @@ export default function TagManagement() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setActiveTab('manage')}
-            className={`px-6 py-3 rounded-xl font-bold transition-all ${
-              activeTab === 'manage'
-                ? 'bg-[#256B45] text-white'
-                : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
-            }`}
-          >
-            <i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Manage Platform Tags
-          </button>
-          <button
-            onClick={() => setActiveTab('apply')}
-            className={`px-6 py-3 rounded-xl font-bold transition-all ${
-              activeTab === 'apply'
-                ? 'bg-[#256B45] text-white'
-                : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
-            }`}
-          >
-            <i className="ti ti-list-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Apply Tags to Songs
-          </button>
+        {/* Tabs - connected segmented control, per the style guide's
+            distinction between view-toggle controls and standalone action
+            buttons: joined together with a shared border so they read as
+            one control with two positions. "Create New Platform Tag" sits
+            in the same row but with real gap and its own separate shape -
+            never touching the segmented control - so it reads as a
+            distinct action, not a third toggle position. */}
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+          <div className="inline-flex rounded-xl border border-[#838C95]/35 overflow-hidden">
+            <button
+              onClick={() => setActiveTab('manage')}
+              className={`px-6 py-3 font-bold transition-all ${
+                activeTab === 'manage'
+                  ? 'bg-[#256B45] text-white'
+                  : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
+              }`}
+            >
+              <i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Manage Platform Tags
+            </button>
+            <button
+              onClick={() => setActiveTab('apply')}
+              className={`px-6 py-3 font-bold transition-all border-l border-[#838C95]/35 ${
+                activeTab === 'apply'
+                  ? 'bg-[#256B45] text-white'
+                  : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
+              }`}
+            >
+              <i className="ti ti-list-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Apply Tags to Songs
+            </button>
+          </div>
+          {activeTab === 'manage' && !isAddingTag && !editingTag && (
+            <button
+              onClick={startAddTag}
+              className="bg-[#256B45] hover:bg-[#2f8058] text-white px-6 py-3 rounded-full font-bold"
+            >
+              + Create New Platform Tag
+            </button>
+          )}
         </div>
 
         {/* ============ MANAGE TAGS TAB ============ */}
@@ -825,16 +825,6 @@ export default function TagManagement() {
                   </button>
                 </div>
               </div>
-            )}
-
-            {/* Add Tag Button */}
-            {!isAddingTag && !editingTag && (
-              <button
-                onClick={startAddTag}
-                className="mb-6 bg-[#256B45] hover:bg-[#2f8058] text-white px-6 py-3 rounded-xl font-bold"
-              >
-                + Create New Platform Tag
-              </button>
             )}
 
             {/* Tags List */}
