@@ -872,7 +872,7 @@ export default function TagManagement() {
                                 className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-sm font-bold rounded-lg transition-colors ${
                                   isViewing 
                                     ? 'bg-[#5371AC] text-white' 
-                                    : 'bg-[#5371AC]/20/30 text-[#6882B6] hover:text-[#6882B6] hover:bg-[#5371AC]/20/50'
+                                    : 'bg-[#5371AC]/15 text-[#6882B6] hover:text-[#6882B6] hover:bg-[#5371AC]/25'
                                 }`}
                               >
                                 {isViewing ? 'Hide' : 'View'}
@@ -976,7 +976,7 @@ export default function TagManagement() {
                           <button
                             key={sb.id}
                             onClick={() => { setSongbookIds(prev => toggleInArray(prev, sb.id)); }}
-                            className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${isSelected ? 'bg-[#5371AC] text-white' : 'bg-slate-700 text-[#838C95] hover:bg-slate-600'}`}
+                            className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${isSelected ? 'bg-[#256B45] text-white' : 'bg-slate-700 text-[#838C95] hover:bg-slate-600'}`}
                           >
                             {isSelected ? '✓ ' : ''}{sb.name}
                           </button>
