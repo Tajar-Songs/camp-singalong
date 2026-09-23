@@ -41,14 +41,19 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
 
   // Large set: browsable typeahead + chips. The suggestion list shows on
   // focus even with empty input (not just once something's typed), so a
-  // long list stays genuinely browsable, not just searchable.
+  // long list stays genuinely browsable, not just searchable. The dropdown
+  // is an absolutely-positioned overlay, not in-flow - selecting an option
+  // used to push everything below it down and immediately pull it back up
+  // once the list re-filtered, which felt like the interaction kept
+  // resetting. As an overlay, the input and page stay still and multiple
+  // selections in a row feel continuous.
   const hiddenValues = new Set([...selected, ...(otherSelected || [])]);
   const suggestions = options
     .filter(o => !hiddenValues.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
     .slice(0, 50);
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
       {selected.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem' }}>
           {selected.map(v => (
@@ -65,10 +70,10 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
         onChange={(e) => setInputValue(e.target.value)}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setTimeout(() => setIsFocused(false), 150)}
-        style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', fontSize: '0.875rem', color: '#fff', marginBottom: '0.25rem' }}
+        style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', fontSize: '0.875rem', color: '#fff' }}
       />
-      {isFocused && suggestions.length > 0 && (
-        <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.5rem' }}>
+      {isFocused && (suggestions.length > 0 ? (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', maxHeight: '220px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50 }}>
           {suggestions.map(o => (
             <button
               key={o.value}
@@ -77,12 +82,32 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
             >{o.label}</button>
           ))}
         </div>
-      )}
-      {isFocused && suggestions.length === 0 && (
-        <div style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.375rem' }}>No matches</div>
-      )}
+      ) : (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', fontSize: '0.75rem', color: '#838C95', padding: '0.5rem 0.75rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', zIndex: 50 }}>No matches</div>
+      ))}
     </div>
   );
+}
+
+// statusOptions' icons are admin-configured emoji living in the database,
+// not hardcoded here - a code-only pass can't rewrite the data itself. This
+// translates known emoji to real outline icons at render time as a display
+// layer, without touching the underlying data. Anything not in the map
+// falls back to showing the raw emoji rather than silently disappearing,
+// so an admin adding a new status with an unmapped emoji doesn't lose it -
+// it just won't be icon-ified until this map (or the data) is updated.
+const STATUS_ICON_MAP = {
+  '❤️': 'heart', '❤': 'heart',
+  '👎': 'thumb-down',
+  '✓': 'check', '✔️': 'check', '✔': 'check',
+  '📚': 'book',
+  '❌': 'x', '✗': 'x',
+};
+function StatusIcon({ emoji }) {
+  const iconName = STATUS_ICON_MAP[emoji];
+  return iconName
+    ? <i className={`ti ti-${iconName}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i>
+    : <span aria-hidden="true">{emoji}</span>;
 }
 
 export default function Songs() {
@@ -818,7 +843,7 @@ export default function Songs() {
     header: { marginBottom: '1rem' },
     title: { fontSize: '2rem', fontWeight: 'bold', marginBottom: '0.5rem', fontFamily: "'Gloria Hallelujah', cursive" },
     subtitle: { color: '#838C95', fontSize: '0.875rem' },
-    filters: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' },
+    filters: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', alignItems: 'start', marginBottom: '1rem' },
     input: { padding: '0.5rem 0.75rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', outline: 'none', fontSize: '0.875rem' },
     select: { padding: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', fontSize: '0.875rem' },
     filterGroup: { display: 'flex', flexDirection: 'column', gap: '0.25rem' },
@@ -1081,7 +1106,7 @@ export default function Songs() {
                       real icons via iconName instead of baking emoji into
                       the label string. */}
                   {[
-                    ...statusOptions.map(opt => ({ value: opt.value_key, label: `${opt.icon ? opt.icon + ' ' : ''}${opt.label}` })),
+                    ...statusOptions.map(opt => ({ value: opt.value_key, iconEmoji: opt.icon, label: opt.label })),
                     { value: 'untagged', iconName: 'search', label: 'Untagged (no prefs)' },
                     { value: 'no_familiarity', iconName: 'search', label: 'No familiarity set' }
                   ].map(opt => {
@@ -1096,7 +1121,8 @@ export default function Songs() {
                           color: selected ? '#6882B6' : (s.select.color || '#fff')
                         }}
                       >
-                        {opt.iconName && <i className={`ti ti-${opt.iconName}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i>} {opt.label}
+                        {opt.iconName && <i className={`ti ti-${opt.iconName}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i>}
+                        {opt.iconEmoji && <StatusIcon emoji={opt.iconEmoji} />} {opt.label}
                       </button>
                     );
                   })}
@@ -1125,7 +1151,7 @@ export default function Songs() {
                           color: selected ? '#D45D25' : (s.select.color || '#fff')
                         }}
                       >
-                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{opt.icon && <StatusIcon emoji={opt.icon} />} {opt.label}
                       </button>
                     );
                   })}
@@ -1183,12 +1209,14 @@ export default function Songs() {
             )}
 
             {(songbookIds.length > 0 || sections.length > 0 || systemTagFilter.length > 0 || excludeTagFilter.length > 0 || personalTagValues.length > 0 || excludePersonalTagValues.length > 0 || statusFilter.length > 0 || excludeStatusFilter.length > 0) && (
-              <button
-                onClick={() => { setSongbookIds([]); setSongbookFilterMode('any'); setSections([]); setSectionFilterMode('any'); setSystemTagFilter([]); setSystemTagFilterMode('any'); setExcludeTagFilter([]); setPersonalTagValues([]); setPersonalTagFilterMode('any'); setExcludePersonalTagValues([]); setStatusFilter([]); setExcludeStatusFilter([]); }}
-                style={{ ...s.select, cursor: 'pointer', color: '#838C95' }}
-              >
-                Clear filters
-              </button>
+              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <button
+                  onClick={() => { setSongbookIds([]); setSongbookFilterMode('any'); setSections([]); setSectionFilterMode('any'); setSystemTagFilter([]); setSystemTagFilterMode('any'); setExcludeTagFilter([]); setPersonalTagValues([]); setPersonalTagFilterMode('any'); setExcludePersonalTagValues([]); setStatusFilter([]); setExcludeStatusFilter([]); }}
+                  style={{ ...s.select, cursor: 'pointer', color: '#838C95' }}
+                >
+                  Clear filters
+                </button>
+              </div>
             )}
           </div>
           )}
@@ -1350,7 +1378,7 @@ export default function Songs() {
                       onClick={() => toggleStatus(selectedSong.id, opt.value_key)}
                       style={s.statusBtn(isSet, opt.color || '#838C95')}
                     >
-                      {opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                      {opt.icon && <StatusIcon emoji={opt.icon} />} {opt.label}
                     </button>
                   );
                 })}
