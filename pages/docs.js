@@ -1551,13 +1551,13 @@ export default function Docs() {
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem 2rem 0 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <h1 style={{ ...s.title, fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-books" aria-hidden="true"></i> Docs</h1>
         {isAdmin && (
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', borderRadius: '0.5rem', border: '1px solid #334155', overflow: 'hidden' }}>
             <button
-              style={{ ...s.btnSec, background: pageMode === 'browse' ? '#256B45' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
+              style={{ ...s.btnSec, borderRadius: 0, background: pageMode === 'browse' ? '#256B45' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
               onClick={() => setPageMode('browse')}
             ><i className="ti ti-books" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Browse Docs</button>
             <button
-              style={{ ...s.btnSec, background: pageMode === 'bulkOrganize' ? '#256B45' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
+              style={{ ...s.btnSec, borderRadius: 0, borderLeft: '1px solid #334155', background: pageMode === 'bulkOrganize' ? '#256B45' : '#334155', fontWeight: pageMode === 'bulkOrganize' ? '600' : '400' }}
               onClick={() => setPageMode('bulkOrganize')}
             ><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Bulk Organize</button>
           </div>
@@ -1599,13 +1599,13 @@ export default function Docs() {
               just swaps the data source, rather than building a separate UI.
               Counts reflect the currently active filters below, not totals. */}
           {isAdmin && (
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', borderRadius: '0.5rem', border: '1px solid #334155', overflow: 'hidden', marginBottom: '0.75rem' }}>
               <button
-                style={{ ...s.btnSec, flex: 1, background: !showDrafts ? '#256B45' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
+                style={{ ...s.btnSec, borderRadius: 0, flex: 1, background: !showDrafts ? '#256B45' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
                 onClick={() => setShowDrafts(false)}
               >Published{filteredDocs.length > 0 ? ` (${filteredDocs.length})` : ''}</button>
               <button
-                style={{ ...s.btnSec, flex: 1, background: showDrafts ? '#256B45' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
+                style={{ ...s.btnSec, borderRadius: 0, borderLeft: '1px solid #334155', flex: 1, background: showDrafts ? '#256B45' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
                 onClick={() => { setShowDrafts(true); loadUserDrafts(); }}
               >Drafts{filteredDrafts.length > 0 ? ` (${filteredDrafts.length})` : ''}</button>
             </div>
