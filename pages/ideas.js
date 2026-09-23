@@ -89,7 +89,12 @@ export default function Ideas() {
   const [userProfiles, setUserProfiles] = useState({});
   
   const [sortBy, setSortBy] = useState('votes');
-  const [statusFilter, setStatusFilter] = useState('open');
+  // Status: multi-select now (someone may want "everything not done" =
+  // Open + Planned together), defaulting to just Open to match the
+  // previous default view. Empty selection means no filter (show all),
+  // same convention used elsewhere.
+  const [statusFilters, setStatusFilters] = useState(['open']);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   
   const [showNewForm, setShowNewForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -100,6 +105,7 @@ export default function Ideas() {
 
   const [typeFilter, setTypeFilter] = useState('all');
   const [topicFilter, setTopicFilter] = useState([]); // multi-select, [] = any topic
+  const [topicFilterMode, setTopicFilterMode] = useState('any');
   const [expandedId, setExpandedId] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [message, setMessage] = useState('');
@@ -495,10 +501,13 @@ export default function Ideas() {
   // for computing per-type counts, so the counts reflect status/topic filters
   // currently active without also collapsing to the selected type itself.
   const matchesNonTypeFilters = (r) => {
-    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (statusFilters.length > 0 && !statusFilters.includes(r.status)) return false;
     if (topicFilter.length > 0) {
       const reqTopics = getTopicsForRequest(r.id);
-      if (!topicFilter.some(t => reqTopics.includes(t))) return false;
+      const matches = topicFilterMode === 'all'
+        ? topicFilter.every(t => reqTopics.includes(t))
+        : topicFilter.some(t => reqTopics.includes(t));
+      if (!matches) return false;
     }
     return true;
   };
@@ -517,29 +526,39 @@ export default function Ideas() {
   const countForType = (t) => requests.filter(r => matchesNonTypeFilters(r) && (r.request_type || 'feature') === t).length;
 
   const typeLabels = {
-    feature: { icon: '🌟', label: 'Feature Request', color: '#3b82f6' },
-    bug: { icon: '🐛', label: 'Bug Report', color: '#ef4444' },
-    improvement: { icon: '💡', label: 'Improvement', color: '#f59e0b' },
-    needs_input: { icon: '🤔', label: 'Needs Input', color: '#a855f7' }
+    feature: { icon: 'star', label: 'Feature Request', color: '#3B9B73' },
+    bug: { icon: 'bug', label: 'Bug Report', color: '#D45D25' },
+    improvement: { icon: 'bulb', label: 'Improvement', color: '#6882B6' },
+    needs_input: { icon: 'message-question', label: 'Needs Input', color: '#8F74B4' }
+  };
+  // Separate fill-specific shades for the one spot (active type tab) that
+  // uses these as a solid background with white text - the accent shades
+  // above are calibrated for text-on-dark-background contrast, not
+  // necessarily deep enough for white text on top of them as a fill.
+  const typeFillColors = {
+    feature: '#256B45',
+    bug: '#C35522',
+    improvement: '#5371AC',
+    needs_input: '#7959A6'
   };
 
   const POSTABLE_TYPES = ['feature', 'bug', 'improvement'];
   const ADMIN_ONLY_TYPES = ['needs_input'];
 
   const statusColors = {
-    open: { bg: '#334155', text: '#94a3b8' },
-    planned: { bg: '#3b82f620', text: '#3b82f6' },
-    done: { bg: '#22c55e20', text: '#22c55e' },
-    declined: { bg: '#ef444420', text: '#ef4444' }
+    open: { bg: '#334155', text: '#838C95' },
+    planned: { bg: '#6882B620', text: '#6882B6' },
+    done: { bg: '#3B9B7320', text: '#3B9B73' },
+    declined: { bg: '#D45D2520', text: '#D45D25' }
   };
 
   const s = {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
     wrapper: { maxWidth: '800px', margin: '0 auto', padding: '1.5rem' },
     header: { marginBottom: '1.5rem' },
-    title: { fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' },
-    subtitle: { color: '#94a3b8', fontSize: '0.875rem' },
-    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' },
+    title: { fontSize: '2rem', fontWeight: 'bold', marginBottom: '0.5rem' },
+    subtitle: { color: '#838C95', fontSize: '0.875rem' },
+    btn: { background: '#256B45', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' },
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem' },
     input: { width: '100%', padding: '0.75rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', outline: 'none', fontSize: '0.875rem', marginBottom: '0.75rem' },
     textarea: { width: '100%', padding: '0.75rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', outline: 'none', fontSize: '0.875rem', marginBottom: '0.75rem', minHeight: '100px', resize: 'vertical' },
@@ -549,11 +568,11 @@ export default function Ideas() {
     message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
     topicChip: (selected) => ({
       padding: '0.3rem 0.6rem', borderRadius: '1rem', fontSize: '0.75rem', cursor: 'pointer',
-      border: selected ? '2px solid #22c55e' : '1px solid #334155',
-      background: selected ? '#22c55e20' : '#1e293b',
-      color: selected ? '#22c55e' : '#94a3b8'
+      border: selected ? '2px solid #3B9B73' : '1px solid #334155',
+      background: selected ? '#3B9B7320' : '#1e293b',
+      color: selected ? '#3B9B73' : '#838C95'
     }),
-    topicBadge: { display: 'inline-block', background: '#334155', color: '#94a3b8', padding: '0.15rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', marginRight: '0.375rem', marginBottom: '0.25rem' }
+    topicBadge: { display: 'inline-block', background: '#334155', color: '#838C95', padding: '0.15rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', marginRight: '0.375rem', marginBottom: '0.25rem' }
   };
 
   if (loading) {
@@ -566,7 +585,7 @@ export default function Ideas() {
       
       <div style={s.wrapper}>
         <div style={s.header}>
-          <h1 style={s.title}>💬 Feedback</h1>
+          <h1 style={{ ...s.title, fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-message-2" aria-hidden="true"></i> Feedback</h1>
           <p style={s.subtitle}>Share feedback, vote on ideas, and weigh in when we need your input</p>
         </div>
 
@@ -585,14 +604,17 @@ export default function Ideas() {
                       flex: 1,
                       background: newType === t ? `${typeLabels[t].color}20` : '#334155',
                       border: newType === t ? `2px solid ${typeLabels[t].color}` : '2px solid transparent',
-                      color: newType === t ? typeLabels[t].color : '#94a3b8'
+                      color: newType === t ? typeLabels[t].color : '#838C95'
                     }}
                   >
-                    {typeLabels[t].icon} {typeLabels[t].label}
+                    <i className={`ti ti-${typeLabels[t].icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {typeLabels[t].label}
                   </button>
                 ))}
               </div>
               
+              <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.25rem' }}>
+                Title <span style={{ color: '#D45D25' }}>*</span> required
+              </div>
               <input
                 type="text"
                 placeholder={newType === 'bug' ? "What's the bug?" : newType === 'improvement' ? "What could be better?" : newType === 'needs_input' ? "What's the idea we need to think through?" : "What's your idea?"}
@@ -606,12 +628,12 @@ export default function Ideas() {
                 onChange={(e) => setNewDescription(e.target.value)}
                 style={s.textarea}
               />
-              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '-0.5rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '-0.5rem', marginBottom: '0.75rem' }}>
                 Formatting supported: **bold**, *italic*, # heading, ## subheading, - bullet list
               </div>
               {newDescription.trim() && (
                 <div style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Preview</div>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Preview</div>
                   <div style={{ color: '#e2e8f0', fontSize: '0.875rem' }}><FormattedText text={newDescription} /></div>
                 </div>
               )}
@@ -619,7 +641,7 @@ export default function Ideas() {
               {/* Topics (optional) */}
               {topicOptions.length > 0 && (
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
                     What part of the platform is this about? (optional, pick any that apply)
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -642,7 +664,7 @@ export default function Ideas() {
 
               {newType === 'needs_input' && (
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
                     Optional: add options for people to vote on
                   </div>
                   {newOptions.map((opt, i) => (
@@ -677,7 +699,7 @@ export default function Ideas() {
           )
         ) : (
           <div style={{ ...s.card, padding: '1rem', marginBottom: '1.5rem', textAlign: 'center' }}>
-            <Link href="/?login=true" style={{ color: '#22c55e' }}>Log in</Link> to submit ideas and vote
+            <Link href="/?login=true" style={{ color: '#3B9B73' }}>Log in</Link> to submit ideas and vote
           </div>
         )}
 
@@ -687,7 +709,7 @@ export default function Ideas() {
             onClick={() => setTypeFilter('all')} 
             style={{ 
               ...s.btnSec, 
-              background: typeFilter === 'all' ? '#22c55e' : '#334155',
+              background: typeFilter === 'all' ? '#256B45' : '#334155',
               fontWeight: typeFilter === 'all' ? '600' : '400'
             }}
           >
@@ -699,57 +721,92 @@ export default function Ideas() {
               onClick={() => setTypeFilter(t)}
               style={{ 
                 ...s.btnSec, 
-                background: typeFilter === t ? `${typeLabels[t].color}` : '#334155',
+                background: typeFilter === t ? `${typeFillColors[t]}` : '#334155',
                 fontWeight: typeFilter === t ? '600' : '400'
               }}
             >
-              {typeLabels[t].icon} {typeLabels[t].label}
+              <i className={`ti ti-${typeLabels[t].icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {typeLabels[t].label}
               {' '}({countForType(t)})
             </button>
           ))}
         </div>
 
-        {/* Filters */}
-        <div style={s.filters}>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={s.select}>
-            <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="planned">Planned</option>
-            <option value="done">Done</option>
-            <option value="declined">Declined</option>
-          </select>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={s.select}>
-            <option value="votes">Most Votes</option>
-            <option value="recent">Most Recent</option>
-          </select>
-          <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
-        </div>
-
-        {/* Topic filter - separate row since several topics can be selected at once */}
-        {topicOptions.length > 0 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase' }}>Topic{topicFilter.length > 0 ? ` (${topicFilter.length})` : ''}</span>
-              {topicFilter.length > 0 && (
-                <button onClick={() => setTopicFilter([])} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', cursor: 'pointer' }}>Clear</button>
+        {/* Filters - collapsible by default, matching the pattern. Status is
+            now checkboxes (multi-select - someone may want "everything not
+            done" = Open + Planned together); Topic keeps its chip UI but
+            now has a real any/all toggle, since a submission can span
+            several topics. Sort isn't a filter (doesn't include/exclude
+            anything) so it stays outside, always visible. */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            <button
+              onClick={() => setFiltersExpanded(!filtersExpanded)}
+              style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+            >
+              <span>Filter{(statusFilters.length !== 1 || statusFilters[0] !== 'open' || topicFilter.length > 0) ? ` (${statusFilters.length + topicFilter.length})` : ''}</span>
+              <i className={`ti ti-chevron-${filtersExpanded ? 'up' : 'down'}`} aria-hidden="true"></i>
+            </button>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
+              <option value="votes">Most Votes</option>
+              <option value="recent">Most Recent</option>
+            </select>
+            <span style={{ color: '#838C95', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
+          </div>
+          {filtersExpanded && (
+            <div style={{ ...s.card, padding: '0.75rem' }}>
+              <div style={{ marginBottom: topicOptions.length > 0 ? '0.75rem' : 0 }}>
+                <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.375rem' }}>Status</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {['open', 'planned', 'done', 'declined'].map(st => (
+                    <label key={st} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={statusFilters.includes(st)}
+                        onChange={() => setStatusFilters(prev => prev.includes(st) ? prev.filter(v => v !== st) : [...prev, st])}
+                      />
+                      {st.charAt(0).toUpperCase() + st.slice(1)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {topicOptions.length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Topic</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                        <input type="radio" name="topicFilterMode" checked={topicFilterMode === 'any'} onChange={() => setTopicFilterMode('any')} /> any
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                        <input type="radio" name="topicFilterMode" checked={topicFilterMode === 'all'} onChange={() => setTopicFilterMode('all')} /> all
+                      </label>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                    {topicOptions.map(topic => {
+                      const selected = topicFilter.includes(topic.value_key);
+                      return (
+                        <button
+                          key={topic.value_key}
+                          onClick={() => setTopicFilter(prev => selected ? prev.filter(t => t !== topic.value_key) : [...prev, topic.value_key])}
+                          style={s.topicChip(selected)}
+                        >
+                          {selected ? '✓ ' : ''}{topic.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {(statusFilters.length > 0 || topicFilter.length > 0) && (
+                <button
+                  onClick={() => { setStatusFilters([]); setTopicFilter([]); }}
+                  style={{ ...s.btnSec, marginTop: '0.75rem', width: '100%', fontSize: '0.8rem' }}
+                >Clear all filters</button>
               )}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-              {topicOptions.map(topic => {
-                const selected = topicFilter.includes(topic.value_key);
-                return (
-                  <button
-                    key={topic.value_key}
-                    onClick={() => setTopicFilter(prev => selected ? prev.filter(t => t !== topic.value_key) : [...prev, topic.value_key])}
-                    style={s.topicChip(selected)}
-                  >
-                    {selected ? '✓ ' : ''}{topic.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {filteredRequests.map(req => {
           const voteCount = getVoteCount(req.id);
@@ -775,7 +832,7 @@ export default function Ideas() {
                     onClick={() => user && toggleVote(req.id)}
                     disabled={!user}
                     style={{
-                      background: voted ? '#22c55e' : '#334155',
+                      background: voted ? '#256B45' : '#334155',
                       border: 'none',
                       borderRadius: '0.375rem',
                       padding: '0.5rem',
@@ -799,7 +856,7 @@ export default function Ideas() {
                         background: `${reqType.color}20`,
                         color: reqType.color
                       }}>
-                        {reqType.icon} {reqType.label}
+                        <i className={`ti ti-${reqType.icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {reqType.label}
                       </span>
                       <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
                     </div>
@@ -825,7 +882,7 @@ export default function Ideas() {
                   )}
                   
                   {req.description && (
-                    <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
+                    <div style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
                   )}
                   {pollOptions[req.id] && pollOptions[req.id].length > 0 && (() => {
                     const options = pollOptions[req.id];
@@ -849,7 +906,7 @@ export default function Ideas() {
                                 width: '100%',
                                 textAlign: 'left',
                                 background: '#334155',
-                                border: isMine ? '2px solid #a855f7' : '2px solid transparent',
+                                border: isMine ? '2px solid #3B9B73' : '2px solid transparent',
                                 borderRadius: '0.375rem',
                                 padding: '0.5rem 0.75rem',
                                 marginBottom: '0.375rem',
@@ -859,23 +916,23 @@ export default function Ideas() {
                             >
                               <div style={{
                                 position: 'absolute', left: 0, top: 0, bottom: 0,
-                                width: `${pct}%`, background: '#a855f720', zIndex: 0
+                                width: `${pct}%`, background: '#3B9B7320', zIndex: 0
                               }} />
                               <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
                                 <span>{isMine && '✓ '}{opt.option_text}</span>
-                                <span style={{ color: '#94a3b8' }}>{count} {count === 1 ? 'vote' : 'votes'} ({pct}%)</span>
+                                <span style={{ color: '#838C95' }}>{count} {count === 1 ? 'vote' : 'votes'} ({pct}%)</span>
                               </div>
                             </button>
                           );
                         })}
-                        {!user && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Log in to vote</div>}
+                        {!user && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Log in to vote</div>}
                         {isAdmin && (
                           <div style={{ marginTop: '0.5rem' }}>
                             <button onClick={() => toggleBreakdown(req.id)} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
                               {breakdownOpenFor === req.id ? 'Hide' : 'Show'} breakdown by role
                             </button>
                             {breakdownOpenFor === req.id && (
-                              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#838C95' }}>
                                 {!pollBreakdown[req.id] ? 'Loading...' : options.map(opt => {
                                   const roleCounts = pollBreakdown[req.id][opt.id] || {};
                                   const roleEntries = Object.entries(roleCounts);
@@ -896,16 +953,16 @@ export default function Ideas() {
 
                   {req.admin_response && (
                     <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.375rem', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                      <span style={{ color: '#22c55e', fontWeight: 'bold' }}>Admin:</span> {req.admin_response}
+                      <span style={{ color: '#3B9B73', fontWeight: 'bold' }}>Admin:</span> {req.admin_response}
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#64748b', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#838C95', flexWrap: 'wrap' }}>
                     <span>by {getUserName(req.created_by)}</span>
                     <span>{new Date(req.created_at).toLocaleDateString()}</span>
                     <button 
                       onClick={() => setExpandedId(isExpanded ? null : req.id)}
-                      style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem' }}
+                      style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}
                     >
                       💬 {reqComments.length} {isExpanded ? '▼' : '▶'}
                     </button>
@@ -947,13 +1004,13 @@ export default function Ideas() {
                   {isExpanded && (
                     <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
                       {reqComments.length === 0 && (
-                        <p style={{ color: '#64748b', fontSize: '0.875rem', fontStyle: 'italic' }}>No comments yet</p>
+                        <p style={{ color: '#838C95', fontSize: '0.875rem', fontStyle: 'italic' }}>No comments yet</p>
                       )}
                       
                       {reqComments.map(c => (
                         <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
-                          <span style={{ fontWeight: 'bold', color: '#22c55e' }}>{getUserName(c.user_id)}</span>
-                          <span style={{ color: '#64748b', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}</span>
+                          <span style={{ fontWeight: 'bold', color: '#3B9B73' }}>{getUserName(c.user_id)}</span>
+                          <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}</span>
                           <p style={{ marginTop: '0.25rem', color: '#e2e8f0' }}>{c.comment}</p>
                         </div>
                       ))}
@@ -971,8 +1028,8 @@ export default function Ideas() {
                           <button onClick={() => addComment(req.id)} disabled={!newComment.trim()} style={s.btn}>Post</button>
                         </div>
                       ) : (
-                        <p style={{ color: '#64748b', fontSize: '0.875rem', marginTop: '0.75rem' }}>
-                          <Link href="/?login=true" style={{ color: '#22c55e' }}>Log in</Link> to comment
+                        <p style={{ color: '#838C95', fontSize: '0.875rem', marginTop: '0.75rem' }}>
+                          <Link href="/?login=true" style={{ color: '#3B9B73' }}>Log in</Link> to comment
                         </p>
                       )}
                     </div>
@@ -984,7 +1041,7 @@ export default function Ideas() {
         })}
 
         {filteredRequests.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#838C95' }}>
             <p>No ideas yet. Be the first to suggest something!</p>
           </div>
         )}
