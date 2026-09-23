@@ -5,6 +5,60 @@ import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArr
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
+// Reusable typeahead + chips input for large, growable option sets. Per the
+// style guide: typeahead means a browsable list, not a search box - the
+// suggestion list shows on focus even with empty input, narrowing as text
+// is typed, so someone can discover an option they didn't already know
+// existed. Options are {value, label} pairs (not flat strings) since tag
+// filtering here works against tag ids, not names.
+function TypeaheadChips({ options, selected, onChange, otherSelected, placeholder }) {
+  const [inputValue, setInputValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const toggle = (value) => {
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+  };
+  const hiddenValues = new Set([...selected, ...(otherSelected || [])]);
+  const suggestions = options
+    .filter(o => !hiddenValues.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
+    .slice(0, 50);
+  const labelFor = (value) => options.find(o => o.value === value)?.label || value;
+  return (
+    <div>
+      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0 }}>
+        {selected.map(v => (
+          <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs mr-1 mb-1">
+            {labelFor(v)}
+            <button onClick={() => toggle(v)} className="text-[#838C95] hover:text-white">×</button>
+          </span>
+        ))}
+      </div>
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        className="w-full bg-slate-900 border border-[#838C95]/20 rounded-lg px-3 py-2 text-sm mb-1"
+      />
+      {isFocused && suggestions.length > 0 && (
+        <div className="max-h-40 overflow-y-auto border border-[#838C95]/20 rounded-lg">
+          {suggestions.map(o => (
+            <button
+              key={o.value}
+              onClick={() => { toggle(o.value); setInputValue(''); }}
+              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-700"
+            >{o.label}</button>
+          ))}
+        </div>
+      )}
+      {isFocused && suggestions.length === 0 && (
+        <div className="text-xs text-[#838C95] p-1.5">No matches</div>
+      )}
+    </div>
+  );
+}
+
 export default function TagManagement() {
   // Auth state
   const [user, setUser] = useState(null);
@@ -41,10 +95,18 @@ export default function TagManagement() {
 
   // Song filtering state (for Apply tab)
   const [songbookIds, setSongbookIds] = useState([]); // multi-select; [] = no songbook restriction shown
+  const [songbookFilterMode, setSongbookFilterMode] = useState('any'); // a song can be in several songbooks
   const [sectionDefs, setSectionDefs] = useState([]); // raw songbook_sections rows
   const [selectedSections, setSelectedSections] = useState([]); // now stores real section ids, not text codes
+  const [sectionFilterMode, setSectionFilterMode] = useState('any'); // a song can be in several sections
   const [sectionsInitialized, setSectionsInitialized] = useState(false);
-  const [filterByTag, setFilterByTag] = useState(''); // 'has:tagId', 'missing:tagId', or ''
+  // Tag include/exclude, replacing the old single has/missing dropdown -
+  // large, growable set, so it gets typeahead+chips with a real Include
+  // and Exclude, matching the documented Filtering pattern.
+  const [tagIncludeFilters, setTagIncludeFilters] = useState([]);
+  const [tagIncludeMode, setTagIncludeMode] = useState('any');
+  const [tagExcludeFilters, setTagExcludeFilters] = useState([]);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSongs, setSelectedSongs] = useState([]); // Array of song IDs
   const [applyTagId, setApplyTagId] = useState(''); // Tag to apply to selected songs
@@ -404,21 +466,34 @@ export default function TagManagement() {
     const pageInfo = getSongPage(song.id);
     // Section filter - checks the song's entries in whichever songbook(s) are
     // selected, using real section ids (works correctly for any songbook,
-    // including ones with no letter/number codes).
-    if (songbookIds.length > 0 || selectedSections.length > 0) {
+    // including ones with no letter/number codes). Both dimensions are
+    // genuinely multi-valued per song (a song can be in several songbooks,
+    // several sections), so both get a real any/all toggle.
+    if (songbookIds.length > 0) {
+      const entries = songbookEntries.filter(e => e.song_id === song.id);
+      const matches = songbookFilterMode === 'all'
+        ? songbookIds.every(id => entries.some(e => e.songbook_id === id))
+        : songbookIds.some(id => entries.some(e => e.songbook_id === id));
+      if (!matches) return false;
+    }
+    if (selectedSections.length > 0) {
       const entries = songbookEntries.filter(e => e.song_id === song.id);
       const relevant = songbookIds.length > 0 ? entries.filter(e => songbookIds.includes(e.songbook_id)) : entries;
-      if (songbookIds.length > 0 && relevant.length === 0) return false;
-      if (selectedSections.length > 0 && !relevant.some(e => selectedSections.includes(e.section_id))) return false;
+      const matches = sectionFilterMode === 'all'
+        ? selectedSections.every(id => relevant.some(e => e.section_id === id))
+        : selectedSections.some(id => relevant.some(e => e.section_id === id));
+      if (!matches) return false;
     }
 
-    // Tag filter
-    if (filterByTag) {
-      const [filterType, tagId] = filterByTag.split(':');
-      const hasTag = songHasTag(song.id, tagId);
-      if (filterType === 'has' && !hasTag) return false;
-      if (filterType === 'missing' && hasTag) return false;
+    // Tag filter - separate Include (any/all) and Exclude, matching the
+    // documented pattern for large-option-set dimensions.
+    if (tagIncludeFilters.length > 0) {
+      const matches = tagIncludeMode === 'all'
+        ? tagIncludeFilters.every(tagId => songHasTag(song.id, tagId))
+        : tagIncludeFilters.some(tagId => songHasTag(song.id, tagId));
+      if (!matches) return false;
     }
+    if (tagExcludeFilters.length > 0 && tagExcludeFilters.some(tagId => songHasTag(song.id, tagId))) return false;
 
     // Search filter
     if (searchTerm) {
@@ -513,9 +588,9 @@ export default function TagManagement() {
   // Auth check must come first - loading state only matters after auth is confirmed
   if (!authChecked) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4">🏷️</div>
+          <div className="text-4xl mb-4"><i className="ti ti-tag" aria-hidden="true"></i></div>
           <div>Loading...</div>
         </div>
       </div>
@@ -525,16 +600,16 @@ export default function TagManagement() {
   // Auth gate - require login
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center p-4">
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full">
           <div className="text-center mb-6">
-            <div className="text-5xl mb-2">🏷️</div>
+            <div className="text-5xl mb-2"><i className="ti ti-tag" aria-hidden="true"></i></div>
             <h1 className="text-2xl font-bold mb-1">Tag Management</h1>
-            <p className="text-slate-400 text-sm">Sign in to manage tags</p>
+            <p className="text-[#838C95] text-sm">Sign in to manage tags</p>
           </div>
           
-          {authError && <div className="bg-red-900/50 text-red-200 p-3 rounded-lg mb-4 text-sm">{authError}</div>}
-          {authMessage && <div className="bg-green-900/50 text-green-200 p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
+          {authError && <div className="bg-[#C35522]/20/50 text-[#D45D25] p-3 rounded-lg mb-4 text-sm">{authError}</div>}
+          {authMessage && <div className="bg-[#256B45]/20/50 text-[#3B9B73] p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
           
           <div className="flex flex-col gap-3">
             <input
@@ -542,7 +617,7 @@ export default function TagManagement() {
               placeholder="Email"
               value={authEmail}
               onChange={(e) => setAuthEmail(e.target.value)}
-              className="p-3 rounded-lg border border-slate-700 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-green-500"
+              className="p-3 rounded-lg border border-[#838C95]/20 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-[#3B9B73]"
             />
             {authMode !== 'magic' && (
               <input
@@ -551,32 +626,32 @@ export default function TagManagement() {
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                className="p-3 rounded-lg border border-slate-700 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-green-500"
+                className="p-3 rounded-lg border border-[#838C95]/20 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-[#3B9B73]"
               />
             )}
             <button
               onClick={authMode === 'magic' ? handleMagicLink : handleLogin}
               disabled={authLoading || !authEmail || (authMode !== 'magic' && !authPassword)}
-              className="p-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold transition-all disabled:opacity-50"
+              className="p-3 rounded-lg bg-[#256B45] hover:bg-[#2f8058] text-white font-bold transition-all disabled:opacity-50"
             >
               {authLoading ? 'Loading...' : authMode === 'magic' ? 'Send Magic Link' : 'Sign In'}
             </button>
           </div>
           
-          <div className="mt-4 pt-4 border-t border-slate-700 text-center">
+          <div className="mt-4 pt-4 border-t border-[#838C95]/20 text-center">
             {authMode === 'login' ? (
-              <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-blue-400 hover:underline text-sm">
+              <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-[#6882B6] hover:underline text-sm">
                 Use magic link instead
               </button>
             ) : (
-              <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-blue-400 hover:underline text-sm">
+              <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#6882B6] hover:underline text-sm">
                 Use password instead
               </button>
             )}
           </div>
           
           <div className="mt-6 text-center">
-            <a href="/" className="text-slate-400 text-sm hover:text-slate-300">← Back to Singalong</a>
+            <a href="/" className="text-[#838C95] text-sm hover:text-[#838C95]">← Back to Singalong</a>
           </div>
         </div>
       </div>
@@ -587,9 +662,9 @@ export default function TagManagement() {
   if (user && !userProfile) {
     // User is logged in but profile hasn't loaded yet - wait
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4">🏷️</div>
+          <div className="text-4xl mb-4"><i className="ti ti-tag" aria-hidden="true"></i></div>
           <div>Loading profile...</div>
         </div>
       </div>
@@ -598,16 +673,16 @@ export default function TagManagement() {
 
   if (!hasAnyRole(userRoleKeys)) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center p-4">
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full text-center">
-          <div className="text-5xl mb-4">🔒</div>
+          <div className="text-5xl mb-4"><i className="ti ti-lock" aria-hidden="true"></i></div>
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-slate-400 mb-6">You need admin privileges to access this page.</p>
+          <p className="text-[#838C95] mb-6">You need admin privileges to access this page.</p>
           <div className="flex flex-col gap-3">
-            <a href="/" className="bg-green-600 hover:bg-green-500 text-white p-3 rounded-lg font-bold transition-all">
+            <a href="/" className="bg-[#256B45] hover:bg-[#2f8058] text-white p-3 rounded-lg font-bold transition-all">
               ← Back to Singalong
             </a>
-            <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-sm">
+            <button onClick={handleLogout} className="text-[#D45D25] hover:text-[#D45D25] text-sm">
               Sign out
             </button>
           </div>
@@ -626,33 +701,33 @@ export default function TagManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-50">
+    <div className="min-h-screen bg-slate-900 text-[#e2e8f0]">
       <div className="max-w-6xl mx-auto px-4 py-8 pb-32">
 
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl md:text-4xl font-black flex items-center gap-3 text-white">
-              <span className="text-green-500">🏷️</span> Tag Management
+              <span className="text-[#3B9B73]"><i className="ti ti-tag" aria-hidden="true"></i></span> Tag Management
             </h1>
-            <p className="text-slate-400 mt-1 font-medium">
+            <p className="text-[#838C95] mt-1 font-medium">
               {tags.length} tags • {songs.length} songs
             </p>
           </div>
           <div className="flex gap-3 items-center flex-wrap">
-            <a href="/" className="text-slate-400 hover:text-slate-300 text-sm">← Singalong</a>
-            <a href="/admin" className="text-slate-400 hover:text-slate-300 text-sm">Songs</a>
-            <a href="/admin/users" className="text-slate-400 hover:text-slate-300 text-sm">Users</a>
-            <a href="/reports" className="text-slate-400 hover:text-slate-300 text-sm">Insights</a>
-            <span className="text-slate-500">|</span>
-            <span className="text-slate-400 text-sm">👋 {userProfile?.display_name}</span>
-            <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-sm">Sign out</button>
+            <a href="/" className="text-[#838C95] hover:text-[#838C95] text-sm">← Singalong</a>
+            <a href="/admin" className="text-[#838C95] hover:text-[#838C95] text-sm">Songs</a>
+            <a href="/admin/users" className="text-[#838C95] hover:text-[#838C95] text-sm">Users</a>
+            <a href="/reports" className="text-[#838C95] hover:text-[#838C95] text-sm">Insights</a>
+            <span className="text-[#838C95]">|</span>
+            <span className="text-[#838C95] text-sm"><i className="ti ti-user" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {userProfile?.display_name}</span>
+            <button onClick={handleLogout} className="text-[#D45D25] hover:text-[#D45D25] text-sm">Sign out</button>
           </div>
         </header>
 
         {/* Status Message */}
         {message && (
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-800 text-white px-8 py-4 rounded-2xl font-bold shadow-2xl border border-slate-600">
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-800 text-white px-8 py-4 rounded-2xl font-bold shadow-2xl border border-[#838C95]/35">
             {message}
           </div>
         )}
@@ -663,21 +738,21 @@ export default function TagManagement() {
             onClick={() => setActiveTab('manage')}
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'manage'
-                ? 'bg-green-600 text-white'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                ? 'bg-[#256B45] text-white'
+                : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
             }`}
           >
-            🏷️ Manage Tags
+            <i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Manage Tags
           </button>
           <button
             onClick={() => setActiveTab('apply')}
             className={`px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === 'apply'
-                ? 'bg-green-600 text-white'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                ? 'bg-[#256B45] text-white'
+                : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
             }`}
           >
-            🎵 Apply Tags to Songs
+            <i className="ti ti-list-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Apply Tags to Songs
           </button>
         </div>
 
@@ -686,39 +761,39 @@ export default function TagManagement() {
           <div>
             {/* Add/Edit Tag Form */}
             {(isAddingTag || editingTag) && (
-              <div className="bg-slate-800 border-2 border-green-500/30 rounded-2xl p-6 mb-8">
+              <div className="bg-slate-800 border-2 border-[#3B9B73]/30 rounded-2xl p-6 mb-8">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-black">
-                    {isAddingTag ? '✨ Create New Tag' : `✏️ Edit: ${editingTag.name}`}
+                    {isAddingTag ? <><i className="ti ti-file-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Create New Tag</> : <><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Edit: {editingTag.name}</>}
                   </h2>
-                  <button onClick={cancelTagEdit} className="text-slate-400 hover:text-white p-2">✕</button>
+                  <button onClick={cancelTagEdit} className="text-[#838C95] hover:text-white p-2"><i className="ti ti-x" aria-hidden="true"></i></button>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6">
                   <div>
-                    <label className="block text-sm font-bold text-slate-400 mb-2">Tag Name *</label>
+                    <label className="block text-sm font-bold text-[#838C95] mb-2">Tag Name *</label>
                     <input
                       type="text"
                       value={tagName}
                       onChange={(e) => setTagName(e.target.value)}
                       placeholder="e.g., Round, High Energy, Pre-1950s"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-green-500 outline-none"
+                      className="w-full bg-slate-900 border border-[#838C95]/20 rounded-lg px-4 py-3 text-white focus:border-[#3B9B73] outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-400 mb-2">Description (optional)</label>
+                    <label className="block text-sm font-bold text-[#838C95] mb-2">Description (optional)</label>
                     <input
                       type="text"
                       value={tagDescription}
                       onChange={(e) => setTagDescription(e.target.value)}
                       placeholder="Brief explanation of what this tag means"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:border-green-500 outline-none"
+                      className="w-full bg-slate-900 border border-[#838C95]/20 rounded-lg px-4 py-3 text-white focus:border-[#3B9B73] outline-none"
                     />
                   </div>
                 </div>
 
-                <div className="flex gap-4 mt-6 pt-6 border-t border-slate-700">
-                  <button onClick={saveTag} className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-black">
+                <div className="flex gap-4 mt-6 pt-6 border-t border-[#838C95]/20">
+                  <button onClick={saveTag} className="bg-[#256B45] hover:bg-[#2f8058] text-white px-8 py-3 rounded-xl font-black">
                     {isAddingTag ? 'Create Tag' : 'Save Changes'}
                   </button>
                   <button onClick={cancelTagEdit} className="bg-slate-700 hover:bg-slate-600 text-white px-8 py-3 rounded-xl font-bold">
@@ -732,20 +807,20 @@ export default function TagManagement() {
             {!isAddingTag && !editingTag && (
               <button
                 onClick={startAddTag}
-                className="mb-6 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold"
+                className="mb-6 bg-[#256B45] hover:bg-[#2f8058] text-white px-6 py-3 rounded-xl font-bold"
               >
                 + Create New Tag
               </button>
             )}
 
             {/* Tags List */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-slate-700 bg-slate-800">
+            <div className="bg-slate-800/50 border border-[#838C95]/20 rounded-2xl overflow-hidden">
+              <div className="p-4 border-b border-[#838C95]/20 bg-slate-800">
                 <h3 className="font-bold">All Tags ({tags.length})</h3>
               </div>
               <div className="divide-y divide-slate-700/50">
                 {tags.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">
+                  <div className="p-8 text-center text-[#838C95]">
                     No tags yet. Create your first tag above!
                   </div>
                 ) : (
@@ -759,12 +834,12 @@ export default function TagManagement() {
                             <div className="flex-1">
                               <div className="flex items-center gap-3">
                                 <span className="font-bold text-white">{tag.name}</span>
-                                <span className="text-xs text-slate-500">
+                                <span className="text-xs text-[#838C95]">
                                   {songCount} song{songCount !== 1 ? 's' : ''}
                                 </span>
                               </div>
                               {tag.description && (
-                                <div className="text-sm text-slate-400 mt-1">{tag.description}</div>
+                                <div className="text-sm text-[#838C95] mt-1">{tag.description}</div>
                               )}
                             </div>
                             <div className="flex gap-2">
@@ -772,21 +847,21 @@ export default function TagManagement() {
                                 onClick={() => setViewingTag(isViewing ? null : tag)}
                                 className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-sm font-bold rounded-lg transition-colors ${
                                   isViewing 
-                                    ? 'bg-blue-600 text-white' 
-                                    : 'bg-blue-900/30 text-blue-400 hover:text-blue-300 hover:bg-blue-900/50'
+                                    ? 'bg-[#5371AC] text-white' 
+                                    : 'bg-[#5371AC]/20/30 text-[#6882B6] hover:text-[#6882B6] hover:bg-[#5371AC]/20/50'
                                 }`}
                               >
                                 {isViewing ? 'Hide' : 'View'}
                               </button>
                               <button
                                 onClick={() => startEditTag(tag)}
-                                className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-sm font-bold text-slate-300 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+                                className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-sm font-bold text-[#838C95] bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
                               >
                                 Edit
                               </button>
                               <button
                                 onClick={() => deleteTag(tag)}
-                                className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-sm font-bold text-red-400 bg-red-900/30 hover:bg-red-900/50 rounded-lg transition-colors"
+                                className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-sm font-bold text-[#D45D25] bg-[#C35522]/20/30 hover:bg-[#C35522]/20/50 rounded-lg transition-colors"
                               >
                                 Delete
                               </button>
@@ -795,21 +870,21 @@ export default function TagManagement() {
                         </div>
                         {/* Expanded songs list for this tag */}
                         {isViewing && (
-                          <div className="bg-slate-900/50 border-t border-slate-700 p-4">
-                            <div className="text-sm text-slate-400 mb-3">Songs with "{tag.name}" tag:</div>
+                          <div className="bg-slate-900/50 border-t border-[#838C95]/20 p-4">
+                            <div className="text-sm text-[#838C95] mb-3">Songs with "{tag.name}" tag:</div>
                             <div className="max-h-64 overflow-y-auto space-y-1">
                               {getSongsForTag(tag.id).length === 0 ? (
-                                <div className="text-slate-500 text-sm italic">No songs have this tag yet</div>
+                                <div className="text-[#838C95] text-sm italic">No songs have this tag yet</div>
                               ) : (
                                 getSongsForTag(tag.id).map(song => (
                                   <div key={song.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800/50 group">
                                     <div className="flex-1 min-w-0">
                                       <span className="text-white text-sm truncate block">{song.title}</span>
-                                      <span className="text-slate-500 text-xs">Section {getSongPage(song.id).section}</span>
+                                      <span className="text-[#838C95] text-xs">Section {getSongPage(song.id).section}</span>
                                     </div>
                                     <button
                                       onClick={() => removeSongFromTag(song.id, tag.id)}
-                                      className="ml-2 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 px-2 py-1 text-xs font-bold text-red-400 hover:text-red-300 bg-red-900/30 hover:bg-red-900/50 rounded transition-all"
+                                      className="ml-2 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 px-2 py-1 text-xs font-bold text-[#D45D25] hover:text-[#D45D25] bg-[#C35522]/20/30 hover:bg-[#C35522]/20/50 rounded transition-all"
                                     >
                                       Remove
                                     </button>
@@ -831,99 +906,148 @@ export default function TagManagement() {
         {/* ============ APPLY TAGS TAB ============ */}
         {activeTab === 'apply' && (
           <div>
-            {/* Filters */}
-            <div className="bg-slate-800 rounded-2xl p-6 mb-6 space-y-4">
-              <h3 className="font-bold text-lg mb-4">Filter Songs</h3>
-              
-              {/* Songbook Filter - only shown if there's more than one populated songbook */}
-              {filterableSongbooks.length > 1 && (
+            {/* Filters - collapsible by default, matching the pattern.
+                Songbook and Section are genuinely multi-valued per song (a
+                song can be in several), so both get a real any/all toggle.
+                Tags uses typeahead+chips with separate Include/Exclude
+                (large, growable set). Search isn't a filter in the
+                include/exclude sense, so it stays outside, always visible. */}
+            <div className="mb-6">
+              <div className="flex items-center gap-3 flex-wrap mb-2">
+                <button
+                  onClick={() => setFiltersExpanded(!filtersExpanded)}
+                  className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 flex items-center gap-2 font-bold text-sm"
+                >
+                  <span>Filter{(songbookIds.length + selectedSections.length + tagIncludeFilters.length + tagExcludeFilters.length) > 0 ? ` (${songbookIds.length + selectedSections.length + tagIncludeFilters.length + tagExcludeFilters.length})` : ''}</span>
+                  <i className={`ti ti-chevron-${filtersExpanded ? 'up' : 'down'}`} aria-hidden="true"></i>
+                </button>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by title or page..."
+                  className="flex-1 min-w-[200px] bg-slate-900 border border-[#838C95]/20 rounded-lg px-4 py-2 text-white"
+                />
+              </div>
+              {filtersExpanded && (
+              <div className="bg-slate-800 rounded-2xl p-6 space-y-4">
+                {/* Songbook Filter - only shown if there's more than one populated songbook */}
+                {filterableSongbooks.length > 1 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-bold text-[#838C95]">Songbook</label>
+                      <div className="flex gap-3 text-xs">
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input type="radio" name="songbookFilterMode" checked={songbookFilterMode === 'any'} onChange={() => setSongbookFilterMode('any')} /> any
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input type="radio" name="songbookFilterMode" checked={songbookFilterMode === 'all'} onChange={() => setSongbookFilterMode('all')} /> all
+                        </label>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {filterableSongbooks.map(sb => {
+                        const isSelected = songbookIds.includes(sb.id);
+                        return (
+                          <button
+                            key={sb.id}
+                            onClick={() => { setSongbookIds(prev => toggleInArray(prev, sb.id)); }}
+                            className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${isSelected ? 'bg-[#5371AC] text-white' : 'bg-slate-700 text-[#838C95] hover:bg-slate-600'}`}
+                          >
+                            {isSelected ? '✓ ' : ''}{sb.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section Filter */}
                 <div>
-                  <label className="text-sm font-bold text-slate-400 block mb-2">Songbook</label>
-                  <div className="flex flex-wrap gap-2">
-                    {filterableSongbooks.map(sb => {
-                      const isSelected = songbookIds.includes(sb.id);
-                      return (
-                        <button
-                          key={sb.id}
-                          onClick={() => { setSongbookIds(prev => toggleInArray(prev, sb.id)); }}
-                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-                        >
-                          {isSelected ? '✓ ' : ''}{sb.name}
-                        </button>
-                      );
-                    })}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-bold text-[#838C95]">Sections</label>
+                    <div className="flex gap-3 text-xs">
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="sectionFilterMode" checked={sectionFilterMode === 'any'} onChange={() => setSectionFilterMode('any')} /> any
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="sectionFilterMode" checked={sectionFilterMode === 'all'} onChange={() => setSectionFilterMode('all')} /> all
+                      </label>
+                    </div>
+                  </div>
+                  {songbookIds.length === 0 && (
+                    <p className="text-xs text-[#838C95] mb-2">Select a songbook above to see its sections.</p>
+                  )}
+                  <div className="flex gap-2 mb-4">
+                    <button 
+                      onClick={() => setSelectedSections(availableSections.map(s => s.id))} 
+                      className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 bg-slate-700 border-[#838C95]/35 hover:bg-slate-600"
+                    >
+                      Select All
+                    </button>
+                    <button 
+                      onClick={() => setSelectedSections([])} 
+                      className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 bg-slate-700 border-[#838C95]/35 hover:bg-slate-600"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {availableSections.map(sec => (
+                      <label key={sec.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-700/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={selectedSections.includes(sec.id)}
+                          onChange={() => toggleSection(sec.id)}
+                          className="rounded"
+                        />
+                        <span className="truncate">{sectionLabel(sec)}</span>
+                      </label>
+                    ))}
                   </div>
                 </div>
-              )}
 
-              {/* Section Filter */}
-              <div>
-                <label className="text-sm font-bold text-slate-400 block mb-2">Sections</label>
-                {songbookIds.length === 0 && (
-                  <p className="text-xs text-slate-500 mb-2">Select a songbook above to see its sections.</p>
+                {/* Tag Filter - typeahead + chips, separate Include/Exclude */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-bold text-[#838C95]">Tags — include</label>
+                      <div className="flex gap-3 text-xs">
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input type="radio" name="tagIncludeMode" checked={tagIncludeMode === 'any'} onChange={() => setTagIncludeMode('any')} /> any
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input type="radio" name="tagIncludeMode" checked={tagIncludeMode === 'all'} onChange={() => setTagIncludeMode('all')} /> all
+                        </label>
+                      </div>
+                    </div>
+                    <TypeaheadChips
+                      options={tags.map(t => ({ value: t.id, label: t.name }))}
+                      selected={tagIncludeFilters}
+                      onChange={setTagIncludeFilters}
+                      otherSelected={tagExcludeFilters}
+                      placeholder="Search tags..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-[#838C95] mb-2">Tags — exclude</label>
+                    <TypeaheadChips
+                      options={tags.map(t => ({ value: t.id, label: t.name }))}
+                      selected={tagExcludeFilters}
+                      onChange={setTagExcludeFilters}
+                      otherSelected={tagIncludeFilters}
+                      placeholder="Search tags..."
+                    />
+                  </div>
+                </div>
+                {(songbookIds.length + selectedSections.length + tagIncludeFilters.length + tagExcludeFilters.length) > 0 && (
+                  <button
+                    onClick={() => { setSongbookIds([]); setSelectedSections([]); setTagIncludeFilters([]); setTagExcludeFilters([]); }}
+                    className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm font-bold"
+                  >Clear all filters</button>
                 )}
-                <div className="flex gap-2 mb-4">
-                  <button 
-                    onClick={() => setSelectedSections(availableSections.map(s => s.id))} 
-                    className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 bg-slate-700 border-slate-600 hover:bg-slate-600"
-                  >
-                    Select All
-                  </button>
-                  <button 
-                    onClick={() => setSelectedSections([])} 
-                    className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 bg-slate-700 border-slate-600 hover:bg-slate-600"
-                  >
-                    Clear All
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {availableSections.map(sec => (
-                    <label key={sec.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-700/50 p-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={selectedSections.includes(sec.id)}
-                        onChange={() => toggleSection(sec.id)}
-                        className="rounded"
-                      />
-                      <span className="truncate">{sectionLabel(sec)}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
-
-              {/* Tag Filter */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-400 mb-2">Filter by Tag</label>
-                  <select
-                    value={filterByTag}
-                    onChange={(e) => setFilterByTag(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white cursor-pointer"
-                  >
-                    <option value="">All songs</option>
-                    <optgroup label="Has tag">
-                      {tags.map(tag => (
-                        <option key={`has:${tag.id}`} value={`has:${tag.id}`}>Has: {tag.name}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Missing tag">
-                      {tags.map(tag => (
-                        <option key={`missing:${tag.id}`} value={`missing:${tag.id}`}>Missing: {tag.name}</option>
-                      ))}
-                    </optgroup>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-400 mb-2">Search</label>
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by title or page..."
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Bulk Actions */}
@@ -932,11 +1056,11 @@ export default function TagManagement() {
               
               {/* Selection info */}
               <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="text-sm text-slate-400">{selectedSongs.length} selected</span>
-                <button onClick={selectAllVisible} className="text-xs text-green-500 hover:text-green-400 bg-green-900/20 px-2 py-1 rounded">
+                <span className="text-sm text-[#838C95]">{selectedSongs.length} selected</span>
+                <button onClick={selectAllVisible} className="text-xs text-[#3B9B73] hover:text-[#3B9B73] bg-[#256B45]/20/20 px-2 py-1 rounded">
                   Select All ({filteredSongs.length})
                 </button>
-                <button onClick={clearSelection} className="text-xs text-slate-400 hover:text-slate-300 bg-slate-700 px-2 py-1 rounded">
+                <button onClick={clearSelection} className="text-xs text-[#838C95] hover:text-[#838C95] bg-slate-700 px-2 py-1 rounded">
                   Clear
                 </button>
               </div>
@@ -946,7 +1070,7 @@ export default function TagManagement() {
                 <select
                   value={applyTagId}
                   onChange={(e) => setApplyTagId(e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white cursor-pointer"
+                  className="flex-1 bg-slate-900 border border-[#838C95]/20 rounded-lg px-4 py-3 text-white cursor-pointer"
                 >
                   <option value="">Select tag...</option>
                   {tags.map(tag => (
@@ -957,14 +1081,14 @@ export default function TagManagement() {
                   <button
                     onClick={applyTagToSelected}
                     disabled={!applyTagId || selectedSongs.length === 0}
-                    className="flex-1 sm:flex-none bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-bold"
+                    className="flex-1 sm:flex-none bg-[#256B45] hover:bg-[#2f8058] disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-bold"
                   >
                     + Apply
                   </button>
                   <button
                     onClick={removeTagFromSelected}
                     disabled={!applyTagId || selectedSongs.length === 0}
-                    className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-bold"
+                    className="flex-1 sm:flex-none bg-[#C35522] hover:bg-[#C35522] disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-bold"
                   >
                     − Remove
                   </button>
@@ -973,13 +1097,13 @@ export default function TagManagement() {
             </div>
 
             {/* Songs List */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-slate-700 bg-slate-800">
+            <div className="bg-slate-800/50 border border-[#838C95]/20 rounded-2xl overflow-hidden">
+              <div className="p-4 border-b border-[#838C95]/20 bg-slate-800">
                 <h3 className="font-bold">Songs ({filteredSongs.length} of {songs.length})</h3>
               </div>
               <div className="max-h-[60vh] overflow-y-auto divide-y divide-slate-700/50">
                 {filteredSongs.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">No songs match your filters</div>
+                  <div className="p-8 text-center text-[#838C95]">No songs match your filters</div>
                 ) : (
                   filteredSongs.map(song => {
                     const songTagList = getTagsForSong(song.id);
@@ -990,7 +1114,7 @@ export default function TagManagement() {
                       <div
                         key={song.id}
                         className={`transition-colors ${
-                          isSelected ? 'bg-green-900/30' : ''
+                          isSelected ? 'bg-[#256B45]/20/30' : ''
                         }`}
                       >
                         <div
@@ -1012,24 +1136,24 @@ export default function TagManagement() {
                                     onClick={(e) => toggleLyrics(song.id, e)}
                                     className={`text-xs px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
                                       isLyricsExpanded 
-                                        ? 'bg-blue-600 text-white' 
-                                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                        ? 'bg-[#5371AC] text-white' 
+                                        : 'bg-slate-700 text-[#838C95] hover:bg-slate-600'
                                     }`}
                                   >
-                                    📄 {isLyricsExpanded ? '▲' : '▼'}
+                                    <i className="ti ti-file-text" aria-hidden="true"></i> {isLyricsExpanded ? '▲' : '▼'}
                                   </button>
                                 )}
                                 {!lyrics && song.has_lyrics && (
-                                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700/50 text-slate-500">📄</span>
+                                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700/50 text-[#838C95]"><i className="ti ti-file-text" aria-hidden="true"></i></span>
                                 )}
                               </div>
-                              <div className="text-sm text-slate-400">
+                              <div className="text-sm text-[#838C95]">
                                 Section {getSongPage(song.id).section} • Page {getSongPage(song.id).page || '—'}
                               </div>
                               {songTagList.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-2">
                                   {songTagList.map(tag => (
-                                    <span key={tag.id} className="text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300">
+                                    <span key={tag.id} className="text-xs px-2 py-0.5 rounded-full bg-[#256B45]/20/50 text-[#3B9B73]">
                                       {tag.name}
                                     </span>
                                   ))}
@@ -1041,7 +1165,7 @@ export default function TagManagement() {
                         {/* Expanded Lyrics */}
                         {isLyricsExpanded && lyrics && (
                           <div className="px-4 pb-4 ml-10">
-                            <div className="bg-slate-900/80 border border-slate-700 rounded-lg p-4 text-sm text-slate-300 whitespace-pre-wrap max-h-64 overflow-y-auto">
+                            <div className="bg-slate-900/80 border border-[#838C95]/20 rounded-lg p-4 text-sm text-[#838C95] whitespace-pre-wrap max-h-64 overflow-y-auto">
                               {lyrics}
                             </div>
                           </div>
