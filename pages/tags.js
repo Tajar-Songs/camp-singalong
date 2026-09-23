@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
 
@@ -304,12 +304,36 @@ export default function TagManagement() {
       setSongbookIds([primary.id]);
     }
   }, [filterableSongbooks, sectionsInitialized]);
+
+  // Whenever the songbook selection changes, keep selectedSections in sync:
+  // auto-check all sections belonging to a newly-added songbook, and drop
+  // sections that belonged only to a songbook that was just deselected.
+  // This used to be a one-time init that ran only for the very first
+  // songbook and then permanently stopped (via sectionsInitialized) - which
+  // is why only the initial/primary songbook ever got its sections
+  // auto-checked, and every songbook picked afterward was left empty.
+  const prevSongbookIdsRef = useRef([]);
   useEffect(() => {
-    if (!sectionsInitialized && songbookIds.length > 0 && availableSections.length > 0) {
-      setSelectedSections(availableSections.map(s => s.id));
-      setSectionsInitialized(true);
+    const prev = prevSongbookIdsRef.current;
+    const added = songbookIds.filter(id => !prev.includes(id));
+    const removed = prev.filter(id => !songbookIds.includes(id));
+    if (added.length > 0) {
+      const newSections = getAvailableSections(sectionDefs, added);
+      setSelectedSections(cur => {
+        const toAdd = newSections.map(s => s.id).filter(id => !cur.includes(id));
+        return toAdd.length > 0 ? [...cur, ...toAdd] : cur;
+      });
     }
-  }, [availableSections, songbookIds, sectionsInitialized]);
+    if (removed.length > 0) {
+      const droppedSections = new Set(getAvailableSections(sectionDefs, removed).map(s => s.id));
+      // Only drop a section if none of the still-selected songbooks also
+      // use it - two songbooks can share a section id.
+      const stillRelevant = new Set(getAvailableSections(sectionDefs, songbookIds).map(s => s.id));
+      setSelectedSections(cur => cur.filter(id => !droppedSections.has(id) || stillRelevant.has(id)));
+    }
+    if (songbookIds.length > 0) setSectionsInitialized(true);
+    prevSongbookIdsRef.current = songbookIds;
+  }, [songbookIds, sectionDefs]);
 
   // Get tags for a specific song
   const getTagsForSong = (songId) => {
