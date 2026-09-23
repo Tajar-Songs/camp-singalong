@@ -118,8 +118,10 @@ export default function Songs() {
   const [sections, setSections] = useState([]);              // multi-select, values are "songbookId::code" keys
   const [sectionFilterMode, setSectionFilterMode] = useState('any'); // a song can be in several sections
   const [systemTagFilter, setSystemTagFilter] = useState([]); // multi-select include, [] = any tag
+  const [systemTagFilterMode, setSystemTagFilterMode] = useState('any'); // a song can have several tags
   const [excludeTagFilter, setExcludeTagFilter] = useState([]); // multi-select exclude, [] = no exclusions
   const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, [] = any tag
+  const [personalTagFilterMode, setPersonalTagFilterMode] = useState('any'); // a song can have several personal tags
   const [excludePersonalTagValues, setExcludePersonalTagValues] = useState([]);
   const [statusFilter, setStatusFilter] = useState([]); // multi-select array now, e.g. ['favorite','want_to_learn']
   const [excludeStatusFilter, setExcludeStatusFilter] = useState([]);
@@ -449,9 +451,12 @@ export default function Songs() {
         songEntries,
         song.tags || [],           // using tag NAMES here (not ids) - this page already works by name throughout
         pref?.personal_tags || [],
-        { songbookIds, sections, includeTagIds: systemTagFilter, excludeTagIds: excludeTagFilter, personalTagValues }
-        // includeMode defaults to 'any' - this page doesn't expose the AND/OR
-        // toggle room has, just simple OR-match include plus exclude.
+        {
+          songbookIds, songbookMode: songbookFilterMode,
+          sections, sectionMode: sectionFilterMode,
+          includeTagIds: systemTagFilter, includeMode: systemTagFilterMode, excludeTagIds: excludeTagFilter,
+          personalTagValues, personalTagMode: personalTagFilterMode
+        }
       )) return false;
 
       // Exclude by personal tag - handled locally rather than in the shared
@@ -1020,24 +1025,24 @@ export default function Songs() {
                   <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.tag ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.tag && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                  {allTags.map(tag => {
-                    const selected = systemTagFilter.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        onClick={() => setSystemTagFilter(prev => toggleInArray(prev, tag))}
-                        style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #3B9B73' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#3B9B7320' : (s.select.background || '#1e293b'),
-                          color: selected ? '#3B9B73' : (s.select.color || '#fff')
-                        }}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
+                <>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="systemTagFilterMode" checked={systemTagFilterMode === 'any'} onChange={() => setSystemTagFilterMode('any')} /> any
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="systemTagFilterMode" checked={systemTagFilterMode === 'all'} onChange={() => setSystemTagFilterMode('all')} /> all
+                  </label>
                 </div>
+                <AdaptiveMultiSelect
+                  options={allTags.map(tag => ({ value: tag, label: tag }))}
+                  selected={systemTagFilter}
+                  onChange={setSystemTagFilter}
+                  otherSelected={excludeTagFilter}
+                  placeholder="Search tags..."
+                  accentColor="#256B45"
+                />
+                </>
                 )}
               </div>
             )}
@@ -1049,24 +1054,14 @@ export default function Songs() {
                   <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.excludeTag ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.excludeTag && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                  {allTags.map(tag => {
-                    const selected = excludeTagFilter.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        onClick={() => setExcludeTagFilter(prev => toggleInArray(prev, tag))}
-                        style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #D45D25' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#D45D2520' : (s.select.background || '#1e293b'),
-                          color: selected ? '#D45D25' : (s.select.color || '#fff')
-                        }}
-                      >
-                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{tag}
-                      </button>
-                    );
-                  })}
-                </div>
+                <AdaptiveMultiSelect
+                  options={allTags.map(tag => ({ value: tag, label: tag }))}
+                  selected={excludeTagFilter}
+                  onChange={setExcludeTagFilter}
+                  otherSelected={systemTagFilter}
+                  placeholder="Search tags..."
+                  accentColor="#C35522"
+                />
                 )}
               </div>
             )}
@@ -1146,24 +1141,24 @@ export default function Songs() {
                   <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.myTags ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.myTags && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                  {allPersonalTags.map(tag => {
-                    const selected = personalTagValues.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        onClick={() => setPersonalTagValues(prev => toggleInArray(prev, tag))}
-                        style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #6882B6' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#6882B620' : (s.select.background || '#1e293b'),
-                          color: selected ? '#6882B6' : (s.select.color || '#fff')
-                        }}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
+                <>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="personalTagFilterMode" checked={personalTagFilterMode === 'any'} onChange={() => setPersonalTagFilterMode('any')} /> any
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="personalTagFilterMode" checked={personalTagFilterMode === 'all'} onChange={() => setPersonalTagFilterMode('all')} /> all
+                  </label>
                 </div>
+                <AdaptiveMultiSelect
+                  options={allPersonalTags.map(tag => ({ value: tag, label: tag }))}
+                  selected={personalTagValues}
+                  onChange={setPersonalTagValues}
+                  otherSelected={excludePersonalTagValues}
+                  placeholder="Search your tags..."
+                  accentColor="#5371AC"
+                />
+                </>
                 )}
               </div>
             )}
@@ -1175,31 +1170,21 @@ export default function Songs() {
                   <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.excludeMyTags ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.excludeMyTags && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                  {allPersonalTags.map(tag => {
-                    const selected = excludePersonalTagValues.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        onClick={() => setExcludePersonalTagValues(prev => toggleInArray(prev, tag))}
-                        style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #D45D25' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#D45D2520' : (s.select.background || '#1e293b'),
-                          color: selected ? '#D45D25' : (s.select.color || '#fff')
-                        }}
-                      >
-                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{tag}
-                      </button>
-                    );
-                  })}
-                </div>
+                <AdaptiveMultiSelect
+                  options={allPersonalTags.map(tag => ({ value: tag, label: tag }))}
+                  selected={excludePersonalTagValues}
+                  onChange={setExcludePersonalTagValues}
+                  otherSelected={personalTagValues}
+                  placeholder="Search your tags..."
+                  accentColor="#C35522"
+                />
                 )}
               </div>
             )}
 
             {(songbookIds.length > 0 || sections.length > 0 || systemTagFilter.length > 0 || excludeTagFilter.length > 0 || personalTagValues.length > 0 || excludePersonalTagValues.length > 0 || statusFilter.length > 0 || excludeStatusFilter.length > 0) && (
               <button
-                onClick={() => { setSongbookIds([]); setSections([]); setSystemTagFilter([]); setExcludeTagFilter([]); setPersonalTagValues([]); setExcludePersonalTagValues([]); setStatusFilter([]); setExcludeStatusFilter([]); }}
+                onClick={() => { setSongbookIds([]); setSongbookFilterMode('any'); setSections([]); setSectionFilterMode('any'); setSystemTagFilter([]); setSystemTagFilterMode('any'); setExcludeTagFilter([]); setPersonalTagValues([]); setPersonalTagFilterMode('any'); setExcludePersonalTagValues([]); setStatusFilter([]); setExcludeStatusFilter([]); }}
                 style={{ ...s.select, cursor: 'pointer', color: '#838C95' }}
               >
                 Clear filters
