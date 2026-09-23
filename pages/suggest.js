@@ -512,19 +512,19 @@ export default function Suggest() {
   };
 
   const typeLabels = {
-    new_song: '🎵 New Song',
-    new_version: '📝 New Version',
-    media: '🎬 Media',
-    note: '📋 Note',
-    edit: '✏️ Edit',
-    add_alias: '🏷️ Alias',
-    add_flag: '⚠️ Flag'
+    new_song: { icon: 'music', label: 'New Song' },
+    new_version: { icon: 'file-text', label: 'New Version' },
+    media: { icon: 'movie', label: 'Media' },
+    note: { icon: 'notes', label: 'Note' },
+    edit: { icon: 'edit', label: 'Edit' },
+    add_alias: { icon: 'tag', label: 'Alias' },
+    add_flag: { icon: 'flag', label: 'Flag' }
   };
 
   const statusColors = {
-    pending: { bg: '#f59e0b20', text: '#f59e0b' },
-    approved: { bg: '#22c55e20', text: '#22c55e' },
-    rejected: { bg: '#ef444420', text: '#ef4444' }
+    pending: { bg: '#D45D2520', text: '#D45D25' },
+    approved: { bg: '#3B9B7320', text: '#3B9B73' },
+    rejected: { bg: '#D45D2520', text: '#D45D25' }
   };
 
   const s = {
@@ -532,23 +532,23 @@ export default function Suggest() {
     wrapper: { maxWidth: '800px', margin: '0 auto', padding: '1.5rem' },
     card: { background: '#1e293b', borderRadius: '0.75rem', padding: '1.5rem', marginBottom: '1.5rem' },
     cardTitle: { fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' },
-    label: { display: 'block', fontSize: '0.875rem', color: '#94a3b8', marginBottom: '0.25rem', marginTop: '0.75rem' },
+    label: { display: 'block', fontSize: '0.875rem', color: '#838C95', marginBottom: '0.25rem', marginTop: '0.75rem' },
     input: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', fontSize: '1rem' },
     textarea: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', fontSize: '1rem', minHeight: '120px', fontFamily: 'inherit', resize: 'vertical' },
     select: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', fontSize: '1rem' },
-    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' },
+    btn: { background: '#256B45', color: '#fff', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' },
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' },
     checkbox: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' },
-    checkboxActive: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: '#22c55e20', border: '1px solid #22c55e40', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' },
+    checkboxActive: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: '#3B9B7320', border: '1px solid #3B9B7340', borderRadius: '0.5rem', marginBottom: '0.5rem', cursor: 'pointer' },
     fieldGroup: { background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', marginBottom: '0.75rem', border: '1px solid #334155' },
     msg: { position: 'fixed', top: '4.5rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 1000 },
     modeBtn: (active) => ({ 
       flex: 1, 
       padding: '1rem', 
-      background: active ? '#22c55e20' : '#0f172a', 
-      border: active ? '2px solid #22c55e' : '1px solid #334155', 
+      background: active ? '#3B9B7320' : '#0f172a', 
+      border: active ? '2px solid #3B9B73' : '1px solid #334155', 
       borderRadius: '0.5rem', 
-      color: active ? '#22c55e' : '#94a3b8',
+      color: active ? '#3B9B73' : '#838C95',
       cursor: 'pointer',
       fontWeight: active ? '600' : '400',
       fontSize: '1rem'
@@ -564,7 +564,7 @@ export default function Suggest() {
   return (
     <div style={s.container}>
       <div style={s.wrapper}>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>💡 Suggest Song Info</h1>
+        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1.5rem', fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-bulb" aria-hidden="true"></i> Suggest Song Info</h1>
 
         {message && <div style={s.msg}>{message}</div>}
 
@@ -573,10 +573,10 @@ export default function Suggest() {
           <h2 style={s.cardTitle}>What do you want to suggest?</h2>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button onClick={() => setMode('new_song')} style={s.modeBtn(mode === 'new_song')}>
-              🎵 New Song
+              <i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> New Song
             </button>
             <button onClick={() => setMode('existing_song')} style={s.modeBtn(mode === 'existing_song')}>
-              ✏️ Add to Existing Song
+              <i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Add to Existing Song
             </button>
           </div>
         </div>
@@ -585,8 +585,8 @@ export default function Suggest() {
         <div style={s.card}>
           {mode === 'new_song' ? (
             <>
-              <h2 style={s.cardTitle}>🎵 Suggest a New Song</h2>
-              <p style={{ color: '#94a3b8', marginBottom: '1rem', fontSize: '0.875rem' }}>
+              <h2 style={s.cardTitle}><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Suggest a New Song</h2>
+              <p style={{ color: '#838C95', marginBottom: '1rem', fontSize: '0.875rem' }}>
                 Fill in what you know - only the title is required.
               </p>
 
@@ -604,7 +604,7 @@ export default function Suggest() {
             </>
           ) : (
             <>
-              <h2 style={s.cardTitle}>✏️ Add Info to Existing Song</h2>
+              <h2 style={s.cardTitle}><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Add Info to Existing Song</h2>
               
               <label style={s.label}>Select Song *</label>
               <select value={selectedSongId} onChange={(e) => setSelectedSongId(e.target.value)} style={s.select}>
@@ -614,7 +614,7 @@ export default function Suggest() {
 
               {selectedSongId && (
                 <>
-                  <p style={{ color: '#94a3b8', marginTop: '1rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                  <p style={{ color: '#838C95', marginTop: '1rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
                     Check what you want to add for "<strong style={{ color: '#fff' }}>{selectedSong?.title}</strong>"
                   </p>
                 </>
@@ -626,15 +626,15 @@ export default function Suggest() {
           {(mode === 'new_song' || selectedSongId) && (
             <>
               <div style={{ marginTop: '1.5rem', marginBottom: '1rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#94a3b8' }}>Additional Info (check what you want to add)</h3>
+                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#838C95' }}>Additional Info (check what you want to add)</h3>
               </div>
 
               {/* Basic Info */}
               {mode === 'existing_song' && (
                 <>
                   <label style={includeAuthor ? s.checkboxActive : s.checkbox} onClick={() => setIncludeAuthor(!includeAuthor)}>
-                    <input type="checkbox" checked={includeAuthor} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                    <span>✏️ Author / Lyricist</span>
+                    <input type="checkbox" checked={includeAuthor} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                    <span><i className="ti ti-feather" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Author / Lyricist</span>
                   </label>
                   {includeAuthor && (
                     <div style={s.fieldGroup}>
@@ -643,8 +643,8 @@ export default function Suggest() {
                   )}
 
                   <label style={includeComposer ? s.checkboxActive : s.checkbox} onClick={() => setIncludeComposer(!includeComposer)}>
-                    <input type="checkbox" checked={includeComposer} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                    <span>🎼 Composer</span>
+                    <input type="checkbox" checked={includeComposer} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                    <span><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Composer</span>
                   </label>
                   {includeComposer && (
                     <div style={s.fieldGroup}>
@@ -655,8 +655,8 @@ export default function Suggest() {
               )}
 
               <label style={includeYear ? s.checkboxActive : s.checkbox} onClick={() => setIncludeYear(!includeYear)}>
-                <input type="checkbox" checked={includeYear} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>📅 Year Written</span>
+                <input type="checkbox" checked={includeYear} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-calendar" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Year Written</span>
               </label>
               {includeYear && (
                 <div style={s.fieldGroup}>
@@ -665,8 +665,8 @@ export default function Suggest() {
               )}
 
               <label style={includeOrigin ? s.checkboxActive : s.checkbox} onClick={() => setIncludeOrigin(!includeOrigin)}>
-                <input type="checkbox" checked={includeOrigin} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>🌍 Origin / Source</span>
+                <input type="checkbox" checked={includeOrigin} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-world" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Origin / Source</span>
               </label>
               {includeOrigin && (
                 <div style={s.fieldGroup}>
@@ -675,8 +675,8 @@ export default function Suggest() {
               )}
 
               <label style={includeTuneOf ? s.checkboxActive : s.checkbox} onClick={() => setIncludeTuneOf(!includeTuneOf)}>
-                <input type="checkbox" checked={includeTuneOf} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>🎵 Tune Of (if sung to another melody)</span>
+                <input type="checkbox" checked={includeTuneOf} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Tune Of (if sung to another melody)</span>
               </label>
               {includeTuneOf && (
                 <div style={s.fieldGroup}>
@@ -685,8 +685,8 @@ export default function Suggest() {
               )}
 
               <label style={includeAlias ? s.checkboxActive : s.checkbox} onClick={() => setIncludeAlias(!includeAlias)}>
-                <input type="checkbox" checked={includeAlias} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>🏷️ Alternate Name(s)</span>
+                <input type="checkbox" checked={includeAlias} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Alternate Name(s)</span>
               </label>
               {includeAlias && (
                 <div style={s.fieldGroup}>
@@ -704,8 +704,8 @@ export default function Suggest() {
 
               {/* Version */}
               <label style={includeVersion ? s.checkboxActive : s.checkbox} onClick={() => setIncludeVersion(!includeVersion)}>
-                <input type="checkbox" checked={includeVersion} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>📝 {mode === 'new_song' ? 'Additional Version(s)' : 'Add Version(s) / Lyrics'}</span>
+                <input type="checkbox" checked={includeVersion} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-file-text" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {mode === 'new_song' ? 'Additional Version(s)' : 'Add Version(s) / Lyrics'}</span>
               </label>
               {includeVersion && (
                 <div style={s.fieldGroup}>
@@ -727,8 +727,8 @@ export default function Suggest() {
 
               {/* Media */}
               <label style={includeMedia ? s.checkboxActive : s.checkbox} onClick={() => setIncludeMedia(!includeMedia)}>
-                <input type="checkbox" checked={includeMedia} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>🎬 Media Links (YouTube, Spotify, etc.)</span>
+                <input type="checkbox" checked={includeMedia} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-movie" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Media Links (YouTube, Spotify, etc.)</span>
               </label>
               {includeMedia && (
                 <div style={s.fieldGroup}>
@@ -756,8 +756,8 @@ export default function Suggest() {
 
               {/* Note */}
               <label style={includeNote ? s.checkboxActive : s.checkbox} onClick={() => setIncludeNote(!includeNote)}>
-                <input type="checkbox" checked={includeNote} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>📋 Note(s) (history, teaching tips, etc.)</span>
+                <input type="checkbox" checked={includeNote} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-notes" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Note(s) (history, teaching tips, etc.)</span>
               </label>
               {includeNote && (
                 <div style={s.fieldGroup}>
@@ -784,8 +784,8 @@ export default function Suggest() {
 
               {/* Flag */}
               <label style={includeFlag ? s.checkboxActive : s.checkbox} onClick={() => setIncludeFlag(!includeFlag)}>
-                <input type="checkbox" checked={includeFlag} onChange={() => {}} style={{ accentColor: '#22c55e' }} />
-                <span>⚠️ Flag Issue(s)</span>
+                <input type="checkbox" checked={includeFlag} onChange={() => {}} style={{ accentColor: '#3B9B73' }} />
+                <span><i className="ti ti-flag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Flag Issue(s)</span>
               </label>
               {includeFlag && (
                 <div style={s.fieldGroup}>
@@ -824,7 +824,7 @@ export default function Suggest() {
               </div>
 
               <button onClick={submitSuggestions} disabled={submitting} style={{ ...s.btn, width: '100%', marginTop: '1.5rem', opacity: submitting ? 0.5 : 1 }}>
-                {submitting ? 'Submitting...' : '🚀 Submit Suggestion(s)'}
+                {submitting ? 'Submitting...' : <><i className="ti ti-send" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Submit Suggestion(s)</>}
               </button>
             </>
           )}
@@ -842,7 +842,7 @@ export default function Suggest() {
           {showMySuggestions && (
             <div style={{ marginTop: '1rem' }}>
               {mySuggestions.length === 0 ? (
-                <p style={{ color: '#64748b', fontSize: '0.875rem' }}>No suggestions yet</p>
+                <p style={{ color: '#838C95', fontSize: '0.875rem' }}>No suggestions yet</p>
               ) : (
                 mySuggestions.map(sug => {
                   const statusColor = statusColors[sug.status] || statusColors.pending;
@@ -851,10 +851,14 @@ export default function Suggest() {
                     <div key={sug.id} style={{ padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                         <div>
-                          <span style={{ fontWeight: 'bold' }}>{typeLabels[sug.suggestion_type]}</span>
-                          {song && <span style={{ color: '#94a3b8' }}> for "{song.title}"</span>}
-                          {sug.title && <span style={{ color: '#94a3b8' }}> - {sug.title}</span>}
-                          {sug.field_name && <span style={{ color: '#94a3b8' }}> ({sug.field_name})</span>}
+                          <span style={{ fontWeight: 'bold' }}>
+                            {typeLabels[sug.suggestion_type] && (
+                              <><i className={`ti ti-${typeLabels[sug.suggestion_type].icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {typeLabels[sug.suggestion_type].label}</>
+                            )}
+                          </span>
+                          {song && <span style={{ color: '#838C95' }}> for "{song.title}"</span>}
+                          {sug.title && <span style={{ color: '#838C95' }}> - {sug.title}</span>}
+                          {sug.field_name && <span style={{ color: '#838C95' }}> ({sug.field_name})</span>}
                         </div>
                         <span style={{
                           fontSize: '0.7rem',
@@ -867,7 +871,7 @@ export default function Suggest() {
                         </span>
                       </div>
                       {sug.admin_notes && (
-                        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#838C95', fontStyle: 'italic' }}>
                           Admin: {sug.admin_notes}
                         </div>
                       )}
