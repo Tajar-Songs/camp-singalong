@@ -323,10 +323,6 @@ export default function UserManagement() {
               </button>
             )}
           </div>
-          
-          <div className="mt-6 text-center">
-            <a href="/" className="text-[#838C95] text-sm hover:text-[#838C95]">← Back to Singalong</a>
-          </div>
         </div>
       </div>
     );
@@ -341,9 +337,6 @@ export default function UserManagement() {
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
           <p className="text-[#838C95] mb-6">You need admin privileges to access this page.</p>
           <div className="flex flex-col gap-3">
-            <a href="/" className="bg-[#256B45] hover:bg-[#2f8058] text-white p-3 rounded-lg font-bold transition-all">
-              ← Back to Singalong
-            </a>
             <button onClick={handleLogout} className="text-[#D45D25] hover:text-[#D45D25]/80 text-sm">
               Sign out
             </button>
@@ -425,7 +418,7 @@ export default function UserManagement() {
           <div className="grid sm:grid-cols-2 gap-2">
             {allRoles.map(r => (
               <div key={r.id} className="flex items-start gap-2">
-                <span className="px-2 py-0.5 rounded text-xs font-bold bg-[#7959A6]">
+                <span className="px-2 py-0.5 rounded text-xs font-bold bg-[#256B45]">
                   {r.enforce_minimum_holders && <i className="ti ti-lock" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}{r.enforce_minimum_holders && ' '}{r.label}
                 </span>
                 <span className="text-sm text-[#838C95]">{r.stream ? `${r.stream.replace('_', ' ')} access` : 'Platform-wide role'}</span>
@@ -477,7 +470,7 @@ export default function UserManagement() {
                           onClick={() => toggleUserRole(u.id, r, held)}
                           className={`px-3 py-2 rounded-lg border outline-none font-bold text-sm transition-all ${
                             held
-                              ? 'bg-[#8F74B4]/20 border-[#8F74B4] text-[#8F74B4]'
+                              ? 'bg-[#3B9B73]/20 border-[#3B9B73] text-[#3B9B73]'
                               : 'bg-slate-700 border-[#838C95]/35 text-[#838C95] hover:text-[#838C95]'
                           }`}
                         >
