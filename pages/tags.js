@@ -447,7 +447,7 @@ export default function TagManagement() {
   };
 
   const deleteTag = async (tag) => {
-    if (!confirm(`Delete tag "${tag.name}"? This will remove it from all songs.`)) return;
+    if (!confirm(`Delete platform tag "${tag.name}"? This will remove it from all songs.`)) return;
     
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${tag.id}`, {
@@ -561,7 +561,7 @@ export default function TagManagement() {
       });
 
       if (response.ok) {
-        showMessage(`✅ Tag applied to ${songsToTag.length} song(s)`);
+        showMessage(`✅ Platform tag applied to ${songsToTag.length} song(s)`);
         setSelectedSongs([]);
         await loadData();
       }
@@ -628,7 +628,7 @@ export default function TagManagement() {
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full">
           <div className="text-center mb-6">
             <div className="text-5xl mb-2"><i className="ti ti-tag" aria-hidden="true"></i></div>
-            <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>Tag Management</h1>
+            <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>Platform Tag Management</h1>
             <p className="text-[#838C95] text-sm">Sign in to manage tags</p>
           </div>
           
@@ -732,7 +732,7 @@ export default function TagManagement() {
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl md:text-4xl font-black flex items-center gap-3 text-white" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>
-              <span className="text-[#3B9B73]"><i className="ti ti-tag" aria-hidden="true"></i></span> Tag Management
+              <span className="text-[#3B9B73]"><i className="ti ti-tag" aria-hidden="true"></i></span> Platform Tag Management
             </h1>
             <p className="text-[#838C95] mt-1 font-medium">
               {tags.length} tags • {songs.length} songs
@@ -766,7 +766,7 @@ export default function TagManagement() {
                 : 'bg-slate-800 text-[#838C95] hover:bg-slate-700'
             }`}
           >
-            <i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Manage Tags
+            <i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Manage Platform Tags
           </button>
           <button
             onClick={() => setActiveTab('apply')}
@@ -788,14 +788,14 @@ export default function TagManagement() {
               <div className="bg-slate-800 border-2 border-[#3B9B73]/30 rounded-2xl p-6 mb-8">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-black">
-                    {isAddingTag ? <><i className="ti ti-file-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Create New Tag</> : <><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Edit: {editingTag.name}</>}
+                    {isAddingTag ? <><i className="ti ti-file-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Create New Platform Tag</> : <><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Edit: {editingTag.name}</>}
                   </h2>
                   <button onClick={cancelTagEdit} className="text-[#838C95] hover:text-white p-2"><i className="ti ti-x" aria-hidden="true"></i></button>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6">
                   <div>
-                    <label className="block text-sm font-bold text-[#838C95] mb-2">Tag Name *</label>
+                    <label className="block text-sm font-bold text-[#838C95] mb-2">Platform Tag Name *</label>
                     <input
                       type="text"
                       value={tagName}
@@ -833,19 +833,19 @@ export default function TagManagement() {
                 onClick={startAddTag}
                 className="mb-6 bg-[#256B45] hover:bg-[#2f8058] text-white px-6 py-3 rounded-xl font-bold"
               >
-                + Create New Tag
+                + Create New Platform Tag
               </button>
             )}
 
             {/* Tags List */}
             <div className="bg-slate-800/50 border border-[#838C95]/20 rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-[#838C95]/20 bg-slate-800">
-                <h3 className="font-bold">All Tags ({tags.length})</h3>
+                <h3 className="font-bold">All Platform Tags ({tags.length})</h3>
               </div>
               <div className="divide-y divide-slate-700/50">
                 {tags.length === 0 ? (
                   <div className="p-8 text-center text-[#838C95]">
-                    No tags yet. Create your first tag above!
+                    No platform tags yet. Create your first one above!
                   </div>
                 ) : (
                   tags.map(tag => {
@@ -1035,7 +1035,7 @@ export default function TagManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-bold text-[#838C95]">Tags — include</label>
+                      <label className="text-sm font-bold text-[#838C95]">Platform Tags — include</label>
                       <div className="flex gap-3 text-xs">
                         <label className="flex items-center gap-1 cursor-pointer">
                           <input type="radio" name="tagIncludeMode" checked={tagIncludeMode === 'any'} onChange={() => setTagIncludeMode('any')} /> any
@@ -1054,7 +1054,7 @@ export default function TagManagement() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-[#838C95] mb-2">Tags — exclude</label>
+                    <label className="block text-sm font-bold text-[#838C95] mb-2">Platform Tags — exclude</label>
                     <TypeaheadChips
                       options={tags.map(t => ({ value: t.id, label: t.name }))}
                       selected={tagExcludeFilters}
