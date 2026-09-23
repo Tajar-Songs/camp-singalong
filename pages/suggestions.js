@@ -169,31 +169,31 @@ export default function AdminSuggestions() {
   const getSongTitle = (songId) => songs[songId]?.title || 'Unknown song';
 
   const typeLabels = {
-    new_song: '🎵 New Song',
-    new_version: '📝 New Version',
-    media: '🎬 Media',
-    note: '📋 Note',
-    edit: '✏️ Edit',
-    add_alias: '🏷️ Alias',
-    add_flag: '⚠️ Flag'
+    new_song: { icon: 'music', label: 'New Song' },
+    new_version: { icon: 'file-text', label: 'New Version' },
+    media: { icon: 'movie', label: 'Media' },
+    note: { icon: 'notes', label: 'Note' },
+    edit: { icon: 'edit', label: 'Edit' },
+    add_alias: { icon: 'tag', label: 'Alias' },
+    add_flag: { icon: 'flag', label: 'Flag' }
   };
 
   const statusColors = {
-    pending: { bg: '#f59e0b20', text: '#f59e0b' },
-    approved: { bg: '#22c55e20', text: '#22c55e' },
-    rejected: { bg: '#ef444420', text: '#ef4444' }
+    pending: { bg: '#D45D2520', text: '#D45D25' },
+    approved: { bg: '#3B9B7320', text: '#3B9B73' },
+    rejected: { bg: '#D45D2520', text: '#D45D25' }
   };
 
   const s = {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
     wrapper: { maxWidth: '900px', margin: '0 auto', padding: '1.5rem' },
     header: { marginBottom: '1.5rem' },
-    title: { fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' },
+    title: { fontSize: '2rem', fontWeight: 'bold', marginBottom: '0.5rem', fontFamily: "'Gloria Hallelujah', cursive" },
     card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', marginBottom: '1rem', overflow: 'hidden' },
-    batchCard: { background: '#1e293b', borderRadius: '0.75rem', border: '2px solid #3b82f6', marginBottom: '1rem', overflow: 'hidden' },
+    batchCard: { background: '#1e293b', borderRadius: '0.75rem', border: '2px solid #6882B6', marginBottom: '1rem', overflow: 'hidden' },
     filters: { display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' },
     filterBtn: (active) => ({
-      background: active ? '#22c55e' : '#334155',
+      background: active ? '#256B45' : '#334155',
       color: '#fff',
       border: 'none',
       padding: '0.5rem 1rem',
@@ -201,16 +201,16 @@ export default function AdminSuggestions() {
       cursor: 'pointer',
       fontSize: '0.875rem'
     }),
-    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '500' },
-    btnDanger: { background: '#ef4444', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.8rem' },
+    btn: { background: '#256B45', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '500' },
+    btnDanger: { background: '#C35522', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.8rem' },
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.8rem' },
     input: { width: '100%', padding: '0.5rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', fontSize: '0.875rem', marginBottom: '0.5rem' },
     message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
     row: { display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', fontSize: '0.875rem' },
-    label: { color: '#64748b' },
+    label: { color: '#838C95' },
     pre: { background: '#0f172a', padding: '0.75rem', borderRadius: '0.375rem', fontSize: '0.8rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '200px', overflow: 'auto' },
     itemCard: { background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', marginBottom: '0.75rem', border: '1px solid #334155' },
-    batchBadge: { background: '#3b82f620', color: '#3b82f6', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.7rem', fontWeight: 'bold' }
+    batchBadge: { background: '#6882B620', color: '#6882B6', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.7rem', fontWeight: 'bold' }
   };
 
   const renderSuggestionItem = (sug, isPartOfBatch = false) => {
@@ -220,7 +220,11 @@ export default function AdminSuggestions() {
     return (
       <div key={sug.id} style={isPartOfBatch ? s.itemCard : {}}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-          <span style={{ fontWeight: 'bold' }}>{typeLabels[sug.suggestion_type] || sug.suggestion_type}</span>
+          <span style={{ fontWeight: 'bold' }}>
+            {typeLabels[sug.suggestion_type]
+              ? <><i className={`ti ti-${typeLabels[sug.suggestion_type].icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {typeLabels[sug.suggestion_type].label}</>
+              : sug.suggestion_type}
+          </span>
           <span style={{
             fontSize: '0.7rem',
             padding: '0.2rem 0.5rem',
@@ -263,7 +267,7 @@ export default function AdminSuggestions() {
         {sug.suggestion_type === 'media' && (
           <>
             <div style={s.row}><span style={s.label}>Type:</span> {sug.media_type}</div>
-            <div style={s.row}><span style={s.label}>URL:</span> <a href={sug.media_url} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6' }}>{sug.media_url}</a></div>
+            <div style={s.row}><span style={s.label}>URL:</span> <a href={sug.media_url} target="_blank" rel="noopener noreferrer" style={{ color: '#6882B6' }}>{sug.media_url}</a></div>
             {sug.media_label && <div style={s.row}><span style={s.label}>Label:</span> {sug.media_label}</div>}
           </>
         )}
@@ -307,7 +311,7 @@ export default function AdminSuggestions() {
         {sug.source_url && (
           <div style={{ marginTop: '0.5rem' }}>
             <span style={s.label}>Source: </span>
-            <a href={sug.source_url} target="_blank" rel="noopener noreferrer" style={{ color: '#22c55e', fontSize: '0.875rem' }}>{sug.source_url}</a>
+            <a href={sug.source_url} target="_blank" rel="noopener noreferrer" style={{ color: '#3B9B73', fontSize: '0.875rem' }}>{sug.source_url}</a>
           </div>
         )}
 
@@ -320,8 +324,8 @@ export default function AdminSuggestions() {
 
         {/* Existing admin notes */}
         {sug.admin_notes && (
-          <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#22c55e15', borderRadius: '0.375rem', border: '1px solid #22c55e30' }}>
-            <span style={{ color: '#22c55e', fontWeight: 'bold' }}>Admin notes:</span> {sug.admin_notes}
+          <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#3B9B7315', borderRadius: '0.375rem', border: '1px solid #3B9B7330' }}>
+            <span style={{ color: '#3B9B73', fontWeight: 'bold' }}>Admin notes:</span> {sug.admin_notes}
           </div>
         )}
 
@@ -336,15 +340,15 @@ export default function AdminSuggestions() {
               style={s.input}
             />
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button onClick={() => { updateStatus(sug.id, 'approved', adminNotes[noteKey] || ''); setAdminNotes(prev => ({ ...prev, [noteKey]: '' })); }} style={s.btn}>✓ Approve</button>
-              <button onClick={() => { updateStatus(sug.id, 'rejected', adminNotes[noteKey] || ''); setAdminNotes(prev => ({ ...prev, [noteKey]: '' })); }} style={s.btnDanger}>✗ Reject</button>
+              <button onClick={() => { updateStatus(sug.id, 'approved', adminNotes[noteKey] || ''); setAdminNotes(prev => ({ ...prev, [noteKey]: '' })); }} style={s.btn}><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Approve</button>
+              <button onClick={() => { updateStatus(sug.id, 'rejected', adminNotes[noteKey] || ''); setAdminNotes(prev => ({ ...prev, [noteKey]: '' })); }} style={s.btnDanger}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Reject</button>
             </div>
           </div>
         )}
 
         {sug.status !== 'pending' && (
           <div style={{ marginTop: '0.5rem' }}>
-            <button onClick={() => updateStatus(sug.id, 'pending')} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>↩ Pending</button>
+            <button onClick={() => updateStatus(sug.id, 'pending')} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}><i className="ti ti-arrow-back-up" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Pending</button>
           </div>
         )}
       </div>
@@ -367,8 +371,8 @@ export default function AdminSuggestions() {
       
       <div style={s.wrapper}>
         <div style={s.header}>
-          <h1 style={s.title}>📥 Review Suggestions</h1>
-          <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>{filtered.length} submission(s)</p>
+          <h1 style={s.title}><i className="ti ti-inbox" aria-hidden="true"></i> Review Suggestions</h1>
+          <p style={{ color: '#838C95', fontSize: '0.875rem' }}>{filtered.length} submission(s)</p>
         </div>
 
         {/* Filters */}
@@ -383,7 +387,7 @@ export default function AdminSuggestions() {
 
         {/* Suggestions */}
         {filtered.length === 0 ? (
-          <div style={{ ...s.card, padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+          <div style={{ ...s.card, padding: '2rem', textAlign: 'center', color: '#838C95' }}>
             No suggestions to show
           </div>
         ) : (
@@ -412,21 +416,30 @@ export default function AdminSuggestions() {
                       
                       {/* Show primary info */}
                       {batch.items.some(i => i.suggestion_type === 'new_song') ? (
-                        <span style={{ fontWeight: 'bold' }}>🎵 New Song: "{batch.items.find(i => i.suggestion_type === 'new_song')?.title}"</span>
+                        <span style={{ fontWeight: 'bold' }}><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> New Song: "{batch.items.find(i => i.suggestion_type === 'new_song')?.title}"</span>
                       ) : batch.songId ? (
                         <span style={{ fontWeight: 'bold' }}>For: "{getSongTitle(batch.songId)}"</span>
                       ) : (
-                        <span style={{ fontWeight: 'bold' }}>{typeLabels[batch.items[0]?.suggestion_type]}</span>
+                        <span style={{ fontWeight: 'bold' }}>
+                          {typeLabels[batch.items[0]?.suggestion_type] && (
+                            <><i className={`ti ti-${typeLabels[batch.items[0]?.suggestion_type].icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {typeLabels[batch.items[0]?.suggestion_type].label}</>
+                          )}
+                        </span>
                       )}
                       
-                      {/* Show what types are in the batch */}
+                      {/* Show what types are in the batch - uses .label directly now,
+                          fixing a real pre-existing bug where splitting the old
+                          emoji+text string on spaces truncated "New Song" and "New
+                          Version" both down to just "New", so a batch containing
+                          both types would silently show only one, deduplicated
+                          entry instead of two. */}
                       {isBatch && (
-                        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
-                          ({[...new Set(batch.items.map(i => typeLabels[i.suggestion_type]?.split(' ')[1] || i.suggestion_type))].join(', ')})
+                        <span style={{ color: '#838C95', fontSize: '0.8rem' }}>
+                          ({[...new Set(batch.items.map(i => typeLabels[i.suggestion_type]?.label || i.suggestion_type))].join(', ')})
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>
                       by {getUserName(batch.createdBy)} • {new Date(batch.createdAt).toLocaleDateString()}
                     </div>
                   </div>
@@ -464,7 +477,7 @@ export default function AdminSuggestions() {
                         ALL REJECTED
                       </span>
                     )}
-                    <span style={{ color: '#64748b' }}>{isExpanded ? '▼' : '▶'}</span>
+                    <span style={{ color: '#838C95' }}>{isExpanded ? '▼' : '▶'}</span>
                   </div>
                 </div>
 
@@ -476,13 +489,13 @@ export default function AdminSuggestions() {
                       {/* Batch actions */}
                       {isBatch && pendingInBatch > 0 && (
                         <div style={{ 
-                          background: '#3b82f610', 
-                          border: '1px solid #3b82f640', 
+                          background: '#6882B610', 
+                          border: '1px solid #6882B640', 
                           borderRadius: '0.5rem', 
                           padding: '1rem', 
                           marginBottom: '1rem' 
                         }}>
-                          <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: '#3b82f6' }}>
+                          <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', color: '#6882B6' }}>
                             Batch Actions ({pendingInBatch} pending)
                           </div>
                           <input
@@ -493,10 +506,10 @@ export default function AdminSuggestions() {
                             style={s.input}
                           />
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button onClick={() => updateBatchStatus(batch.batchId, 'approved')} style={s.btn}>✓ Approve All</button>
-                            <button onClick={() => updateBatchStatus(batch.batchId, 'rejected')} style={s.btnDanger}>✗ Reject All</button>
+                            <button onClick={() => updateBatchStatus(batch.batchId, 'approved')} style={s.btn}><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Approve All</button>
+                            <button onClick={() => updateBatchStatus(batch.batchId, 'rejected')} style={s.btnDanger}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Reject All</button>
                           </div>
-                          <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.5rem' }}>
+                          <p style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.5rem' }}>
                             Or review items individually below
                           </p>
                         </div>
@@ -505,7 +518,7 @@ export default function AdminSuggestions() {
                       {/* Individual items */}
                       {batch.items.map(sug => renderSuggestionItem(sug, isBatch))}
 
-                      <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.5rem' }}>
+                      <p style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.5rem' }}>
                         Note: Approving doesn't auto-create the content. You'll need to add it manually in Admin.
                       </p>
                     </div>
