@@ -283,6 +283,57 @@ const diffTags = (oldTags, newTags) => {
   };
 };
 
+// Reusable typeahead + chips input for large, growable option sets (Folder,
+// Tags). Per the style guide: typeahead means a browsable list, not a
+// search box - the suggestion list shows on focus even with empty input,
+// not only once something's been typed, so someone can discover an option
+// they didn't already know existed.
+function TypeaheadChips({ options, selected, onChange, otherSelected, placeholder, chipStyle, chipRemoveStyle, suggestionStyle, inputStyle }) {
+  const [inputValue, setInputValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const toggle = (value) => {
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+  };
+  const hidden = new Set([...selected, ...(otherSelected || [])]);
+  const suggestions = options
+    .filter(o => !hidden.has(o) && (!inputValue || o.toLowerCase().includes(inputValue.toLowerCase())))
+    .slice(0, 50); // cap the visible list so a very large set doesn't render everything at once
+  return (
+    <div>
+      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0 }}>
+        {selected.map(v => (
+          <span key={v} style={chipStyle}>{v}<button style={chipRemoveStyle} onClick={() => toggle(v)}>×</button></span>
+        ))}
+      </div>
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        // Delay so a click on a suggestion (which fires its own onClick
+        // right after blur) still registers before the list disappears.
+        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        style={{ ...inputStyle, marginBottom: '0.375rem' }}
+      />
+      {isFocused && suggestions.length > 0 && (
+        <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.375rem' }}>
+          {suggestions.map(o => (
+            <button
+              key={o}
+              style={{ ...suggestionStyle, display: 'block', width: '100%', textAlign: 'left' }}
+              onClick={() => { toggle(o); setInputValue(''); }}
+            >{o}</button>
+          ))}
+        </div>
+      )}
+      {isFocused && suggestions.length === 0 && (
+        <div style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.375rem' }}>No matches</div>
+      )}
+    </div>
+  );
+}
+
 export default function Docs() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -293,20 +344,28 @@ export default function Docs() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   // Filter state, rebuilt to actually match the documented Filtering pattern:
-  // - Folder/Visibility are single-valued per doc, so multi-select only ever
-  //   means "any of these" - no any/all toggle needed, matching the pattern's
-  //   own logic (a toggle only makes sense when an ITEM can hold multiple
-  //   values for that dimension).
-  // - Tags and Audience are genuinely multi-valued per doc (a doc can have
-  //   several tags, several audiences), so they get a real any/all toggle.
-  // - Tags gets typeahead + chips (option count can grow large over time);
-  //   Audience stays checkboxes (small, fixed option set).
+  // - Folder and Tags are both large, open-ended, growable option sets (we
+  //   don't know how many folders/tags will eventually exist), so both get
+  //   typeahead+chips, not checkboxes - and per the pattern, large-option-set
+  //   dimensions get a separate Exclude input alongside Include, since
+  //   unchecking isn't available the way it is for a small checkbox group.
+  // - Folder is single-valued per doc, so Include only ever means "any of
+  //   these" - no any/all toggle there, matching the pattern's own logic
+  //   (a toggle only makes sense when an item can hold multiple values for
+  //   that dimension). Tags is genuinely multi-valued, so it gets a real
+  //   any/all toggle on Include (Exclude is always "any of these", since
+  //   "all of these must be absent" and "any of these must be absent" work
+  //   out to needing the same exclusion regardless).
+  // - Visibility and Audience are small, fixed option sets, so they stay as
+  //   checkboxes; Audience is genuinely multi-valued so it keeps its
+  //   any/all toggle, Visibility (single-valued) doesn't need one.
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [folderFilters, setFolderFilters] = useState([]);
+  const [folderExcludeFilters, setFolderExcludeFilters] = useState([]);
   const [visibilityFilters, setVisibilityFilters] = useState([]);
   const [tagFilters, setTagFilters] = useState([]);
   const [tagFilterMode, setTagFilterMode] = useState('any');
-  const [tagFilterInput, setTagFilterInput] = useState('');
+  const [tagExcludeFilters, setTagExcludeFilters] = useState([]);
   const [audienceFilters, setAudienceFilters] = useState([]);
   const [audienceFilterMode, setAudienceFilterMode] = useState('any');
   const [allDocAudiences, setAllDocAudiences] = useState({}); // doc_id -> [audience_value_key, ...], for ALL docs at once
@@ -469,7 +528,7 @@ export default function Docs() {
   const toggleInFilter = (setter) => (value) => {
     setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
   };
-  const activeFilterCount = folderFilters.length + visibilityFilters.length + tagFilters.length + audienceFilters.length;
+  const activeFilterCount = folderFilters.length + folderExcludeFilters.length + visibilityFilters.length + tagFilters.length + tagExcludeFilters.length + audienceFilters.length;
 
   // Shared filter-matching, used both for the Published list (against each
   // doc's real fields + allDocAudiences) and the Drafts list (against either
@@ -477,6 +536,7 @@ export default function Docs() {
   // draft's own captured org fields, for a still-unpublished new doc).
   const matchesOrgFilters = ({ folder, visibility, tags, audienceKeys }) => {
     if (folderFilters.length > 0 && !folderFilters.includes(folder)) return false;
+    if (folderExcludeFilters.length > 0 && folderExcludeFilters.includes(folder)) return false;
     if (visibilityFilters.length > 0 && !visibilityFilters.includes(visibility)) return false;
     // Tags/Audience: genuinely multi-valued per doc, so any/all actually means something.
     const docTags = tags || [];
@@ -486,6 +546,7 @@ export default function Docs() {
         : tagFilters.some(t => docTags.includes(t));
       if (!matches) return false;
     }
+    if (tagExcludeFilters.length > 0 && tagExcludeFilters.some(t => docTags.includes(t))) return false;
     const docAudienceKeys = audienceKeys || [];
     if (audienceFilters.length > 0) {
       const matches = audienceFilterMode === 'all'
@@ -1236,7 +1297,7 @@ export default function Docs() {
     organizePanel: { background: '#1e293b', border: '1px solid #334155', borderRadius: '0.75rem', padding: '1.5rem', width: '100%', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto' },
     wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '2rem', display: 'grid', gridTemplateColumns: selectedDoc || isCreatingNew ? '280px 1fr' : '1fr', gap: '2rem' },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' },
-    title: { fontSize: '1.5rem', fontWeight: 'bold' },
+    title: { fontSize: '2rem', fontWeight: 'bold' },
     input: { width: '100%', padding: '0.75rem 1rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', marginBottom: '0.75rem', outline: 'none' },
     select: { width: '100%', padding: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', marginBottom: '1rem' },
     btn: { background: '#256B45', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem' },
@@ -1284,11 +1345,10 @@ export default function Docs() {
           {/* Filters apply to both Published and Drafts (a draft "matches" via
               its parent doc's org fields, or its own if not yet published -
               see matchesOrgFilters/filteredDrafts). Collapsible by default,
-              matching progressive disclosure; small checkbox groups for
-              Folder/Visibility (single-valued per doc, so only "any" ever
-              applies); typeahead+chips for Tags (can grow large); checkboxes
-              for Audience (small, fixed set) - both of the latter get a real
-              any/all toggle since a doc can hold several of each. */}
+              matching progressive disclosure. Folder and Tags use the
+              TypeaheadChips component (large, growable option sets, each
+              with a separate Include and Exclude); Visibility and Audience
+              stay as checkboxes (small, fixed sets). */}
           <div style={{ marginBottom: '0.75rem' }}>
             <button
               onClick={() => setFiltersExpanded(!filtersExpanded)}
@@ -1301,15 +1361,30 @@ export default function Docs() {
               <div style={{ ...s.card, padding: '0.75rem', marginTop: '0.5rem' }}>
                 {folders.length > 0 && (
                   <div style={{ marginBottom: '0.75rem' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.375rem' }}>Folder</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      {folders.map(f => (
-                        <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={folderFilters.includes(f)} onChange={() => toggleInFilter(setFolderFilters)(f)} />
-                          {f}
-                        </label>
-                      ))}
-                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.375rem' }}>Folder — include</div>
+                    <TypeaheadChips
+                      options={folders}
+                      selected={folderFilters}
+                      onChange={setFolderFilters}
+                      otherSelected={folderExcludeFilters}
+                      placeholder="Search folders..."
+                      chipStyle={s.tag}
+                      chipRemoveStyle={s.tagRemove}
+                      suggestionStyle={s.existingTag}
+                      inputStyle={s.input}
+                    />
+                    <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', margin: '0.5rem 0 0.375rem' }}>Folder — exclude</div>
+                    <TypeaheadChips
+                      options={folders}
+                      selected={folderExcludeFilters}
+                      onChange={setFolderExcludeFilters}
+                      otherSelected={folderFilters}
+                      placeholder="Search folders..."
+                      chipStyle={s.tag}
+                      chipRemoveStyle={s.tagRemove}
+                      suggestionStyle={s.existingTag}
+                      inputStyle={s.input}
+                    />
                   </div>
                 )}
                 <div style={{ marginBottom: '0.75rem' }}>
@@ -1328,7 +1403,7 @@ export default function Docs() {
                 {allExistingTags.length > 0 && (
                   <div style={{ marginBottom: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
-                      <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Tags</div>
+                      <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Tags — include</div>
                       <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
                           <input type="radio" name="tagFilterMode" checked={tagFilterMode === 'any'} onChange={() => setTagFilterMode('any')} /> any
@@ -1338,25 +1413,29 @@ export default function Docs() {
                         </label>
                       </div>
                     </div>
-                    <div style={{ marginBottom: '0.375rem' }}>
-                      {tagFilters.map(t => (
-                        <span key={t} style={s.tag}>{t}<button style={s.tagRemove} onClick={() => toggleInFilter(setTagFilters)(t)}>×</button></span>
-                      ))}
-                    </div>
-                    <input
-                      type="text"
+                    <TypeaheadChips
+                      options={allExistingTags}
+                      selected={tagFilters}
+                      onChange={setTagFilters}
+                      otherSelected={tagExcludeFilters}
                       placeholder="Search tags..."
-                      value={tagFilterInput}
-                      onChange={(e) => setTagFilterInput(e.target.value)}
-                      style={{ ...s.input, marginBottom: '0.375rem' }}
+                      chipStyle={s.tag}
+                      chipRemoveStyle={s.tagRemove}
+                      suggestionStyle={s.existingTag}
+                      inputStyle={s.input}
                     />
-                    {tagFilterInput && (
-                      <div>
-                        {allExistingTags.filter(t => !tagFilters.includes(t) && t.toLowerCase().includes(tagFilterInput.toLowerCase())).map(t => (
-                          <button key={t} style={s.existingTag} onClick={() => { toggleInFilter(setTagFilters)(t); setTagFilterInput(''); }}>{t}</button>
-                        ))}
-                      </div>
-                    )}
+                    <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', margin: '0.5rem 0 0.375rem' }}>Tags — exclude</div>
+                    <TypeaheadChips
+                      options={allExistingTags}
+                      selected={tagExcludeFilters}
+                      onChange={setTagExcludeFilters}
+                      otherSelected={tagFilters}
+                      placeholder="Search tags..."
+                      chipStyle={s.tag}
+                      chipRemoveStyle={s.tagRemove}
+                      suggestionStyle={s.existingTag}
+                      inputStyle={s.input}
+                    />
                   </div>
                 )}
                 {docAudienceOptions.length > 0 && (
@@ -1384,7 +1463,7 @@ export default function Docs() {
                 )}
                 {activeFilterCount > 0 && (
                   <button
-                    onClick={() => { setFolderFilters([]); setVisibilityFilters([]); setTagFilters([]); setAudienceFilters([]); }}
+                    onClick={() => { setFolderFilters([]); setFolderExcludeFilters([]); setVisibilityFilters([]); setTagFilters([]); setTagExcludeFilters([]); setAudienceFilters([]); }}
                     style={{ ...s.btnSec, marginTop: '0.75rem', width: '100%', fontSize: '0.8rem' }}
                   >Clear all filters</button>
                 )}
