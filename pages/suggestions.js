@@ -191,13 +191,11 @@ export default function AdminSuggestions() {
     title: { fontSize: '2rem', fontWeight: 'bold', marginBottom: '0.5rem', fontFamily: "'Gloria Hallelujah', cursive" },
     card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', marginBottom: '1rem', overflow: 'hidden' },
     batchCard: { background: '#1e293b', borderRadius: '0.75rem', border: '2px solid #6882B6', marginBottom: '1rem', overflow: 'hidden' },
-    filters: { display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' },
     filterBtn: (active) => ({
       background: active ? '#256B45' : '#334155',
       color: '#fff',
       border: 'none',
       padding: '0.5rem 1rem',
-      borderRadius: '0.375rem',
       cursor: 'pointer',
       fontSize: '0.875rem'
     }),
@@ -375,10 +373,12 @@ export default function AdminSuggestions() {
           <p style={{ color: '#838C95', fontSize: '0.875rem' }}>{filtered.length} submission(s)</p>
         </div>
 
-        {/* Filters */}
-        <div style={s.filters}>
-          {['all', 'pending', 'approved', 'rejected'].map(f => (
-            <button key={f} onClick={() => setStatusFilter(f)} style={s.filterBtn(statusFilter === f)}>
+        {/* Filters - connected segmented control (style guide: toggle
+            controls vs. action buttons), since these switch which
+            submissions the same list shows. */}
+        <div style={{ display: 'inline-flex', borderRadius: '0.375rem', border: '1px solid #334155', overflow: 'hidden', marginBottom: '1rem' }}>
+          {['all', 'pending', 'approved', 'rejected'].map((f, i) => (
+            <button key={f} onClick={() => setStatusFilter(f)} style={{ ...s.filterBtn(statusFilter === f), borderLeft: i > 0 ? '1px solid #334155' : 'none' }}>
               {f.charAt(0).toUpperCase() + f.slice(1)}
               {f === 'pending' && ` (${pendingCount})`}
             </button>
