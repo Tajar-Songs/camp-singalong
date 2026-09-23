@@ -5,6 +5,86 @@ import { getFilterableSongbooks, getAvailableSections, songMatchesFilters, toggl
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
+// Adaptive multi-select: renders as full-button chips (not small checkboxes -
+// bigger touch targets, easier on mobile) when there are few enough options
+// to browse directly, and switches to a browsable typeahead+chips once the
+// option count crosses a threshold, per the style guide's "selection UI
+// scales with option count" pattern. Same component either way, so the
+// switch is invisible/automatic rather than something each filter group
+// has to decide for itself.
+function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, placeholder, accentColor, threshold = 10 }) {
+  const [inputValue, setInputValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const toggle = (value) => {
+    onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
+  };
+  const chipStyle = (isSelected) => ({
+    padding: '0.4rem 0.75rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: '600',
+    cursor: 'pointer', border: 'none', transition: 'all 0.1s',
+    background: isSelected ? accentColor : '#334155',
+    color: isSelected ? '#fff' : '#838C95',
+  });
+
+  if (options.length <= threshold) {
+    // Small set: every option shown as a full-button chip, no separate
+    // click target to aim for - the whole chip is the target.
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+        {options.map(opt => (
+          <button key={opt.value} onClick={() => toggle(opt.value)} style={chipStyle(selected.includes(opt.value))}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // Large set: browsable typeahead + chips. The suggestion list shows on
+  // focus even with empty input (not just once something's typed), so a
+  // long list stays genuinely browsable, not just searchable.
+  const hiddenValues = new Set([...selected, ...(otherSelected || [])]);
+  const suggestions = options
+    .filter(o => !hiddenValues.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
+    .slice(0, 50);
+  const labelFor = (value) => options.find(o => o.value === value)?.label || value;
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem' }}>
+          {selected.map(v => (
+            <button key={v} onClick={() => toggle(v)} style={chipStyle(true)}>
+              {labelFor(v)} ×
+            </button>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', fontSize: '0.875rem', color: '#fff', marginBottom: '0.25rem' }}
+      />
+      {isFocused && suggestions.length > 0 && (
+        <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.5rem' }}>
+          {suggestions.map(o => (
+            <button
+              key={o.value}
+              onClick={() => { toggle(o.value); setInputValue(''); }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.85rem', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
+            >{o.label}</button>
+          ))}
+        </div>
+      )}
+      {isFocused && suggestions.length === 0 && (
+        <div style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.375rem' }}>No matches</div>
+      )}
+    </div>
+  );
+}
+
 export default function Songs() {
   // Auth state
   const [user, setUser] = useState(null);
@@ -33,8 +113,10 @@ export default function Songs() {
   const [search, setSearch] = useState('');
   const [searchLyrics, setSearchLyrics] = useState(true); // true = include lyrics, false = names only
   const [songbookIds, setSongbookIds] = useState([]);       // multi-select, [] = any songbook
+  const [songbookFilterMode, setSongbookFilterMode] = useState('any'); // a song can be in several songbooks
   const [sectionDefs, setSectionDefs] = useState([]);        // raw songbook_sections rows: {songbook_id, section_code, section_name}
   const [sections, setSections] = useState([]);              // multi-select, values are "songbookId::code" keys
+  const [sectionFilterMode, setSectionFilterMode] = useState('any'); // a song can be in several sections
   const [systemTagFilter, setSystemTagFilter] = useState([]); // multi-select include, [] = any tag
   const [excludeTagFilter, setExcludeTagFilter] = useState([]); // multi-select exclude, [] = no exclusions
   const [personalTagValues, setPersonalTagValues] = useState([]); // multi-select, [] = any tag
@@ -714,13 +796,13 @@ export default function Songs() {
           padding: '0.75rem',
           background: '#0f172a',
           borderRadius: '0.5rem',
-          color: '#22c55e',
+          color: '#3B9B73',
           textDecoration: 'none',
           fontSize: '0.875rem',
           wordBreak: 'break-all'
         }}
       >
-        🔗 {url}
+        <i className="ti ti-link" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {url}
       </a>
     );
   };
@@ -729,31 +811,31 @@ export default function Songs() {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
     wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '1.5rem', display: 'grid', gridTemplateColumns: selectedSong ? `${listWidth}px 8px 1fr` : '1fr', gap: '0.5rem' },
     header: { marginBottom: '1rem' },
-    title: { fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' },
-    subtitle: { color: '#94a3b8', fontSize: '0.875rem' },
+    title: { fontSize: '2rem', fontWeight: 'bold', marginBottom: '0.5rem', fontFamily: "'Gloria Hallelujah', cursive" },
+    subtitle: { color: '#838C95', fontSize: '0.875rem' },
     filters: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' },
     input: { padding: '0.5rem 0.75rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', outline: 'none', fontSize: '0.875rem' },
     select: { padding: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', fontSize: '0.875rem' },
     filterGroup: { display: 'flex', flexDirection: 'column', gap: '0.25rem' },
-    filterLabel: { fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' },
+    filterLabel: { fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' },
     card: { background: '#1e293b', borderRadius: '0.75rem', border: '1px solid #334155', overflow: 'hidden' },
     songList: { maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' },
     songItem: (active) => ({ 
       padding: '0.75rem 1rem', 
       borderBottom: '1px solid #334155', 
       cursor: 'pointer', 
-      background: active ? '#22c55e15' : 'transparent',
-      borderLeft: active ? '3px solid #22c55e' : '3px solid transparent',
+      background: active ? '#3B9B7315' : 'transparent',
+      borderLeft: active ? '3px solid #3B9B73' : '3px solid transparent',
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'flex-start',
       gap: '0.5rem'
     }),
     songTitle: { fontWeight: '500', marginBottom: '0.25rem' },
-    songMeta: { fontSize: '0.75rem', color: '#64748b' },
-    songPage: { fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' },
+    songMeta: { fontSize: '0.75rem', color: '#838C95' },
+    songPage: { fontSize: '0.75rem', color: '#838C95', whiteSpace: 'nowrap' },
     favStar: (active) => ({ 
-      color: active ? '#fbbf24' : '#475569', 
+      color: active ? '#6882B6' : '#838C95', 
       cursor: 'pointer', 
       fontSize: '1.25rem',
       lineHeight: 1
@@ -765,11 +847,11 @@ export default function Songs() {
       background: active ? '#334155' : 'transparent', 
       border: 'none', 
       borderRadius: '0.375rem', 
-      color: active ? '#fff' : '#94a3b8', 
+      color: active ? '#fff' : '#838C95', 
       cursor: 'pointer',
       fontSize: '0.875rem'
     }),
-    btn: { background: '#22c55e', color: '#fff', border: 'none', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem' },
+    btn: { background: '#256B45', color: '#fff', border: 'none', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem' },
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem' },
     btnSmall: { background: '#334155', color: '#fff', border: 'none', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' },
     statusBtn: (active, color) => ({
@@ -783,14 +865,14 @@ export default function Songs() {
       opacity: active ? 1 : 0.6
     }),
     tag: { display: 'inline-block', background: '#334155', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', marginRight: '0.25rem', marginBottom: '0.25rem' },
-    personalTag: { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: '#6366f133', border: '1px solid #6366f1', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', marginRight: '0.25rem', marginBottom: '0.25rem' },
+    personalTag: { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: '#6882B633', border: '1px solid #6882B6', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', marginRight: '0.25rem', marginBottom: '0.25rem' },
     lyrics: { whiteSpace: 'pre-wrap', fontFamily: 'Georgia, serif', fontSize: '1.1rem', lineHeight: '1.8', padding: '1rem', background: '#0f172a', borderRadius: '0.5rem' },
     versionCard: { padding: '1rem', background: '#0f172a', borderRadius: '0.5rem', marginBottom: '1rem' },
-    versionLabel: { fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#22c55e' },
+    versionLabel: { fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#3B9B73' },
     infoRow: { display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.875rem' },
-    infoLabel: { color: '#64748b', minWidth: '120px' },
+    infoLabel: { color: '#838C95', minWidth: '120px' },
     message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 },
-    emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem', color: '#64748b' }
+    emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem', color: '#838C95' }
   };
 
   if (loading) {
@@ -807,7 +889,7 @@ export default function Songs() {
         {/* Song List Panel */}
         <div>
           <div style={s.header}>
-            <h1 style={s.title}>🎵 Songs</h1>
+            <h1 style={s.title}><i className="ti ti-music" style={{ fontSize: '1em' }} aria-hidden="true"></i> Songs</h1>
             <p style={s.subtitle}>{filteredSongs.length} of {songs.length} songs</p>
           </div>
 
@@ -820,12 +902,12 @@ export default function Songs() {
               onChange={(e) => setSearch(e.target.value)}
               style={{ ...s.input, width: '100%', marginBottom: '0.5rem' }}
             />
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#94a3b8', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#838C95', cursor: 'pointer' }}>
               <input
                 type="checkbox"
                 checked={searchLyrics}
                 onChange={(e) => setSearchLyrics(e.target.checked)}
-                style={{ accentColor: '#22c55e' }}
+                style={{ accentColor: '#3B9B73' }}
               />
               Include lyrics in search
             </label>
@@ -839,10 +921,10 @@ export default function Songs() {
                 onClick={() => setFiltersExpanded(prev => !prev)}
                 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.5rem 0', userSelect: 'none' }}
               >
-                <span style={{ fontWeight: 'bold', color: '#94a3b8', fontSize: '0.875rem' }}>
-                  🎯 Filters{activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
+                <span style={{ fontWeight: 'bold', color: '#838C95', fontSize: '0.875rem' }}>
+                  <i className="ti ti-filter" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Filters{activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
                 </span>
-                <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{filtersExpanded ? '▲ Collapse' : '▼ Expand'}</span>
+                <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{filtersExpanded ? '▲ Collapse' : '▼ Expand'}</span>
               </div>
             );
           })()}
@@ -852,36 +934,32 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('songbook')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>Songbook{songbookIds.length > 0 ? ` (${songbookIds.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.songbook ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.songbook ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.songbook && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                  {filterableSongbooks.map(sb => {
-                    const selected = songbookIds.includes(sb.id);
-                    return (
-                      <button
-                        key={sb.id}
-                        onClick={() => {
-                          setSongbookIds(prev => toggleInArray(prev, sb.id));
-                          setSections([]); // selected songbook(s) changed - old section selections may no longer apply
-                        }}
-                        style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
-                          color: selected ? '#22c55e' : (s.select.color || '#fff')
-                        }}
-                      >
-                        {sb.name}
-                      </button>
-                    );
-                  })}
+                <>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="songbookFilterMode" checked={songbookFilterMode === 'any'} onChange={() => setSongbookFilterMode('any')} /> any
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="songbookFilterMode" checked={songbookFilterMode === 'all'} onChange={() => setSongbookFilterMode('all')} /> all
+                  </label>
                 </div>
+                <AdaptiveMultiSelect
+                  options={filterableSongbooks.map(sb => ({ value: sb.id, label: sb.name }))}
+                  selected={songbookIds}
+                  onChange={(vals) => { setSongbookIds(vals); setSections([]); }}
+                  placeholder="Search songbooks..."
+                  accentColor="#256B45"
+                />
+                </>
                 )}
               </div>
             )}
 
             {songbookIds.length === 0 && (
-              <div style={{ fontSize: '0.75rem', color: '#64748b', alignSelf: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#838C95', alignSelf: 'center' }}>
                 Select a songbook above to filter by section
               </div>
             )}
@@ -890,10 +968,18 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('section')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>Section{sections.length > 0 ? ` (${sections.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.section ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.section ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.section && (
                 <>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="sectionFilterMode" checked={sectionFilterMode === 'any'} onChange={() => setSectionFilterMode('any')} /> any
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+                    <input type="radio" name="sectionFilterMode" checked={sectionFilterMode === 'all'} onChange={() => setSectionFilterMode('all')} /> all
+                  </label>
+                </div>
                 {songbookIds.length > 1 ? (
                   // Multiple songbooks selected - group sections under a label for each
                   songbookIds.map(sbId => {
@@ -902,47 +988,25 @@ export default function Songs() {
                     if (theseSections.length === 0) return null;
                     return (
                       <div key={sbId} style={{ marginBottom: '0.5rem' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>{sb?.name}</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                          {theseSections.map(s2 => {
-                            const selected = sections.includes(s2.id);
-                            return (
-                              <button
-                                key={s2.id}
-                                onClick={() => setSections(prev => toggleInArray(prev, s2.id))}
-                                style={{
-                                  ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
-                                  background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
-                                  color: selected ? '#22c55e' : (s.select.color || '#fff')
-                                }}
-                              >
-                                {sectionLabel(s2)}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.25rem' }}>{sb?.name}</div>
+                        <AdaptiveMultiSelect
+                          options={theseSections.map(s2 => ({ value: s2.id, label: sectionLabel(s2) }))}
+                          selected={sections}
+                          onChange={setSections}
+                          placeholder="Search sections..."
+                          accentColor="#256B45"
+                        />
                       </div>
                     );
                   })
                 ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                    {availableSections.map(s2 => {
-                      const selected = sections.includes(s2.id);
-                      return (
-                        <button
-                          key={s2.id}
-                          onClick={() => setSections(prev => toggleInArray(prev, s2.id))}
-                          style={{
-                            ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
-                            background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
-                            color: selected ? '#22c55e' : (s.select.color || '#fff')
-                          }}
-                        >
-                          {sectionLabel(s2)}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <AdaptiveMultiSelect
+                    options={availableSections.map(s2 => ({ value: s2.id, label: sectionLabel(s2) }))}
+                    selected={sections}
+                    onChange={setSections}
+                    placeholder="Search sections..."
+                    accentColor="#256B45"
+                  />
                 )}
                 </>
                 )}
@@ -953,7 +1017,7 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('tag')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>Tag{systemTagFilter.length > 0 ? ` (${systemTagFilter.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.tag ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.tag ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.tag && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -964,9 +1028,9 @@ export default function Songs() {
                         key={tag}
                         onClick={() => setSystemTagFilter(prev => toggleInArray(prev, tag))}
                         style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
-                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #3B9B73' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#3B9B7320' : (s.select.background || '#1e293b'),
+                          color: selected ? '#3B9B73' : (s.select.color || '#fff')
                         }}
                       >
                         {tag}
@@ -982,7 +1046,7 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('excludeTag')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>Exclude Tag{excludeTagFilter.length > 0 ? ` (${excludeTagFilter.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.excludeTag ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.excludeTag ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.excludeTag && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -993,12 +1057,12 @@ export default function Songs() {
                         key={tag}
                         onClick={() => setExcludeTagFilter(prev => toggleInArray(prev, tag))}
                         style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #ef4444' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#ef444420' : (s.select.background || '#1e293b'),
-                          color: selected ? '#ef4444' : (s.select.color || '#fff')
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #D45D25' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#D45D2520' : (s.select.background || '#1e293b'),
+                          color: selected ? '#D45D25' : (s.select.color || '#fff')
                         }}
                       >
-                        {selected ? '✗ ' : '− '}{tag}
+                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{tag}
                       </button>
                     );
                   })}
@@ -1011,14 +1075,20 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('mySongs')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>My Songs{statusFilter.length > 0 ? ` (${statusFilter.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.mySongs ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.mySongs ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.mySongs && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {/* statusOptions' opt.icon is admin-configured data from the
+                      database (not hardcoded here), so it's left as-is - a
+                      code-only pass can't safely convert emoji that lives in
+                      the database itself. The two hardcoded entries below get
+                      real icons via iconName instead of baking emoji into
+                      the label string. */}
                   {[
                     ...statusOptions.map(opt => ({ value: opt.value_key, label: `${opt.icon ? opt.icon + ' ' : ''}${opt.label}` })),
-                    { value: 'untagged', label: '🔍 Untagged (no prefs)' },
-                    { value: 'no_familiarity', label: '🔍 No familiarity set' }
+                    { value: 'untagged', iconName: 'search', label: 'Untagged (no prefs)' },
+                    { value: 'no_familiarity', iconName: 'search', label: 'No familiarity set' }
                   ].map(opt => {
                     const selected = statusFilter.includes(opt.value);
                     return (
@@ -1026,12 +1096,12 @@ export default function Songs() {
                         key={opt.value}
                         onClick={() => setStatusFilter(prev => toggleInArray(prev, opt.value))}
                         style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
-                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #6882B6' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#6882B620' : (s.select.background || '#1e293b'),
+                          color: selected ? '#6882B6' : (s.select.color || '#fff')
                         }}
                       >
-                        {opt.label}
+                        {opt.iconName && <i className={`ti ti-${opt.iconName}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i>} {opt.label}
                       </button>
                     );
                   })}
@@ -1044,7 +1114,7 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('excludeMySongs')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>Exclude My Songs{excludeStatusFilter.length > 0 ? ` (${excludeStatusFilter.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.excludeMySongs ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.excludeMySongs ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.excludeMySongs && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -1055,12 +1125,12 @@ export default function Songs() {
                         key={opt.value_key}
                         onClick={() => setExcludeStatusFilter(prev => toggleInArray(prev, opt.value_key))}
                         style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #ef4444' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#ef444420' : (s.select.background || '#1e293b'),
-                          color: selected ? '#ef4444' : (s.select.color || '#fff')
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #D45D25' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#D45D2520' : (s.select.background || '#1e293b'),
+                          color: selected ? '#D45D25' : (s.select.color || '#fff')
                         }}
                       >
-                        {selected ? '✗ ' : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
                       </button>
                     );
                   })}
@@ -1073,7 +1143,7 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('myTags')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>My Tags{personalTagValues.length > 0 ? ` (${personalTagValues.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.myTags ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.myTags ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.myTags && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -1084,9 +1154,9 @@ export default function Songs() {
                         key={tag}
                         onClick={() => setPersonalTagValues(prev => toggleInArray(prev, tag))}
                         style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#22c55e20' : (s.select.background || '#1e293b'),
-                          color: selected ? '#22c55e' : (s.select.color || '#fff')
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #6882B6' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#6882B620' : (s.select.background || '#1e293b'),
+                          color: selected ? '#6882B6' : (s.select.color || '#fff')
                         }}
                       >
                         {tag}
@@ -1102,7 +1172,7 @@ export default function Songs() {
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('excludeMyTags')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={s.filterLabel}>Exclude My Tags{excludePersonalTagValues.length > 0 ? ` (${excludePersonalTagValues.length})` : ''}</span>
-                  <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{collapsedGroups.excludeMyTags ? '▼' : '▲'}</span>
+                  <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.excludeMyTags ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.excludeMyTags && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -1113,12 +1183,12 @@ export default function Songs() {
                         key={tag}
                         onClick={() => setExcludePersonalTagValues(prev => toggleInArray(prev, tag))}
                         style={{
-                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #ef4444' : (s.select.border || '1px solid #334155'),
-                          background: selected ? '#ef444420' : (s.select.background || '#1e293b'),
-                          color: selected ? '#ef4444' : (s.select.color || '#fff')
+                          ...s.select, cursor: 'pointer', border: selected ? '2px solid #D45D25' : (s.select.border || '1px solid #334155'),
+                          background: selected ? '#D45D2520' : (s.select.background || '#1e293b'),
+                          color: selected ? '#D45D25' : (s.select.color || '#fff')
                         }}
                       >
-                        {selected ? '✗ ' : '− '}{tag}
+                        {selected ? <><i className="ti ti-x" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> </> : '− '}{tag}
                       </button>
                     );
                   })}
@@ -1130,7 +1200,7 @@ export default function Songs() {
             {(songbookIds.length > 0 || sections.length > 0 || systemTagFilter.length > 0 || excludeTagFilter.length > 0 || personalTagValues.length > 0 || excludePersonalTagValues.length > 0 || statusFilter.length > 0 || excludeStatusFilter.length > 0) && (
               <button
                 onClick={() => { setSongbookIds([]); setSections([]); setSystemTagFilter([]); setExcludeTagFilter([]); setPersonalTagValues([]); setExcludePersonalTagValues([]); setStatusFilter([]); setExcludeStatusFilter([]); }}
-                style={{ ...s.select, cursor: 'pointer', color: '#94a3b8' }}
+                style={{ ...s.select, cursor: 'pointer', color: '#838C95' }}
               >
                 Clear filters
               </button>
@@ -1180,17 +1250,17 @@ export default function Songs() {
             style={{
               width: '8px',
               cursor: 'col-resize',
-              background: isResizing ? '#22c55e' : '#334155',
+              background: isResizing ? '#3B9B73' : '#334155',
               borderRadius: '4px',
               transition: 'background 0.2s',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}
-            onMouseEnter={(e) => e.target.style.background = '#22c55e'}
+            onMouseEnter={(e) => e.target.style.background = '#3B9B73'}
             onMouseLeave={(e) => { if (!isResizing) e.target.style.background = '#334155'; }}
           >
-            <div style={{ width: '2px', height: '40px', background: '#64748b', borderRadius: '1px' }} />
+            <div style={{ width: '2px', height: '40px', background: '#838C95', borderRadius: '1px' }} />
           </div>
         )}
 
@@ -1205,7 +1275,7 @@ export default function Songs() {
 
             {/* Quick metadata row - aliases */}
             {selectedSong.aliases && selectedSong.aliases.length > 0 && (
-              <div style={{ fontSize: '0.875rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+              <div style={{ fontSize: '0.875rem', color: '#838C95', marginBottom: '0.5rem' }}>
                 <em>Also known as: {selectedSong.aliases.join(', ')}</em>
               </div>
             )}
@@ -1215,11 +1285,11 @@ export default function Songs() {
               {/* Songbooks card */}
               {selectedSong.songbooks && selectedSong.songbooks.length > 0 && (
                 <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}>📚 Songbooks</div>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}><i className="ti ti-books" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Songbooks</div>
                   {selectedSong.songbooks.map((sb, idx) => (
                     <div key={idx} style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
                       <span style={{ fontWeight: '500' }}>{sb.name}</span>
-                      <span style={{ color: '#94a3b8', marginLeft: '0.5rem' }}>
+                      <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>
                         {sb.section && `§${sb.section}`}
                         {sb.page && ` p.${sb.page}`}
                       </span>
@@ -1231,12 +1301,12 @@ export default function Songs() {
               {/* Tags card */}
               {selectedSong.tags && selectedSong.tags.length > 0 && (
                 <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}>🏷️ Tags</div>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}><i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Tags</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                     {selectedSong.tags.map(tag => (
                       <span key={tag} style={{ 
-                        background: '#3b82f620', 
-                        color: '#3b82f6',
+                        background: '#838C9520', 
+                        color: '#838C95',
                         padding: '0.2rem 0.5rem', 
                         borderRadius: '0.25rem', 
                         fontSize: '0.75rem'
@@ -1251,14 +1321,14 @@ export default function Songs() {
               {/* Groups card */}
               {songGroups.length > 0 && (
                 <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}>🎭 Song Groups</div>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}><i className="ti ti-category" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Song Groups</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                     {songGroups.map(membership => {
                       const group = allGroups.find(g => g.id === membership.group_id);
                       return group ? (
                         <span key={membership.id} style={{ 
-                          background: '#6366f120', 
-                          color: '#a5b4fc',
+                          background: '#3B9B7320', 
+                          color: '#3B9B73',
                           padding: '0.2rem 0.5rem', 
                           borderRadius: '0.25rem', 
                           fontSize: '0.75rem'
@@ -1274,8 +1344,8 @@ export default function Songs() {
 
             {/* Flags/Warnings */}
             {songFlags.length > 0 && (
-              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f59e0b15', border: '1px solid #f59e0b30', borderRadius: '0.5rem' }}>
-                <div style={{ fontWeight: 'bold', color: '#f59e0b', marginBottom: '0.25rem', fontSize: '0.8rem' }}>⚠️ Flags</div>
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#C3552215', border: '1px solid #C3552230', borderRadius: '0.5rem' }}>
+                <div style={{ fontWeight: 'bold', color: '#C35522', marginBottom: '0.25rem', fontSize: '0.8rem' }}><i className="ti ti-alert-triangle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Flags</div>
                 {songFlags.map(f => (
                   <div key={f.id} style={{ fontSize: '0.85rem' }}>
                     <span style={{ fontWeight: '500' }}>{f.flag_type}:</span> {f.flag_notes || 'No details'}
@@ -1293,7 +1363,7 @@ export default function Songs() {
                     <button
                       key={opt.value_key}
                       onClick={() => toggleStatus(selectedSong.id, opt.value_key)}
-                      style={s.statusBtn(isSet, opt.color || '#64748b')}
+                      style={s.statusBtn(isSet, opt.color || '#838C95')}
                     >
                       {opt.icon ? `${opt.icon} ` : ''}{opt.label}
                     </button>
@@ -1301,15 +1371,15 @@ export default function Songs() {
                 })}
               </div>
             ) : (
-              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>
-                <Link href="/" style={{ color: '#22c55e' }}>Log in</Link> to save favorites and track songs you know
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', fontSize: '0.875rem', color: '#838C95' }}>
+                <Link href="/" style={{ color: '#3B9B73' }}>Log in</Link> to save favorites and track songs you know
               </div>
             )}
 
             {/* Personal Tags - only for logged in users */}
             {user && (
               <div style={{ marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>My Tags:</div>
+                <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.25rem' }}>My Tags:</div>
                 <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
                   {pref?.personal_tags?.map(tag => (
                     <span key={tag} style={s.personalTag}>
@@ -1341,7 +1411,7 @@ export default function Songs() {
                   onClick={() => setShowSuggestModal(true)}
                   style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                 >
-                  💡 Suggest Changes
+                  <i className="ti ti-bulb" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Suggest Changes
                 </button>
               </div>
             )}
@@ -1361,7 +1431,7 @@ export default function Songs() {
                   <>
                     {/* Version selector */}
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>Version:</span>
+                      <span style={{ fontSize: '0.875rem', color: '#838C95' }}>Version:</span>
                       <select 
                         value={selectedVersionId || ''} 
                         onChange={(e) => setSelectedVersionId(e.target.value)}
@@ -1388,7 +1458,7 @@ export default function Songs() {
                             }
                           }}
                         >
-                          {compareMode ? '✓ Comparing' : '⇄ Compare'}
+                          {compareMode ? <><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Comparing</> : <><i className="ti ti-arrows-left-right" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Compare</>}
                         </button>
                       )}
                       
@@ -1425,12 +1495,12 @@ export default function Songs() {
                               <div>
                                 <span style={s.versionLabel}>{v.label || 'Version'}</span>
                                 {v.version_type === 'alternate' && (
-                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#94a3b8' }}>(Alternate)</span>
+                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#838C95' }}>(Alternate)</span>
                                 )}
                               </div>
                               <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>★ Singalong</span>}
-                                {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#6366f133', color: '#6366f1', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
+                                {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#3B9B7333', color: '#3B9B73', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}><i className="ti ti-star" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> Singalong</span>}
+                                {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#3B9B7333', color: '#3B9B73', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
                               </div>
                             </div>
                             
@@ -1448,7 +1518,7 @@ export default function Songs() {
                             {/* Version familiarity - logged in users */}
                             {user && (
                               <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>How well I know this:</span>
+                                <span style={{ fontSize: '0.75rem', color: '#838C95' }}>How well I know this:</span>
                                 <select
                                   value={versionPrefs[v.id]?.familiarity || ''}
                                   onChange={(e) => setVersionFamiliarity(v.id, e.target.value || null)}
@@ -1476,11 +1546,11 @@ export default function Songs() {
                             {v.lyrics_content ? (
                               <div style={s.lyrics}>{v.lyrics_content}</div>
                             ) : (
-                              <div style={{ color: '#64748b', fontStyle: 'italic', padding: '1rem' }}>No lyrics available for this version</div>
+                              <div style={{ color: '#838C95', fontStyle: 'italic', padding: '1rem' }}>No lyrics available for this version</div>
                             )}
                             
                             {v.version_notes && (
-                              <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#94a3b8', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
+                              <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#838C95', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
                                 <strong>Notes:</strong> {v.version_notes}
                               </div>
                             )}
@@ -1492,19 +1562,19 @@ export default function Songs() {
                       {compareMode && (() => {
                         const v = versions.find(ver => ver.id === compareVersionId);
                         const attrs = versionAttrs.filter(a => a.song_version_id === v?.id);
-                        if (!v) return <div style={s.versionCard}><p style={{ color: '#64748b' }}>Select a version to compare</p></div>;
+                        if (!v) return <div style={s.versionCard}><p style={{ color: '#838C95' }}>Select a version to compare</p></div>;
                         return (
                           <div style={s.versionCard}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                               <div>
                                 <span style={s.versionLabel}>{v.label || 'Version'}</span>
                                 {v.version_type === 'alternate' && (
-                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#94a3b8' }}>(Alternate)</span>
+                                  <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: '#838C95' }}>(Alternate)</span>
                                 )}
                               </div>
                               <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                                {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#22c55e33', color: '#22c55e', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>★ Singalong</span>}
-                                {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#6366f133', color: '#6366f1', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
+                                {v.is_default_singalong && <span style={{ fontSize: '0.65rem', background: '#3B9B7333', color: '#3B9B73', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}><i className="ti ti-star" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> Singalong</span>}
+                                {v.is_default_explore && <span style={{ fontSize: '0.65rem', background: '#3B9B7333', color: '#3B9B73', padding: '0.125rem 0.375rem', borderRadius: '0.25rem' }}>Explore</span>}
                               </div>
                             </div>
                             
@@ -1521,7 +1591,7 @@ export default function Songs() {
                             {/* Version familiarity - logged in users */}
                             {user && (
                               <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>How well I know this:</span>
+                                <span style={{ fontSize: '0.75rem', color: '#838C95' }}>How well I know this:</span>
                                 <select
                                   value={versionPrefs[v.id]?.familiarity || ''}
                                   onChange={(e) => setVersionFamiliarity(v.id, e.target.value || null)}
@@ -1538,11 +1608,11 @@ export default function Songs() {
                             {v.lyrics_content ? (
                               <div style={s.lyrics}>{v.lyrics_content}</div>
                             ) : (
-                              <div style={{ color: '#64748b', fontStyle: 'italic', padding: '1rem' }}>No lyrics available</div>
+                              <div style={{ color: '#838C95', fontStyle: 'italic', padding: '1rem' }}>No lyrics available</div>
                             )}
                             
                             {v.version_notes && (
-                              <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#94a3b8', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
+                              <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#838C95', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
                                 <strong>Notes:</strong> {v.version_notes}
                               </div>
                             )}
@@ -1577,13 +1647,13 @@ export default function Songs() {
                 {/* Personal Tags (for logged-in users) */}
                 {user && pref?.personal_tags && pref.personal_tags.length > 0 && (
                   <div style={{ marginTop: '1rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem' }}>🏷️ Your Personal Tags</div>
+                    <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}><i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Your Personal Tags</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                       {pref.personal_tags.map(tag => (
                         <span key={tag} style={{ 
-                          background: '#22c55e20', 
-                          color: '#22c55e',
-                          border: '1px solid #22c55e40',
+                          background: '#3B9B7320', 
+                          color: '#3B9B73',
+                          border: '1px solid #3B9B7340',
                           padding: '0.25rem 0.5rem', 
                           borderRadius: '0.25rem', 
                           fontSize: '0.75rem',
@@ -1594,7 +1664,7 @@ export default function Songs() {
                           {tag}
                           <button
                             onClick={() => removePersonalTag(selectedSong.id, tag)}
-                            style={{ background: 'none', border: 'none', color: '#22c55e', cursor: 'pointer', padding: 0, fontSize: '0.9rem' }}
+                            style={{ background: 'none', border: 'none', color: '#3B9B73', cursor: 'pointer', padding: 0, fontSize: '0.9rem' }}
                           >×</button>
                         </span>
                       ))}
@@ -1615,7 +1685,7 @@ export default function Songs() {
                   songMedia.map(m => (
                     <div key={m.id} style={{ marginBottom: '1.5rem' }}>
                       {(m.label || m.title) && <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>{m.label || m.title}</div>}
-                      {m.description && <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{m.description}</div>}
+                      {m.description && <div style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.5rem' }}>{m.description}</div>}
                       {renderMedia(m)}
                     </div>
                   ))
@@ -1630,7 +1700,7 @@ export default function Songs() {
                 {songNotes.length > 0 ? (
                   songNotes.map(n => (
                     <div key={n.id} style={{ padding: '0.75rem', background: '#0f172a', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
-                      {n.note_type && <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase' }}>{n.note_type}</span>}
+                      {n.note_type && <span style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>{n.note_type}</span>}
                       <div style={{ marginTop: '0.25rem' }}>{n.note}</div>
                     </div>
                   ))
@@ -1645,7 +1715,7 @@ export default function Songs() {
         {/* Empty state when no song selected */}
         {!selectedSong && (
           <div style={{ ...s.main, ...s.emptyState }}>
-            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎶</div>
+            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}><i className="ti ti-music" style={{ fontSize: '1em' }} aria-hidden="true"></i></div>
             <div style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Select a song</div>
             <div>Click a song from the list to view details</div>
           </div>
@@ -1678,7 +1748,7 @@ export default function Songs() {
             padding: '1.5rem'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontWeight: 'bold', fontSize: '1.25rem' }}>💡 Suggest Changes</h2>
+              <h2 style={{ fontWeight: 'bold', fontSize: '1.25rem' }}><i className="ti ti-bulb" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Suggest Changes</h2>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button onClick={() => setSuggestExpanded(!suggestExpanded)} style={s.btnSec}>
                   {suggestExpanded ? '⊟ Compact' : '⊞ Expand'}
@@ -1687,35 +1757,35 @@ export default function Songs() {
               </div>
             </div>
 
-            <p style={{ color: '#94a3b8', marginBottom: '1rem', fontSize: '0.875rem' }}>
+            <p style={{ color: '#838C95', marginBottom: '1rem', fontSize: '0.875rem' }}>
               Suggesting changes for: <strong style={{ color: '#fff' }}>{selectedSong.title}</strong>
             </p>
 
             {!suggestType ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <button onClick={() => setSuggestType('new_version')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
-                  📝 <strong>Add New Version</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Different lyrics, alternate version, camp-specific adaptation</div>
+                  <i className="ti ti-file-text" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>Add New Version</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>Different lyrics, alternate version, camp-specific adaptation</div>
                 </button>
                 <button onClick={() => setSuggestType('edit_info')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
-                  ✏️ <strong>Edit Song Info</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Fix author, composer, origin, year, or other details</div>
+                  <i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>Edit Song Info</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>Fix author, composer, origin, year, or other details</div>
                 </button>
                 <button onClick={() => setSuggestType('add_media')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
-                  🎬 <strong>Add Media Link</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>YouTube video, Spotify track, or other recording</div>
+                  <i className="ti ti-movie" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>Add Media Link</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>YouTube video, Spotify track, or other recording</div>
                 </button>
                 <button onClick={() => setSuggestType('add_note')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
-                  📋 <strong>Add Note</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>History, teaching tips, motions, or other context</div>
+                  <i className="ti ti-notes" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>Add Note</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>History, teaching tips, motions, or other context</div>
                 </button>
                 <button onClick={() => setSuggestType('add_alias')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
-                  🏷️ <strong>Add Alternate Name</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Other names this song is known by</div>
+                  <i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>Add Alternate Name</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>Other names this song is known by</div>
                 </button>
                 <button onClick={() => setSuggestType('add_flag')} style={{ ...s.btnSec, textAlign: 'left', padding: '1rem' }}>
-                  ⚠️ <strong>Flag an Issue</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>Content warning, sensitivity note, or other flag</div>
+                  <i className="ti ti-alert-triangle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>Flag an Issue</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.25rem' }}>Content warning, sensitivity note, or other flag</div>
                 </button>
                 
                 {/* Suggest multiple link */}
@@ -1723,7 +1793,7 @@ export default function Songs() {
                   <Link 
                     href={`/suggest?song_id=${selectedSong.id}`}
                     style={{ 
-                      color: '#94a3b8', 
+                      color: '#838C95', 
                       fontSize: '0.875rem',
                       textDecoration: 'underline',
                       display: 'flex',
@@ -1731,7 +1801,7 @@ export default function Songs() {
                       gap: '0.5rem'
                     }}
                   >
-                    📋 Need to suggest multiple things? Use the full form →
+                    <i className="ti ti-notes" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Need to suggest multiple things? Use the full form →
                   </Link>
                 </div>
               </div>
@@ -1745,11 +1815,11 @@ export default function Songs() {
                 {suggestType === 'new_version' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Version Label *</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Version Label *</label>
                       <input type="text" value={suggestVersionLabel} onChange={(e) => setSuggestVersionLabel(e.target.value)} placeholder="e.g., Camp Tawonga version, Gender-neutral version" style={s.input} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Lyrics</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Lyrics</label>
                       <textarea value={suggestLyrics} onChange={(e) => setSuggestLyrics(e.target.value)} placeholder="Paste the lyrics here..." style={{ ...s.input, minHeight: '200px', fontFamily: 'monospace' }} />
                     </div>
                   </div>
@@ -1759,7 +1829,7 @@ export default function Songs() {
                 {suggestType === 'edit_info' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>What needs editing?</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>What needs editing?</label>
                       <select value={suggestEditField} onChange={(e) => setSuggestEditField(e.target.value)} style={s.select}>
                         <option value="author">Author</option>
                         <option value="composer">Composer</option>
@@ -1771,7 +1841,7 @@ export default function Songs() {
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Suggested Value *</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Suggested Value *</label>
                       <textarea value={suggestEditValue} onChange={(e) => setSuggestEditValue(e.target.value)} placeholder="What it should say..." style={{ ...s.input, minHeight: '80px' }} />
                     </div>
                   </div>
@@ -1781,7 +1851,7 @@ export default function Songs() {
                 {suggestType === 'add_media' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Media Type</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Media Type</label>
                       <select value={suggestMediaType} onChange={(e) => setSuggestMediaType(e.target.value)} style={s.select}>
                         <option value="youtube">YouTube</option>
                         <option value="spotify">Spotify</option>
@@ -1791,11 +1861,11 @@ export default function Songs() {
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>URL *</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>URL *</label>
                       <input type="text" value={suggestMediaUrl} onChange={(e) => setSuggestMediaUrl(e.target.value)} placeholder="https://..." style={s.input} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Label (optional)</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Label (optional)</label>
                       <input type="text" value={suggestMediaLabel} onChange={(e) => setSuggestMediaLabel(e.target.value)} placeholder="e.g., Official recording, Live at camp 2023" style={s.input} />
                     </div>
                   </div>
@@ -1805,7 +1875,7 @@ export default function Songs() {
                 {suggestType === 'add_note' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Note Type</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Note Type</label>
                       <select value={suggestNoteType} onChange={(e) => setSuggestNoteType(e.target.value)} style={s.select}>
                         <option value="history">History/Background</option>
                         <option value="teaching">Teaching Tips</option>
@@ -1815,7 +1885,7 @@ export default function Songs() {
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Note Content *</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Note Content *</label>
                       <textarea value={suggestNoteContent} onChange={(e) => setSuggestNoteContent(e.target.value)} placeholder="Share your knowledge..." style={{ ...s.input, minHeight: '120px' }} />
                     </div>
                   </div>
@@ -1825,7 +1895,7 @@ export default function Songs() {
                 {suggestType === 'add_alias' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Alternate Name *</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Alternate Name *</label>
                       <input type="text" value={suggestAlias} onChange={(e) => setSuggestAlias(e.target.value)} placeholder="What else is this song called?" style={s.input} />
                     </div>
                   </div>
@@ -1835,7 +1905,7 @@ export default function Songs() {
                 {suggestType === 'add_flag' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Flag Type</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Flag Type</label>
                       <select value={suggestFlagType} onChange={(e) => setSuggestFlagType(e.target.value)} style={s.select}>
                         <option value="content_warning">Content Warning</option>
                         <option value="cultural_sensitivity">Cultural Sensitivity</option>
@@ -1845,7 +1915,7 @@ export default function Songs() {
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Description *</label>
+                      <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Description *</label>
                       <textarea value={suggestFlagNotes} onChange={(e) => setSuggestFlagNotes(e.target.value)} placeholder="Describe the issue or concern..." style={{ ...s.input, minHeight: '100px' }} />
                     </div>
                   </div>
@@ -1853,13 +1923,13 @@ export default function Songs() {
 
                 {/* SOURCE URL (common to all) */}
                 <div style={{ marginTop: '1rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Where did you find this info? (optional)</label>
+                  <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Where did you find this info? (optional)</label>
                   <input type="text" value={suggestSourceUrl} onChange={(e) => setSuggestSourceUrl(e.target.value)} placeholder="Link to Wikipedia, camp website, etc." style={s.input} />
                 </div>
 
                 {/* REASON (common to all) */}
                 <div style={{ marginTop: '0.75rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>Additional context (optional)</label>
+                  <label style={{ fontSize: '0.8rem', color: '#838C95', marginBottom: '0.25rem', display: 'block' }}>Additional context (optional)</label>
                   <textarea value={suggestReason} onChange={(e) => setSuggestReason(e.target.value)} placeholder="Anything else you want to share..." style={{ ...s.input, minHeight: '60px' }} />
                 </div>
 
@@ -1869,7 +1939,7 @@ export default function Songs() {
                     onClick={submitSuggestion} 
                     disabled={suggestSubmitting}
                     style={{ 
-                      background: suggestSubmitting ? '#334155' : '#22c55e', 
+                      background: suggestSubmitting ? '#334155' : '#3B9B73', 
                       color: '#fff', 
                       padding: '0.75rem 1.5rem', 
                       borderRadius: '0.5rem', 
@@ -1883,7 +1953,7 @@ export default function Songs() {
                   <Link 
                     href={`/suggest?song_id=${selectedSong.id}&type=${suggestType}`}
                     style={{ 
-                      color: '#94a3b8', 
+                      color: '#838C95', 
                       padding: '0.75rem', 
                       fontSize: '0.8rem',
                       textDecoration: 'underline'
