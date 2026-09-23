@@ -25,7 +25,8 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [roleFilters, setRoleFilters] = useState([]); // [] = no filter (show all); 'none' is a valid entry meaning "users with zero roles"
+  const [roleFilterMode, setRoleFilterMode] = useState('any');
 
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
@@ -245,10 +246,13 @@ export default function UserManagement() {
   };
 
   const filteredUsers = users.filter(u => {
-    if (roleFilter !== 'all') {
+    if (roleFilters.length > 0) {
       const keys = roleKeysForUser(u.id);
-      if (roleFilter === 'none') { if (keys.length > 0) return false; }
-      else if (!keys.includes(roleFilter)) return false;
+      const matchesOne = (roleKey) => roleKey === 'none' ? keys.length === 0 : keys.includes(roleKey);
+      const matches = roleFilterMode === 'all'
+        ? roleFilters.every(matchesOne)
+        : roleFilters.some(matchesOne);
+      if (!matches) return false;
     }
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
@@ -258,9 +262,9 @@ export default function UserManagement() {
   // Loading state
   if (!authChecked) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4">👥</div>
+          <div className="text-4xl mb-4"><i className="ti ti-users" aria-hidden="true"></i></div>
           <div>Loading...</div>
         </div>
       </div>
@@ -270,16 +274,16 @@ export default function UserManagement() {
   // Auth gate - require login
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center p-4">
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full">
           <div className="text-center mb-6">
-            <div className="text-5xl mb-2">👥</div>
+            <div className="text-5xl mb-2"><i className="ti ti-users" aria-hidden="true"></i></div>
             <h1 className="text-2xl font-bold mb-1">User Management</h1>
-            <p className="text-slate-400 text-sm">Sign in to continue</p>
+            <p className="text-[#838C95] text-sm">Sign in to continue</p>
           </div>
           
-          {authError && <div className="bg-red-900/50 text-red-200 p-3 rounded-lg mb-4 text-sm">{authError}</div>}
-          {authMessage && <div className="bg-green-900/50 text-green-200 p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
+          {authError && <div className="bg-[#C35522]/20 text-[#D45D25] p-3 rounded-lg mb-4 text-sm">{authError}</div>}
+          {authMessage && <div className="bg-[#256B45]/20 text-[#3B9B73] p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
           
           <div className="flex flex-col gap-3">
             <input
@@ -287,7 +291,7 @@ export default function UserManagement() {
               placeholder="Email"
               value={authEmail}
               onChange={(e) => setAuthEmail(e.target.value)}
-              className="p-3 rounded-lg border border-slate-700 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-green-500"
+              className="p-3 rounded-lg border border-[#838C95]/20 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-[#3B9B73]"
             />
             {authMode !== 'magic' && (
               <input
@@ -296,32 +300,32 @@ export default function UserManagement() {
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                className="p-3 rounded-lg border border-slate-700 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-green-500"
+                className="p-3 rounded-lg border border-[#838C95]/20 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-[#3B9B73]"
               />
             )}
             <button
               onClick={authMode === 'magic' ? handleMagicLink : handleLogin}
               disabled={authLoading || !authEmail || (authMode !== 'magic' && !authPassword)}
-              className="p-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold transition-all disabled:opacity-50"
+              className="p-3 rounded-lg bg-[#256B45] hover:bg-[#2f8058] text-white font-bold transition-all disabled:opacity-50"
             >
               {authLoading ? 'Loading...' : authMode === 'magic' ? 'Send Magic Link' : 'Sign In'}
             </button>
           </div>
           
-          <div className="mt-4 pt-4 border-t border-slate-700 text-center">
+          <div className="mt-4 pt-4 border-t border-[#838C95]/20 text-center">
             {authMode === 'login' ? (
-              <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-blue-400 hover:underline text-sm">
+              <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-[#6882B6] hover:underline text-sm">
                 Use magic link instead
               </button>
             ) : (
-              <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-blue-400 hover:underline text-sm">
+              <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#6882B6] hover:underline text-sm">
                 Use password instead
               </button>
             )}
           </div>
           
           <div className="mt-6 text-center">
-            <a href="/" className="text-slate-400 text-sm hover:text-slate-300">← Back to Singalong</a>
+            <a href="/" className="text-[#838C95] text-sm hover:text-[#838C95]">← Back to Singalong</a>
           </div>
         </div>
       </div>
@@ -331,16 +335,16 @@ export default function UserManagement() {
   // Admin check
   if (!hasAnyRole(userRoleKeys)) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-900 text-[#e2e8f0] flex items-center justify-center p-4">
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full text-center">
-          <div className="text-5xl mb-4">🔒</div>
+          <div className="text-5xl mb-4"><i className="ti ti-lock" aria-hidden="true"></i></div>
           <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-slate-400 mb-6">You need admin privileges to access this page.</p>
+          <p className="text-[#838C95] mb-6">You need admin privileges to access this page.</p>
           <div className="flex flex-col gap-3">
-            <a href="/" className="bg-green-600 hover:bg-green-500 text-white p-3 rounded-lg font-bold transition-all">
+            <a href="/" className="bg-[#256B45] hover:bg-[#2f8058] text-white p-3 rounded-lg font-bold transition-all">
               ← Back to Singalong
             </a>
-            <button onClick={handleLogout} className="text-red-400 hover:text-red-300 text-sm">
+            <button onClick={handleLogout} className="text-[#D45D25] hover:text-[#D45D25]/80 text-sm">
               Sign out
             </button>
           </div>
@@ -350,15 +354,15 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-50">
+    <div className="min-h-screen bg-slate-900 text-[#e2e8f0]">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-black flex items-center gap-3">
-              <span>👥</span> User Management
+              <i className="ti ti-users" aria-hidden="true"></i> User Management
             </h1>
-            <p className="text-slate-400 mt-1">
+            <p className="text-[#838C95] mt-1">
               {users.length} users • {allRoles.map(r => `${allGrants.filter(g => g.role_id === r.id).length} ${r.label}`).join(' • ')}
             </p>
           </div>
@@ -366,56 +370,80 @@ export default function UserManagement() {
 
         {/* Message */}
         {message && (
-          <div className={`p-4 rounded-lg mb-6 ${message.includes('✅') ? 'bg-green-900/50 text-green-200' : 'bg-red-900/50 text-red-200'}`}>
+          <div className={`p-4 rounded-lg mb-6 ${message.includes('✅') ? 'bg-[#256B45]/20 text-[#3B9B73]' : 'bg-[#C35522]/20 text-[#D45D25]'}`}>
             {message}
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        {/* Filters - small enough (just search + one role dimension) that
+            collapsing it adds a click with no real benefit, so it stays
+            directly visible rather than behind a toggle. Role is checkboxes
+            now, not a single-select dropdown - a user can hold several
+            roles at once, so filtering to only one at a time was a real
+            limitation. "No roles" stays available as one of the checkable
+            options, same meaning as before. */}
+        <div className="mb-6 space-y-3">
           <input
             type="text"
             placeholder="Search by name or ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 p-3 rounded-lg border border-slate-700 bg-slate-800 text-white outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full p-3 rounded-lg border border-[#838C95]/20 bg-slate-800 text-white outline-none focus:ring-2 focus:ring-[#3B9B73]"
           />
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="p-3 rounded-lg border border-slate-700 bg-slate-800 text-white outline-none"
-          >
-            <option value="all">All</option>
-            <option value="none">No roles</option>
-            {allRoles.map(r => <option key={r.id} value={r.key}>{r.label}</option>)}
-          </select>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-[#838C95]">Role</span>
+              <div className="flex gap-3 text-xs">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="roleFilterMode" checked={roleFilterMode === 'any'} onChange={() => setRoleFilterMode('any')} /> any
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="roleFilterMode" checked={roleFilterMode === 'all'} onChange={() => setRoleFilterMode('all')} /> all
+                </label>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[{ key: 'none', label: 'No roles' }, ...allRoles.map(r => ({ key: r.key, label: r.label }))].map(opt => {
+                const selected = roleFilters.includes(opt.key);
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setRoleFilters(prev => selected ? prev.filter(k => k !== opt.key) : [...prev, opt.key])}
+                    className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${selected ? 'bg-[#256B45] text-white' : 'bg-slate-700 text-[#838C95] hover:bg-slate-600'}`}
+                  >
+                    {selected ? '✓ ' : ''}{opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Role Legend */}
         <div className="bg-slate-800 rounded-lg p-4 mb-6">
-          <h3 className="font-bold mb-2 text-sm text-slate-400">Roles</h3>
+          <h3 className="font-bold mb-2 text-sm text-[#838C95]">Roles</h3>
           <div className="grid sm:grid-cols-2 gap-2">
             {allRoles.map(r => (
               <div key={r.id} className="flex items-start gap-2">
-                <span className="px-2 py-0.5 rounded text-xs font-bold bg-purple-600">
-                  {r.enforce_minimum_holders && '🔒 '}{r.label}
+                <span className="px-2 py-0.5 rounded text-xs font-bold bg-[#7959A6]">
+                  {r.enforce_minimum_holders && <i className="ti ti-lock" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}{r.enforce_minimum_holders && ' '}{r.label}
                 </span>
-                <span className="text-sm text-slate-400">{r.stream ? `${r.stream.replace('_', ' ')} access` : 'Platform-wide role'}</span>
+                <span className="text-sm text-[#838C95]">{r.stream ? `${r.stream.replace('_', ' ')} access` : 'Platform-wide role'}</span>
               </div>
             ))}
           </div>
           {allRoles.some(r => r.enforce_minimum_holders) && (
-            <p className="text-xs text-slate-500 mt-2">🔒 = protected - at least {minRoleHolders} {minRoleHolders === 1 ? 'person' : 'people'} must always hold this role (set in Settings)</p>
+            <p className="text-xs text-[#838C95] mt-2"><i className="ti ti-lock" style={{ fontSize: '0.85em' }} aria-hidden="true"></i> = protected - at least {minRoleHolders} {minRoleHolders === 1 ? 'person' : 'people'} must always hold this role (set in Settings)</p>
           )}
         </div>
 
         {/* User List */}
         {loading ? (
-          <div className="text-center py-12 text-slate-400">Loading users...</div>
+          <div className="text-center py-12 text-[#838C95]">Loading users...</div>
         ) : (
           <div className="space-y-3">
             {filteredUsers.map(u => (
-              <div key={u.id} className={`bg-slate-800 rounded-lg p-4 border ${u.id === user.id ? 'border-green-500' : 'border-slate-700'}`}>
+              <div key={u.id} className={`bg-slate-800 rounded-lg p-4 border ${u.id === user.id ? 'border-[#3B9B73]' : 'border-[#838C95]/20'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -431,12 +459,12 @@ export default function UserManagement() {
                             updateDisplayName(u.id, e.target.value);
                           }
                         }}
-                        className="bg-transparent border-b border-transparent hover:border-slate-600 focus:border-green-500 outline-none font-bold text-lg"
+                        className="bg-transparent border-b border-transparent hover:border-[#838C95]/35 focus:border-[#3B9B73] outline-none font-bold text-lg"
                       />
-                      {u.id === user.id && <span className="text-xs bg-green-600 px-2 py-0.5 rounded">You</span>}
+                      {u.id === user.id && <span className="text-xs bg-[#256B45] px-2 py-0.5 rounded">You</span>}
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 font-mono">{u.id}</div>
-                    <div className="text-xs text-slate-400 mt-1">
+                    <div className="text-xs text-[#838C95] mt-1 font-mono">{u.id}</div>
+                    <div className="text-xs text-[#838C95] mt-1">
                       Joined {new Date(u.created_at).toLocaleDateString()}
                     </div>
                   </div>
@@ -449,11 +477,11 @@ export default function UserManagement() {
                           onClick={() => toggleUserRole(u.id, r, held)}
                           className={`px-3 py-2 rounded-lg border outline-none font-bold text-sm transition-all ${
                             held
-                              ? 'bg-purple-900 border-purple-700 text-purple-200'
-                              : 'bg-slate-700 border-slate-600 text-slate-400 hover:text-slate-200'
+                              ? 'bg-[#8F74B4]/20 border-[#8F74B4] text-[#8F74B4]'
+                              : 'bg-slate-700 border-[#838C95]/35 text-[#838C95] hover:text-[#838C95]'
                           }`}
                         >
-                          {held ? '✓ ' : '+ '}{r.enforce_minimum_holders && '🔒 '}{r.label}
+                          {held ? '✓ ' : '+ '}{r.enforce_minimum_holders && <i className="ti ti-lock" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}{r.enforce_minimum_holders && ' '}{r.label}
                         </button>
                       );
                     })}
@@ -462,7 +490,7 @@ export default function UserManagement() {
               </div>
             ))}
             {filteredUsers.length === 0 && (
-              <div className="text-center py-12 text-slate-400">No users found</div>
+              <div className="text-center py-12 text-[#838C95]">No users found</div>
             )}
           </div>
         )}
