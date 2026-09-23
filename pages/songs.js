@@ -1046,7 +1046,7 @@ export default function Songs() {
             {allTags.length > 0 && (
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('tag')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={s.filterLabel}>Tag{systemTagFilter.length > 0 ? ` (${systemTagFilter.length})` : ''}</span>
+                  <span style={s.filterLabel}>Platform Tag{systemTagFilter.length > 0 ? ` (${systemTagFilter.length})` : ''}</span>
                   <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.tag ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.tag && (
@@ -1064,7 +1064,7 @@ export default function Songs() {
                   selected={systemTagFilter}
                   onChange={setSystemTagFilter}
                   otherSelected={excludeTagFilter}
-                  placeholder="Search tags..."
+                  placeholder="Search platform tags..."
                   accentColor="#256B45"
                 />
                 </>
@@ -1075,7 +1075,7 @@ export default function Songs() {
             {allTags.length > 0 && (
               <div style={s.filterGroup}>
                 <div onClick={() => toggleGroupCollapsed('excludeTag')} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={s.filterLabel}>Exclude Tag{excludeTagFilter.length > 0 ? ` (${excludeTagFilter.length})` : ''}</span>
+                  <span style={s.filterLabel}>Exclude Platform Tag{excludeTagFilter.length > 0 ? ` (${excludeTagFilter.length})` : ''}</span>
                   <span style={{ color: '#838C95', fontSize: '0.75rem' }}>{collapsedGroups.excludeTag ? '▼' : '▲'}</span>
                 </div>
                 {!collapsedGroups.excludeTag && (
@@ -1084,7 +1084,7 @@ export default function Songs() {
                   selected={excludeTagFilter}
                   onChange={setExcludeTagFilter}
                   otherSelected={systemTagFilter}
-                  placeholder="Search tags..."
+                  placeholder="Search platform tags..."
                   accentColor="#C35522"
                 />
                 )}
@@ -1232,7 +1232,7 @@ export default function Songs() {
                         {(userStatusMap[song.id] || []).map(valueKey => {
                           const opt = statusOptions.find(o => o.value_key === valueKey);
                           if (!opt?.icon) return null;
-                          return <span key={valueKey} style={{ marginRight: '0.25rem', color: opt.color || undefined }}>{opt.icon}</span>;
+                          return <span key={valueKey} style={{ marginRight: '0.25rem', color: opt.color || undefined }}><StatusIcon emoji={opt.icon} /></span>;
                         })}
                         {song.title}
                       </div>
@@ -1314,7 +1314,7 @@ export default function Songs() {
               {/* Tags card */}
               {selectedSong.tags && selectedSong.tags.length > 0 && (
                 <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}><i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Tags</div>
+                  <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.5rem', textTransform: 'uppercase', fontWeight: 'bold' }}><i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Platform Tags</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                     {selectedSong.tags.map(tag => (
                       <span key={tag} style={{ 
