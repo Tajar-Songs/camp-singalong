@@ -546,8 +546,7 @@ export default function Suggest() {
       flex: 1, 
       padding: '1rem', 
       background: active ? '#3B9B7320' : '#0f172a', 
-      border: active ? '2px solid #3B9B73' : '1px solid #334155', 
-      borderRadius: '0.5rem', 
+      border: 'none',
       color: active ? '#3B9B73' : '#838C95',
       cursor: 'pointer',
       fontWeight: active ? '600' : '400',
@@ -571,11 +570,11 @@ export default function Suggest() {
         {/* Mode Selection */}
         <div style={s.card}>
           <h2 style={s.cardTitle}>What do you want to suggest?</h2>
-          <div style={{ display: 'flex', gap: '1rem' }}>
+          <div style={{ display: 'flex', borderRadius: '0.5rem', border: '1px solid #334155', overflow: 'hidden' }}>
             <button onClick={() => setMode('new_song')} style={s.modeBtn(mode === 'new_song')}>
               <i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> New Song
             </button>
-            <button onClick={() => setMode('existing_song')} style={s.modeBtn(mode === 'existing_song')}>
+            <button onClick={() => setMode('existing_song')} style={{ ...s.modeBtn(mode === 'existing_song'), borderLeft: '1px solid #334155' }}>
               <i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Add to Existing Song
             </button>
           </div>
