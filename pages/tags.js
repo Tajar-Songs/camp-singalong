@@ -628,7 +628,7 @@ export default function TagManagement() {
         <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full">
           <div className="text-center mb-6">
             <div className="text-5xl mb-2"><i className="ti ti-tag" aria-hidden="true"></i></div>
-            <h1 className="text-2xl font-bold mb-1">Tag Management</h1>
+            <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>Tag Management</h1>
             <p className="text-[#838C95] text-sm">Sign in to manage tags</p>
           </div>
           
@@ -731,7 +731,7 @@ export default function TagManagement() {
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl md:text-4xl font-black flex items-center gap-3 text-white">
+            <h1 className="text-3xl md:text-4xl font-black flex items-center gap-3 text-white" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>
               <span className="text-[#3B9B73]"><i className="ti ti-tag" aria-hidden="true"></i></span> Tag Management
             </h1>
             <p className="text-[#838C95] mt-1 font-medium">
