@@ -16,6 +16,94 @@ const SECTION_INFO = {
   W: "Kids' Movies & Musicals"
 };
 
+// Section filter for the Songs browse panel. Below two songbooks selected,
+// this is just a plain browsable typeahead - nothing to disambiguate. From
+// two songbooks up, results group under a header per songbook (so a
+// duplicate name like "A: Graces" in two related songbooks is never
+// ambiguous about which one you're picking), and each songbook's group can
+// collapse on its own so a long multi-book list doesn't have to stay fully
+// expanded to be usable - particularly relevant on mobile, where this panel
+// gets used a lot and vertical space is scarce.
+function GroupedSectionFilter({ songbookIds, songbooks, songbookSections, selected, onChange, collapsedSongbooks, onToggleSongbookCollapse }) {
+  const [inputValue, setInputValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const toggle = (id) => onChange(selected.includes(id) ? selected.filter(v => v !== id) : [...selected, id]);
+  const labelFor = (id) => sectionLabel(songbookSections.find(s => s.id === id));
+  const songbookNameFor = (id) => songbooks.find(sb => sb.id === id)?.name || '';
+
+  const sectionsBySongbook = songbookIds.map(sbId => ({
+    songbookId: sbId,
+    songbookName: songbookNameFor(sbId),
+    sections: songbookSections
+      .filter(s => s.songbook_id === sbId)
+      .filter(s => !inputValue || sectionLabel(s).toLowerCase().includes(inputValue.toLowerCase()))
+  })).filter(g => g.sections.length > 0);
+
+  const grouped = songbookIds.length > 1;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {selected.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '0.375rem', marginBottom: '0.5rem', height: '2.25rem', alignItems: 'center' }}>
+          {selected.map(id => (
+            <button key={id} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(id)} style={{ flexShrink: 0, whiteSpace: 'nowrap', padding: '0.3rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: '#256B45', color: '#fff' }}>
+              {labelFor(id)}{grouped ? ` · ${songbookNameFor(id)}` : ''} ×
+            </button>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        placeholder="Search sections..."
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem 0.75rem', fontSize: '0.8rem', color: '#fff' }}
+      />
+      {isFocused && (
+        <div
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', maxHeight: '260px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.375rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50 }}
+        >
+          {sectionsBySongbook.length === 0 && (
+            <div style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.5rem 0.75rem' }}>No matches</div>
+          )}
+          {sectionsBySongbook.map(group => {
+            const isCollapsed = grouped && collapsedSongbooks[group.songbookId];
+            return (
+              <div key={group.songbookId}>
+                {grouped && (
+                  <div
+                    onClick={() => onToggleSongbookCollapse(group.songbookId)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.375rem 0.75rem', fontSize: '0.7rem', fontWeight: 'bold', color: '#838C95', textTransform: 'uppercase', letterSpacing: '0.03em', background: '#0f172a', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    {group.songbookName}
+                    <i className={`ti ti-chevron-${isCollapsed ? 'down' : 'up'}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i>
+                  </div>
+                )}
+                {!isCollapsed && group.sections.map(s => {
+                  const isSelected = selected.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => toggle(s.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', width: '100%', textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', background: isSelected ? '#3B9B7320' : 'transparent', color: isSelected ? '#3B9B73' : '#fff' }}
+                    >
+                      {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}
+                      {sectionLabel(s)}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const router = useRouter();
   
@@ -49,6 +137,18 @@ export default function Admin() {
   const [browseTagFilter, setBrowseTagFilter] = useState([]); // multi-select tag ids
   const [browseFiltersExpanded, setBrowseFiltersExpanded] = useState(true); // collapse state - selections persist either way
   const [browseSections, setBrowseSections] = useState([]); // multi-select, real section ids
+  // Each filter group (Songbook / Section / Platform Tag) collapses
+  // independently rather than as one block, so a busy Filters panel doesn't
+  // force everything open at once. A group defaults open only if it already
+  // has something selected in it - otherwise closed, so the resting state
+  // stays compact.
+  const [browseGroupExpanded, setBrowseGroupExpanded] = useState({ songbook: false, section: false, tags: false });
+  // When multiple songbooks are selected, the Section dropdown groups its
+  // results under a header per songbook (so a duplicate section name like
+  // "A: Graces" appearing in two related songbooks is never ambiguous about
+  // which one you're picking) - each of those per-songbook groups can also
+  // collapse independently, tracked here by songbook id.
+  const [collapsedSectionSongbooks, setCollapsedSectionSongbooks] = useState({});
   const [selectedSong, setSelectedSong] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [songEditTab, setSongEditTab] = useState('basic');
@@ -2051,44 +2151,101 @@ export default function Admin() {
             })()}
             {browseFiltersExpanded && (
             <>
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <select
-                value={browseSongbookIds[0] || ''}
-                onChange={(e) => { setBrowseSongbookIds(e.target.value ? [e.target.value] : []); setBrowseSections([]); }}
-                style={{ ...s.select, flex: 1 }}
-              >
-                <option value="">All Songbooks</option>
-                {getFilterableSongbooks(songbooks, songbookEntries).map(sb => <option key={sb.id} value={sb.id}>{sb.name}</option>)}
-              </select>
-              <select
-                value={browseSections[0] || ''}
-                onChange={(e) => setBrowseSections(e.target.value ? [e.target.value] : [])}
-                disabled={browseSongbookIds.length === 0}
-                style={{ ...s.select, flex: 1 }}
-              >
-                <option value="">All Sections</option>
-                {getAvailableSections(songbookSections, browseSongbookIds).map(sec => <option key={sec.id} value={sec.id}>{sectionLabel(sec)}</option>)}
-              </select>
-            </div>
-            {allTags.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.75rem' }}>
-                {allTags.map(tag => {
-                  const isSelected = browseTagFilter.includes(tag.id);
-                  return (
-                    <button
-                      key={tag.id}
-                      onClick={() => setBrowseTagFilter(prev => toggleInArray(prev, tag.id))}
-                      style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', border: isSelected ? '2px solid #3B9B73' : (s.select.border || '1px solid #334155'), background: isSelected ? '#3B9B7320' : (s.select.background || '#1e293b'), color: isSelected ? '#3B9B73' : (s.select.color || '#fff') }}
-                    >
-                      {isSelected && <i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i>} {tag.name}
-                    </button>
-                  );
-                })}
-                {browseTagFilter.length > 0 && (
-                  <button onClick={() => setBrowseTagFilter([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: '#838C95' }}>Clear</button>
-                )}
-              </div>
-            )}
+            {(() => {
+              const filterableSongbooks = getFilterableSongbooks(songbooks, songbookEntries);
+              // A group defaults open if it already has something selected,
+              // even before the person has explicitly toggled it - so
+              // re-opening the whole Filters panel doesn't hide an active
+              // filter behind a second click.
+              const songbookOpen = browseGroupExpanded.songbook || browseSongbookIds.length > 0;
+              const sectionOpen = browseGroupExpanded.section || browseSections.length > 0;
+              const tagsOpen = browseGroupExpanded.tags || browseTagFilter.length > 0;
+              const groupHeader = (key, label, count, isOpen) => (
+                <div
+                  onClick={() => setBrowseGroupExpanded(prev => ({ ...prev, [key]: !isOpen }))}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.25rem 0', userSelect: 'none' }}
+                >
+                  <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#838C95', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    {label}{count > 0 ? ` (${count})` : ''}
+                  </span>
+                  <i className={`ti ti-chevron-${isOpen ? 'up' : 'down'}`} style={{ fontSize: '0.85em', color: '#838C95' }} aria-hidden="true"></i>
+                </div>
+              );
+              return (
+                <>
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    {groupHeader('songbook', 'Songbook', browseSongbookIds.length, songbookOpen)}
+                    {songbookOpen && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem' }}>
+                        {filterableSongbooks.map(sb => {
+                          const isSelected = browseSongbookIds.includes(sb.id);
+                          return (
+                            <button
+                              key={sb.id}
+                              onClick={() => {
+                                const next = toggleInArray(browseSongbookIds, sb.id);
+                                setBrowseSongbookIds(next);
+                                // dropped songbooks may leave stale section ids selected - prune to what's still valid
+                                setBrowseSections(prev => prev.filter(id => getAvailableSections(songbookSections, next).some(s => s.id === id)));
+                              }}
+                              style={{ padding: '0.4rem 0.75rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: isSelected ? '#256B45' : '#334155', color: isSelected ? '#fff' : '#838C95' }}
+                            >
+                              {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>} {sb.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    {groupHeader('section', 'Section', browseSections.length, sectionOpen)}
+                    {sectionOpen && (
+                      browseSongbookIds.length === 0 ? (
+                        <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.375rem' }}>Select a songbook above to filter by section</div>
+                      ) : (
+                        <div style={{ marginTop: '0.375rem' }}>
+                          <GroupedSectionFilter
+                            songbookIds={browseSongbookIds}
+                            songbooks={filterableSongbooks}
+                            songbookSections={songbookSections}
+                            selected={browseSections}
+                            onChange={setBrowseSections}
+                            collapsedSongbooks={collapsedSectionSongbooks}
+                            onToggleSongbookCollapse={(sbId) => setCollapsedSectionSongbooks(prev => ({ ...prev, [sbId]: !prev[sbId] }))}
+                          />
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {allTags.length > 0 && (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      {groupHeader('tags', 'Platform Tag', browseTagFilter.length, tagsOpen)}
+                      {tagsOpen && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem' }}>
+                          {allTags.map(tag => {
+                            const isSelected = browseTagFilter.includes(tag.id);
+                            return (
+                              <button
+                                key={tag.id}
+                                onClick={() => setBrowseTagFilter(prev => toggleInArray(prev, tag.id))}
+                                style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', border: isSelected ? '2px solid #3B9B73' : (s.select.border || '1px solid #334155'), background: isSelected ? '#3B9B7320' : (s.select.background || '#1e293b'), color: isSelected ? '#3B9B73' : (s.select.color || '#fff') }}
+                              >
+                                {isSelected && <i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i>} {tag.name}
+                              </button>
+                            );
+                          })}
+                          {browseTagFilter.length > 0 && (
+                            <button onClick={() => setBrowseTagFilter([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: '#838C95' }}>Clear</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             </>
             )}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
@@ -2190,7 +2347,7 @@ export default function Admin() {
                       <div style={s.formGroup}><label style={s.label}>Tune Of</label><input type="text" value={formTuneOf} onChange={(e) => setFormTuneOf(e.target.value)} style={s.input} placeholder="If sung to the tune of another song" /></div>
                       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                         <button style={s.btn} onClick={saveSongBasic} disabled={saving}>{saving ? 'Saving...' : (isAddingNew ? 'Create Song' : 'Save Changes')}</button>
-                        {!isAddingNew && <button style={{ ...s.btnSec, background: '#C35522', borderColor: '#D45D25' }} onClick={openDuplicateModal}><i className="ti ti-arrows-shuffle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Flag as Duplicate</button>}
+                        {!isAddingNew && <button style={{ ...s.btnSec, background: '#C35522', borderColor: '#D45D25', color: '#fff' }} onClick={openDuplicateModal}><i className="ti ti-arrows-shuffle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Flag as Duplicate</button>}
                       </div>
                       {!isAddingNew && getSongDuplicates(selectedSong.id).filter(d => d.status === 'pending').length > 0 && (
                         <div style={{ background: '#C3552220', border: '1px solid #D45D25', borderRadius: '0.5rem', padding: '0.75rem', marginTop: '0.5rem' }}>
