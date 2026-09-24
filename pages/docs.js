@@ -308,18 +308,14 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
     .slice(0, 50); // cap the visible list so a very large set doesn't render everything at once
   return (
     <div>
-      {/* Capped height with its own scroll, not unbounded growth - without
-          this, each additional selection wraps to a new line and pushes
-          everything below (other filter groups, the results list) further
-          down the page on every single click. */}
-      {/* Fixed height (not max-height) the moment anything's selected - if
-          it only capped growth, the first couple of chips would still
-          nudge the input and dropdown down a line each time before the cap
-          kicked in. Reserving the full height immediately means adding a
-          2nd or 3rd chip never resizes this box at all. */}
-      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '5.5rem' : 'auto', overflowY: 'auto' }}>
+      {/* Single line, horizontal scroll, small fixed height - a tall fixed
+          height reserved too much empty space for the common 1-2 chip
+          case, and without constraining vertical alignment a lone chip
+          stretched to fill it. This never changes size regardless of chip
+          count - it just scrolls sideways once chips overflow one line. */}
+      <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'center', gap: '0.25rem', marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '2.25rem' : 'auto' }}>
         {selected.map(v => (
-          <span key={v} style={chipStyle}>{v}<button style={chipRemoveStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)}>×</button></span>
+          <span key={v} style={{ ...chipStyle, flexShrink: 0, whiteSpace: 'nowrap' }}>{v}<button style={chipRemoveStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)}>×</button></span>
         ))}
       </div>
       <input
