@@ -32,12 +32,11 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
     <div style={{ position: 'relative' }}>
-      {/* Single line, horizontal scroll, small fixed height - a tall fixed
-          height reserved too much empty space for the common 1-2 chip
-          case, and without constraining vertical alignment a lone chip
-          stretched to fill it. This never changes size regardless of chip
-          count - it just scrolls sideways once chips overflow one line. */}
-      <div className="flex flex-nowrap items-center gap-1 overflow-x-auto" style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '2.25rem' : 'auto' }}>
+      {/* Single line, horizontal scroll, small fixed height - always at
+          full height, not conditional on having a selection, so the first
+          selection ever made doesn't make this box appear/resize and push
+          everything down. It's just visually empty until then. */}
+      <div className="flex flex-nowrap items-center gap-1 overflow-x-auto" style={{ marginBottom: '0.375rem', height: '2.25rem' }}>
         {selected.map(v => (
           <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs flex-shrink-0 whitespace-nowrap">
             {labelFor(v)}
@@ -1033,18 +1032,19 @@ export default function TagManagement() {
                       Clear All
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                    {availableSections.map(sec => (
-                      <label key={sec.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-700/50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={selectedSections.includes(sec.id)}
-                          onChange={() => toggleSection(sec.id)}
-                          className="rounded"
-                        />
-                        <span className="truncate">{sectionLabel(sec)}</span>
-                      </label>
-                    ))}
+                  <div className="flex flex-wrap gap-2">
+                    {availableSections.map(sec => {
+                      const isSelected = selectedSections.includes(sec.id);
+                      return (
+                        <button
+                          key={sec.id}
+                          onClick={() => toggleSection(sec.id)}
+                          className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${isSelected ? 'bg-[#256B45] text-white' : 'bg-slate-700 text-[#838C95] hover:bg-slate-600'}`}
+                        >
+                          {isSelected ? '✓ ' : ''}{sectionLabel(sec)}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
