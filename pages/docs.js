@@ -308,12 +308,11 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
     .slice(0, 50); // cap the visible list so a very large set doesn't render everything at once
   return (
     <div>
-      {/* Single line, horizontal scroll, small fixed height - a tall fixed
-          height reserved too much empty space for the common 1-2 chip
-          case, and without constraining vertical alignment a lone chip
-          stretched to fill it. This never changes size regardless of chip
-          count - it just scrolls sideways once chips overflow one line. */}
-      <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'center', gap: '0.25rem', marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '2.25rem' : 'auto' }}>
+      {/* Single line, horizontal scroll, small fixed height - always at
+          full height, not conditional on having a selection, so the first
+          selection ever made doesn't make this box appear/resize and push
+          everything down. It's just visually empty until then. */}
+      <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'center', gap: '0.25rem', marginBottom: '0.375rem', height: '2.25rem' }}>
         {selected.map(v => (
           <span key={v} style={{ ...chipStyle, flexShrink: 0, whiteSpace: 'nowrap' }}>{v}<button style={chipRemoveStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)}>×</button></span>
         ))}
