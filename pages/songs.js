@@ -58,7 +58,13 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
   return (
     <div style={{ position: 'relative' }}>
       {selected.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem' }}>
+        // Capped height with its own scroll, not unbounded growth - without
+        // this, each additional selection wraps to a new line, grows this
+        // column taller, and since grid rows share height, pushes every
+        // row below (My Songs, My Tags, the results list) further down the
+        // page on every single click. Capping it keeps the rest of the
+        // page stable regardless of how many things are selected.
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem', maxHeight: '5.5rem', overflowY: 'auto' }}>
           {selected.map(v => (
             <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={chipStyle(true)}>
               {labelFor(v)} ×
