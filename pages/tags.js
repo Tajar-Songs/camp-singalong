@@ -35,7 +35,12 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
       {/* Capped height with its own scroll, not unbounded growth - without
           this, each additional selection wraps to a new line and pushes
           everything below further down the page on every single click. */}
-      <div className="overflow-y-auto" style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, maxHeight: selected.length > 0 ? '5.5rem' : 'auto' }}>
+      {/* Fixed height (not max-height) the moment anything's selected - if
+          it only capped growth, the first couple of chips would still
+          nudge the input and dropdown down a line each time before the cap
+          kicked in. Reserving the full height immediately means adding a
+          2nd or 3rd chip never resizes this box at all. */}
+      <div className="overflow-y-auto" style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '5.5rem' : 'auto' }}>
         {selected.map(v => (
           <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs mr-1 mb-1">
             {labelFor(v)}
