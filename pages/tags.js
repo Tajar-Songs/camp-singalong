@@ -36,7 +36,7 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
         {selected.map(v => (
           <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs mr-1 mb-1">
             {labelFor(v)}
-            <button onClick={() => toggle(v)} className="text-[#838C95] hover:text-white">×</button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} className="text-[#838C95] hover:text-white">×</button>
           </span>
         ))}
       </div>
@@ -46,11 +46,19 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onFocus={() => setIsFocused(true)}
-        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        onBlur={() => setIsFocused(false)}
         className="w-full bg-slate-900 border border-[#838C95]/20 rounded-lg px-3 py-2 text-sm mb-1"
       />
       {isFocused && suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto border border-[#838C95]/20 rounded-lg bg-slate-900 shadow-lg">
+        <div
+          // preventDefault on mousedown stops the input from ever blurring
+          // when clicking in here, so the list never closes and there's no
+          // timing race - see docs.js's TypeaheadChips for the full
+          // reasoning (a video comparison against StoryGraph showed the old
+          // blur-delay approach closing the list between clicks).
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto border border-[#838C95]/20 rounded-lg bg-slate-900 shadow-lg"
+        >
           {suggestions.map(o => {
             const isSelected = selected.includes(o.value);
             return (
