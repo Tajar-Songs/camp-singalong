@@ -308,7 +308,11 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
     .slice(0, 50); // cap the visible list so a very large set doesn't render everything at once
   return (
     <div>
-      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0 }}>
+      {/* Capped height with its own scroll, not unbounded growth - without
+          this, each additional selection wraps to a new line and pushes
+          everything below (other filter groups, the results list) further
+          down the page on every single click. */}
+      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, maxHeight: selected.length > 0 ? '5.5rem' : 'auto', overflowY: 'auto' }}>
         {selected.map(v => (
           <span key={v} style={chipStyle}>{v}<button style={chipRemoveStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)}>×</button></span>
         ))}
