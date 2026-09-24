@@ -263,11 +263,22 @@ export default function Home() {
   };
 
   // ---------- Styling helpers ----------
-  const card = `rounded-2xl p-6 border transition-colors ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-green-100'}`;
+  const card = `rounded-2xl p-6 border transition-colors ${isDark ? 'bg-slate-900 border-[#838C95]/25' : 'bg-white border-green-100'}`;
   const cardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-green-900'}`;
-  const cardBody = `text-sm mb-4 ${isDark ? 'text-slate-400' : 'text-gray-500'}`;
+  const cardBody = `text-sm mb-4 ${isDark ? 'text-[#838C95]' : 'text-[#838C95]'}`;
   const primaryBtn = 'w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-50';
-  const secondaryBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-slate-700 text-white hover:bg-slate-800' : 'border-green-200 text-green-900 hover:bg-green-50'}`;
+  const secondaryBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#838C95]/30 text-white hover:bg-slate-800' : 'border-green-200 text-green-900 hover:bg-green-50'}`;
+  // "My Songs" is genuinely personal content (someone's own favorites/known/
+  // want-to-learn), not a platform-wide feature, so per the style guide's
+  // ownership-tier system it leads blue rather than the platform-default
+  // green every other card on this page uses.
+  const personalCardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-[#3a4a6b]'}`;
+  const personalBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#6882B6]/40 text-[#6882B6] hover:bg-[#6882B6]/10' : 'border-[#5371AC]/40 text-[#5371AC] hover:bg-[#5371AC]/10'}`;
+  // "Communities" is a placeholder for the not-yet-built Communities tier,
+  // which leads purple - a real, concrete early use of that tier color,
+  // even while the feature itself is still just a disabled placeholder.
+  const communityCardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-[#4a3a5c]'}`;
+  const communityBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#8F74B4]/40 text-[#8F74B4]' : 'border-[#7959A6]/40 text-[#7959A6]'}`;
 
   return (
     <div className={`min-h-screen p-4 sm:p-8 transition-colors duration-500 ${isDark ? 'bg-slate-950' : 'bg-green-50'}`}>
@@ -279,10 +290,10 @@ export default function Home() {
               <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 {authMode === 'signup' ? 'Create Account' : authMode === 'magic' ? 'Magic Link' : 'Sign In'}
               </h2>
-              <button onClick={() => { setShowAuthModal(false); resetAuthForm(); }} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+              <button onClick={() => { setShowAuthModal(false); resetAuthForm(); }} className="text-[#838C95] hover:text-[#6E7881] text-2xl">&times;</button>
             </div>
 
-            {authError && <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{authError}</div>}
+            {authError && <div className="bg-[#C35522]/10 text-[#D45D25] p-3 rounded-lg mb-4 text-sm">{authError}</div>}
             {authMessage && <div className="bg-green-100 text-green-700 p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
 
             <div className="space-y-3">
@@ -292,7 +303,7 @@ export default function Home() {
                   placeholder="Display Name"
                   value={authDisplayName}
                   onChange={(e) => setAuthDisplayName(e.target.value)}
-                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
                 />
               )}
               <input
@@ -300,7 +311,7 @@ export default function Home() {
                 placeholder="Email"
                 value={authEmail}
                 onChange={(e) => setAuthEmail(e.target.value)}
-                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
               />
               {authMode !== 'magic' && (
                 <input
@@ -308,7 +319,7 @@ export default function Home() {
                   placeholder="Password"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
-                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200'}`}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500 ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
                 />
               )}
               <button
@@ -320,12 +331,12 @@ export default function Home() {
               </button>
             </div>
 
-            <div className={`mt-4 pt-4 border-t ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
+            <div className={`mt-4 pt-4 border-t ${isDark ? 'border-[#838C95]/30' : 'border-[#838C95]/25'}`}>
               <div className="flex flex-col gap-2 text-sm text-center">
                 {authMode === 'login' && (
                   <>
                     <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-green-600 hover:underline">Need an account? Sign up</button>
-                    <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-blue-600 hover:underline">Use magic link instead</button>
+                    <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-[#5371AC] hover:underline">Use magic link instead</button>
                   </>
                 )}
                 {authMode === 'signup' && (
@@ -341,14 +352,23 @@ export default function Home() {
       )}
 
       <div className="max-w-3xl mx-auto">
-        {/* Header */}
+        {/* Header - bigger version of the nav-bar logo treatment (moonlight
+            glow + the same hand-drawn music note via Iconify), since this
+            is the one other place "Tajar's Songbook" appears prominently,
+            right at the site's entry point. */}
         <div className="text-center mb-8 pt-4">
-          <div className="text-5xl mb-2">🎵</div>
-          <h1 className={`text-2xl sm:text-3xl font-black tracking-tight ${isDark ? 'text-white' : 'text-green-900'}`}>
-            Tajar's <span className="text-green-600">Songbook</span>
-          </h1>
+          <div
+            className="inline-flex items-center gap-3 px-6 py-4 rounded-2xl relative mb-2"
+            style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 20px rgba(226,232,245,0.3)' }}
+          >
+            <span style={{ fontSize: '20px', position: 'absolute', top: '-10px', right: '6px' }} aria-hidden="true">✨</span>
+            <iconify-icon icon="streamline-freehand:music-note-1" style={{ fontSize: '2.25rem', color: '#E2E8F5' }} aria-hidden="true"></iconify-icon>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
+              Tajar's Songbook
+            </h1>
+          </div>
           {!user && (
-            <p className={`text-sm mt-2 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+            <p className={`text-sm mt-2 ${isDark ? 'text-[#838C95]' : 'text-[#838C95]'}`}>
               <button onClick={() => setShowAuthModal(true)} className="text-green-600 font-semibold hover:underline">Log in</button>
               {' '}to track favorites and pick up where you left off
             </p>
@@ -378,10 +398,10 @@ export default function Home() {
                   onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
                   onKeyPress={(e) => e.key === 'Enter' && joinRoom()}
                   className={`flex-1 border-2 rounded-xl px-3 text-center font-black tracking-widest outline-none focus:ring-4 focus:ring-green-500/10 ${
-                    isDark ? 'bg-slate-950 border-slate-800 text-white focus:border-green-500 placeholder:text-slate-700' : 'bg-green-50 border-green-100 text-green-900 focus:border-green-500 placeholder:text-green-200'
+                    isDark ? 'bg-slate-950 border-[#838C95]/25 text-white focus:border-green-500 placeholder:text-[#838C95]/60' : 'bg-green-50 border-green-100 text-green-900 focus:border-green-500 placeholder:text-green-200'
                   }`}
                 />
-                <button onClick={joinRoom} disabled={roomLoading || !roomCodeInput} className="px-4 rounded-xl font-black text-white bg-blue-500 hover:bg-blue-400 transition-all disabled:opacity-30">
+                <button onClick={joinRoom} disabled={roomLoading || !roomCodeInput} className="px-4 rounded-xl font-black text-white bg-green-600 hover:bg-green-500 transition-all disabled:opacity-30">
                   Join
                 </button>
               </div>
@@ -401,14 +421,14 @@ export default function Home() {
 
           {/* My songs / insights card */}
           <div className={card}>
-            <h2 className={cardTitle}>My Songs</h2>
+            <h2 className={personalCardTitle}>My Songs</h2>
             {user ? (
               myStats ? (
                 <>
                   <p className={cardBody}>
                     {myStats.favorites} favorite{myStats.favorites !== 1 ? 's' : ''} · {myStats.known} known · {myStats.wantToLearn} to learn
                   </p>
-                  <Link href="/songs" className={secondaryBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                  <Link href="/songs" className={personalBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
                     View My Songs
                   </Link>
                 </>
@@ -418,26 +438,22 @@ export default function Home() {
             ) : (
               <>
                 <p className={cardBody}>Log in to track favorites, mark songs you know, and build your own list.</p>
-                <button onClick={() => setShowAuthModal(true)} className={secondaryBtn}>Log In</button>
+                <button onClick={() => setShowAuthModal(true)} className={personalBtn}>Log In</button>
               </>
             )}
           </div>
 
-          {/* Communities - placeholder for future feature */}
+          {/* Communities - placeholder for future feature. Purple, matching
+              the style guide's Communities-tier color, even as a disabled
+              placeholder - a real, concrete early use of that tier. */}
           <div className={`${card} opacity-60`}>
-            <h2 className={cardTitle}>Communities</h2>
+            <h2 className={communityCardTitle}>Communities</h2>
             <p className={cardBody}>Coming soon — find and sing with your group.</p>
-            <button disabled className={secondaryBtn} style={{ cursor: 'not-allowed' }}>Coming Soon</button>
+            <button disabled className={communityBtn} style={{ cursor: 'not-allowed' }}>Coming Soon</button>
           </div>
 
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-8 pb-4">
-          <Link href="/ideas" className={`text-sm hover:underline ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
-            💬 Have feedback or found a bug?
-          </Link>
-        </div>
       </div>
     </div>
   );
