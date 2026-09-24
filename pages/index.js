@@ -266,7 +266,7 @@ export default function Home() {
   const card = `rounded-2xl p-6 border transition-colors ${isDark ? 'bg-slate-900 border-[#838C95]/25' : 'bg-white border-green-100'}`;
   const cardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-green-900'}`;
   const cardBody = `text-sm mb-4 ${isDark ? 'text-[#838C95]' : 'text-[#838C95]'}`;
-  const primaryBtn = 'w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-50';
+  const primaryBtn = 'w-full bg-[#256B45] hover:bg-[#2f8058] text-white py-3 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-50';
   const secondaryBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#838C95]/30 text-white hover:bg-slate-800' : 'border-green-200 text-green-900 hover:bg-green-50'}`;
   // "My Songs" is genuinely personal content (someone's own favorites/known/
   // want-to-learn), not a platform-wide feature, so per the style guide's
