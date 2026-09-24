@@ -263,22 +263,27 @@ export default function Home() {
   };
 
   // ---------- Styling helpers ----------
-  const card = `rounded-2xl p-6 border transition-colors ${isDark ? 'bg-slate-900 border-[#838C95]/25' : 'bg-white border-green-100'}`;
+  // flex column + h-full so cards in the same grid row stretch to match
+  // height, and buttons can be pushed to a consistent position at the
+  // bottom via mt-auto regardless of how much body text precedes them -
+  // otherwise a shorter description leaves its button sitting higher than
+  // a neighboring card's, even though the cards themselves are the same height.
+  const card = `rounded-2xl p-6 border transition-colors h-full flex flex-col ${isDark ? 'bg-slate-900 border-[#838C95]/25' : 'bg-white border-green-100'}`;
   const cardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-green-900'}`;
   const cardBody = `text-sm mb-4 ${isDark ? 'text-[#838C95]' : 'text-[#838C95]'}`;
   const primaryBtn = 'w-full bg-[#256B45] hover:bg-[#2f8058] text-white py-3 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-50';
-  const secondaryBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#838C95]/30 text-white hover:bg-slate-800' : 'border-green-200 text-green-900 hover:bg-green-50'}`;
+  const secondaryBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'bg-white/5 border-[#838C95]/30 text-white hover:bg-slate-800' : 'border-green-200 text-green-900 hover:bg-green-50'}`;
   // "My Songs" is genuinely personal content (someone's own favorites/known/
   // want-to-learn), not a platform-wide feature, so per the style guide's
   // ownership-tier system it leads blue rather than the platform-default
   // green every other card on this page uses.
   const personalCardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-[#3a4a6b]'}`;
-  const personalBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#6882B6]/40 text-[#6882B6] hover:bg-[#6882B6]/10' : 'border-[#5371AC]/40 text-[#5371AC] hover:bg-[#5371AC]/10'}`;
+  const personalBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'bg-[#6882B6]/8 border-[#6882B6]/40 text-[#6882B6] hover:bg-[#6882B6]/15' : 'border-[#5371AC]/40 text-[#5371AC] hover:bg-[#5371AC]/10'}`;
   // "Communities" is a placeholder for the not-yet-built Communities tier,
   // which leads purple - a real, concrete early use of that tier color,
   // even while the feature itself is still just a disabled placeholder.
   const communityCardTitle = `text-lg font-black mb-2 ${isDark ? 'text-white' : 'text-[#4a3a5c]'}`;
-  const communityBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'border-[#8F74B4]/40 text-[#8F74B4]' : 'border-[#7959A6]/40 text-[#7959A6]'}`;
+  const communityBtn = `w-full py-3 rounded-xl font-bold transition-all border ${isDark ? 'bg-[#8F74B4]/8 border-[#8F74B4]/40 text-[#8F74B4]' : 'border-[#7959A6]/40 text-[#7959A6]'}`;
 
   return (
     <div className={`min-h-screen p-4 sm:p-8 transition-colors duration-500 ${isDark ? 'bg-slate-950' : 'bg-green-50'}`}>
@@ -414,7 +419,7 @@ export default function Home() {
             <p className={cardBody}>
               {totalSongCount ? `Browse all ${totalSongCount} songs` : 'Browse the full songbook'} — lyrics, chords, versions, and more.
             </p>
-            <Link href="/songs" className={secondaryBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+            <Link href="/songs" className={secondaryBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 'auto' }}>
               Browse Songs
             </Link>
           </div>
@@ -428,7 +433,7 @@ export default function Home() {
                   <p className={cardBody}>
                     {myStats.favorites} favorite{myStats.favorites !== 1 ? 's' : ''} · {myStats.known} known · {myStats.wantToLearn} to learn
                   </p>
-                  <Link href="/songs" className={personalBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                  <Link href="/songs" className={personalBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 'auto' }}>
                     View My Songs
                   </Link>
                 </>
@@ -438,7 +443,7 @@ export default function Home() {
             ) : (
               <>
                 <p className={cardBody}>Log in to track favorites, mark songs you know, and build your own list.</p>
-                <button onClick={() => setShowAuthModal(true)} className={personalBtn}>Log In</button>
+                <button onClick={() => setShowAuthModal(true)} className={personalBtn} style={{ marginTop: 'auto' }}>Log In</button>
               </>
             )}
           </div>
@@ -449,7 +454,7 @@ export default function Home() {
           <div className={`${card} opacity-60`}>
             <h2 className={communityCardTitle}>Communities</h2>
             <p className={cardBody}>Coming soon — find and sing with your group.</p>
-            <button disabled className={communityBtn} style={{ cursor: 'not-allowed' }}>Coming Soon</button>
+            <button disabled className={communityBtn} style={{ cursor: 'not-allowed', marginTop: 'auto' }}>Coming Soon</button>
           </div>
 
         </div>
