@@ -32,17 +32,14 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
     <div style={{ position: 'relative' }}>
-      {/* Capped height with its own scroll, not unbounded growth - without
-          this, each additional selection wraps to a new line and pushes
-          everything below further down the page on every single click. */}
-      {/* Fixed height (not max-height) the moment anything's selected - if
-          it only capped growth, the first couple of chips would still
-          nudge the input and dropdown down a line each time before the cap
-          kicked in. Reserving the full height immediately means adding a
-          2nd or 3rd chip never resizes this box at all. */}
-      <div className="overflow-y-auto" style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '5.5rem' : 'auto' }}>
+      {/* Single line, horizontal scroll, small fixed height - a tall fixed
+          height reserved too much empty space for the common 1-2 chip
+          case, and without constraining vertical alignment a lone chip
+          stretched to fill it. This never changes size regardless of chip
+          count - it just scrolls sideways once chips overflow one line. */}
+      <div className="flex flex-nowrap items-center gap-1 overflow-x-auto" style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '2.25rem' : 'auto' }}>
         {selected.map(v => (
-          <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs mr-1 mb-1">
+          <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs flex-shrink-0 whitespace-nowrap">
             {labelFor(v)}
             <button onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} className="text-[#838C95] hover:text-white">×</button>
           </span>
