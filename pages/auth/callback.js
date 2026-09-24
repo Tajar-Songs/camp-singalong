@@ -57,7 +57,7 @@ export default function AuthCallback() {
     <div style={{ 
       minHeight: '100vh', 
       background: '#0f172a', 
-      color: '#f1f5f9', 
+      color: '#e2e8f0', 
       display: 'flex', 
       alignItems: 'center', 
       justifyContent: 'center',
@@ -71,15 +71,15 @@ export default function AuthCallback() {
         width: '100%',
         textAlign: 'center'
       }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎵</div>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}><i className="ti ti-music" style={{ fontSize: '1em' }} aria-hidden="true"></i></div>
         
         {status && (
           <>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-              {status.includes('Success') ? '✓ ' : ''}{status}
+              {status.includes('Success') && <i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i>} {status}
             </h1>
             {status.includes('Processing') && (
-              <div style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
+              <div style={{ color: '#838C95', fontSize: '0.875rem' }}>
                 Setting up your session...
               </div>
             )}
@@ -88,10 +88,10 @@ export default function AuthCallback() {
         
         {error && (
           <>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#ef4444' }}>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#D45D25' }}>
               Something went wrong
             </h1>
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+            <p style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
               {error}
             </p>
             <a 
@@ -100,7 +100,7 @@ export default function AuthCallback() {
                 display: 'inline-block',
                 padding: '0.75rem 1.5rem', 
                 borderRadius: '0.5rem', 
-                background: '#22c55e', 
+                background: '#256B45', 
                 color: '#fff', 
                 fontWeight: 'bold', 
                 textDecoration: 'none' 
