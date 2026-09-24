@@ -32,7 +32,10 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0 }}>
+      {/* Capped height with its own scroll, not unbounded growth - without
+          this, each additional selection wraps to a new line and pushes
+          everything below further down the page on every single click. */}
+      <div className="overflow-y-auto" style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, maxHeight: selected.length > 0 ? '5.5rem' : 'auto' }}>
         {selected.map(v => (
           <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs mr-1 mb-1">
             {labelFor(v)}
