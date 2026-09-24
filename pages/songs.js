@@ -57,21 +57,17 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
     <div style={{ position: 'relative' }}>
-      {selected.length > 0 && (
-        // Single line, horizontal scroll, small fixed height - a tall
-        // fixed height reserved way too much empty space for the common
-        // 1-2 chip case, and without constraining vertical alignment a
-        // lone chip stretched to fill that height into a giant oval. This
-        // never changes size at all regardless of chip count - it just
-        // scrolls sideways once chips overflow one line.
-        <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '0.375rem', marginBottom: '0.5rem', height: '2.25rem', alignItems: 'center' }}>
-          {selected.map(v => (
-            <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={{ ...chipStyle(true), flexShrink: 0 }}>
-              {labelFor(v)} ×
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Always rendered, not conditional on having a selection - space
+          reserved for chips is present from the first paint, so the first
+          selection ever made doesn't make this box appear from nothing and
+          push everything down. It's just visually empty until then. */}
+      <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '0.375rem', marginBottom: '0.5rem', height: '2.25rem', alignItems: 'center' }}>
+        {selected.map(v => (
+          <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={{ ...chipStyle(true), flexShrink: 0 }}>
+            {labelFor(v)} ×
+          </button>
+        ))}
+      </div>
       <input
         type="text"
         placeholder={placeholder}
