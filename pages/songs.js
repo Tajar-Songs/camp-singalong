@@ -134,6 +134,94 @@ function StatusIcon({ emoji }) {
     : <span aria-hidden="true">{emoji}</span>;
 }
 
+// Section filter for the Songbook/Section area. Below two songbooks
+// selected this is a plain browsable typeahead - nothing to disambiguate.
+// From two songbooks up, results group under a header per songbook (so a
+// duplicate section name like "A: Graces" in two related songbooks is
+// never ambiguous about which one you're picking), each with its own
+// collapse toggle. Ported from the same component built for admin.js,
+// adapted to this page's own section/songbook data shapes and its
+// sectionLabel() helper.
+function GroupedSectionFilter({ songbookIds, songbooks, availableSections, selected, onChange, collapsedSongbooks, onToggleSongbookCollapse, accentColor = '#3B9B73' }) {
+  const [inputValue, setInputValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const toggle = (id) => onChange(selected.includes(id) ? selected.filter(v => v !== id) : [...selected, id]);
+  const labelFor = (id) => sectionLabel(availableSections.find(s => s.id === id));
+  const songbookNameFor = (id) => songbooks.find(sb => sb.id === id)?.name || '';
+
+  const sectionsBySongbook = songbookIds.map(sbId => ({
+    songbookId: sbId,
+    songbookName: songbookNameFor(sbId),
+    sections: availableSections
+      .filter(s => s.songbook_id === sbId)
+      .filter(s => !inputValue || sectionLabel(s).toLowerCase().includes(inputValue.toLowerCase()))
+  })).filter(g => g.sections.length > 0);
+
+  const grouped = songbookIds.length > 1;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {selected.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '0.375rem', marginBottom: '0.5rem', height: '2.25rem', alignItems: 'center' }}>
+          {selected.map(id => (
+            <button key={id} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(id)} style={{ flexShrink: 0, whiteSpace: 'nowrap', padding: '0.3rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: accentColor, color: '#fff' }}>
+              {labelFor(id)}{grouped ? ` · ${songbookNameFor(id)}` : ''} ×
+            </button>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        placeholder="Search sections..."
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', fontSize: '0.875rem', color: '#fff' }}
+      />
+      {isFocused && (
+        <div
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', maxHeight: '260px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50 }}
+        >
+          {sectionsBySongbook.length === 0 && (
+            <div style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.5rem 0.75rem' }}>No matches</div>
+          )}
+          {sectionsBySongbook.map(group => {
+            const isCollapsed = grouped && collapsedSongbooks[group.songbookId];
+            return (
+              <div key={group.songbookId}>
+                {grouped && (
+                  <div
+                    onClick={() => onToggleSongbookCollapse(group.songbookId)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.375rem 0.75rem', fontSize: '0.7rem', fontWeight: 'bold', color: '#838C95', textTransform: 'uppercase', letterSpacing: '0.03em', background: '#0f172a', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    {group.songbookName}
+                    <i className={`ti ti-chevron-${isCollapsed ? 'down' : 'up'}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i>
+                  </div>
+                )}
+                {!isCollapsed && group.sections.map(s => {
+                  const isSelected = selected.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => toggle(s.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', width: '100%', textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.85rem', border: 'none', cursor: 'pointer', background: isSelected ? `${accentColor}20` : 'transparent', color: isSelected ? accentColor : '#fff' }}
+                    >
+                      {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}
+                      {sectionLabel(s)}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Songs() {
   // Auth state
   const [user, setUser] = useState(null);
@@ -176,6 +264,10 @@ export default function Songs() {
   const [excludeStatusFilter, setExcludeStatusFilter] = useState([]);
   const [filtersExpanded, setFiltersExpanded] = useState(true); // master collapse - filters stay applied either way
   const [collapsedGroups, setCollapsedGroups] = useState({}); // per-group collapse, e.g. { songbook: true }
+  // When multiple songbooks are selected, the Section dropdown groups its
+  // results under a header per songbook - each of those groups can also
+  // collapse independently, tracked here by songbook id.
+  const [collapsedSectionSongbooks, setCollapsedSectionSongbooks] = useState({});
   const toggleGroupCollapsed = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState('lyrics'); // 'lyrics', 'info', 'media', 'notes'
@@ -1034,34 +1126,16 @@ export default function Songs() {
                     <input type="radio" name="sectionFilterMode" checked={sectionFilterMode === 'all'} onChange={() => setSectionFilterMode('all')} /> all
                   </label>
                 </div>
-                {songbookIds.length > 1 ? (
-                  // Multiple songbooks selected - group sections under a label for each
-                  songbookIds.map(sbId => {
-                    const sb = filterableSongbooks.find(b => b.id === sbId);
-                    const theseSections = availableSections.filter(s2 => s2.songbook_id === sbId);
-                    if (theseSections.length === 0) return null;
-                    return (
-                      <div key={sbId} style={{ marginBottom: '0.5rem' }}>
-                        <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.25rem' }}>{sb?.name}</div>
-                        <AdaptiveMultiSelect
-                          options={theseSections.map(s2 => ({ value: s2.id, label: sectionLabel(s2) }))}
-                          selected={sections}
-                          onChange={setSections}
-                          placeholder="Search sections..."
-                          accentColor="#256B45"
-                        />
-                      </div>
-                    );
-                  })
-                ) : (
-                  <AdaptiveMultiSelect
-                    options={availableSections.map(s2 => ({ value: s2.id, label: sectionLabel(s2) }))}
-                    selected={sections}
-                    onChange={setSections}
-                    placeholder="Search sections..."
-                    accentColor="#256B45"
-                  />
-                )}
+                <GroupedSectionFilter
+                  songbookIds={songbookIds}
+                  songbooks={filterableSongbooks}
+                  availableSections={availableSections}
+                  selected={sections}
+                  onChange={setSections}
+                  collapsedSongbooks={collapsedSectionSongbooks}
+                  onToggleSongbookCollapse={(sbId) => setCollapsedSectionSongbooks(prev => ({ ...prev, [sbId]: !prev[sbId] }))}
+                  accentColor="#256B45"
+                />
                 </>
                 )}
               </div>
