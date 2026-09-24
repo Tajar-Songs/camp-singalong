@@ -40,7 +40,8 @@ export default function Home() {
   // Dashboard data
   const [totalSongCount, setTotalSongCount] = useState(null);
   const [roomCodeWords, setRoomCodeWords] = useState([]);
-  const [myStats, setMyStats] = useState(null); // { favorites, known, wantToLearn } once loaded
+  // "My Songs" is a coming-soon placeholder for now, not a real personal
+  // insights page yet - see the Ideas board.
 
   const [isDark, setIsDark] = useState(false);
 
@@ -70,10 +71,6 @@ export default function Home() {
   useEffect(() => { checkAuthSession(); }, []);
   useEffect(() => { loadTotalSongCount(); }, []);
   useEffect(() => { loadRoomCodeWords(); }, []);
-  useEffect(() => {
-    if (user) loadMyStats();
-    else setMyStats(null);
-  }, [user]);
 
   // ---------- Auth ----------
   const refreshAccessToken = async () => {
@@ -246,22 +243,6 @@ export default function Home() {
     } catch (error) { console.error('Error loading room code words:', error); }
   };
 
-  const loadMyStats = async () => {
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_song_preferences?user_id=eq.${user.id}&select=is_favorite,is_dislike,status`, {
-        headers: getAuthHeaders(false)
-      });
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setMyStats({
-          favorites: data.filter(p => p.is_favorite).length,
-          known: data.filter(p => p.status === 'known').length,
-          wantToLearn: data.filter(p => p.status === 'want_to_learn').length
-        });
-      }
-    } catch (error) { console.error('Error loading my stats:', error); }
-  };
-
   // ---------- Styling helpers ----------
   // flex column + h-full so cards in the same grid row stretch to match
   // height, and buttons can be pushed to a consistent position at the
@@ -424,28 +405,16 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* My songs / insights card */}
-          <div className={card}>
+          {/* My Songs - coming-soon placeholder, matching Communities'
+              treatment. This used to link straight to /songs with some
+              stats bolted on, which implied it was already a distinct
+              feature when it's really just another route to the same
+              song list. Honest about not being built yet until there's a
+              real personal insights page to point to instead. */}
+          <div className={`${card} opacity-60`}>
             <h2 className={personalCardTitle}>My Songs</h2>
-            {user ? (
-              myStats ? (
-                <>
-                  <p className={cardBody}>
-                    {myStats.favorites} favorite{myStats.favorites !== 1 ? 's' : ''} · {myStats.known} known · {myStats.wantToLearn} to learn
-                  </p>
-                  <Link href="/songs" className={personalBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 'auto' }}>
-                    View My Songs
-                  </Link>
-                </>
-              ) : (
-                <p className={cardBody}>Loading...</p>
-              )
-            ) : (
-              <>
-                <p className={cardBody}>Log in to track favorites, mark songs you know, and build your own list.</p>
-                <button onClick={() => setShowAuthModal(true)} className={personalBtn} style={{ marginTop: 'auto' }}>Log In</button>
-              </>
-            )}
+            <p className={cardBody}>Coming soon — your favorites, familiarity, and personal tags in one place.</p>
+            <button disabled className={personalBtn} style={{ cursor: 'not-allowed', marginTop: 'auto' }}>Coming Soon</button>
           </div>
 
           {/* Communities - placeholder for future feature. Purple, matching
