@@ -58,21 +58,15 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
   return (
     <div style={{ position: 'relative' }}>
       {selected.length > 0 && (
-        // Capped height with its own scroll, not unbounded growth - without
-        // this, each additional selection wraps to a new line, grows this
-        // column taller, and since grid rows share height, pushes every
-        // row below (My Songs, My Tags, the results list) further down the
-        // page on every single click. Capping it keeps the rest of the
-        // page stable regardless of how many things are selected.
-        // Fixed height (not max-height) the moment anything's selected -
-        // if it only capped growth, the first couple of chips would still
-        // nudge the input and dropdown down a line each time before the
-        // cap kicked in. Reserving the full height immediately means
-        // adding a 2nd or 3rd chip never resizes this box at all - it
-        // just scrolls within a box that's already the right size.
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem', height: '5.5rem', overflowY: 'auto' }}>
+        // Single line, horizontal scroll, small fixed height - a tall
+        // fixed height reserved way too much empty space for the common
+        // 1-2 chip case, and without constraining vertical alignment a
+        // lone chip stretched to fill that height into a giant oval. This
+        // never changes size at all regardless of chip count - it just
+        // scrolls sideways once chips overflow one line.
+        <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '0.375rem', marginBottom: '0.5rem', height: '2.25rem', alignItems: 'center' }}>
           {selected.map(v => (
-            <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={chipStyle(true)}>
+            <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={{ ...chipStyle(true), flexShrink: 0 }}>
               {labelFor(v)} ×
             </button>
           ))}
