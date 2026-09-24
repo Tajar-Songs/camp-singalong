@@ -117,7 +117,7 @@ export default function Profile() {
 
       <div style={s.wrapper}>
         <div style={s.header}>
-          <h1 style={s.title}><i className="ti ti-user" aria-hidden="true"></i> Your Profile</h1>
+          <h1 style={s.title}><i className="ti ti-user-square-rounded" aria-hidden="true"></i> Your Profile</h1>
           <p style={{ color: '#838C95', fontSize: '0.875rem' }}>{user.email}</p>
         </div>
 
