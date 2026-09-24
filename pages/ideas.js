@@ -703,17 +703,15 @@ export default function Ideas() {
           </div>
         )}
 
-        {/* Type tabs - connected segmented control (style guide: toggle
-            controls vs. action buttons). Counts reflect the active
-            status/topic filters, not all-time totals. Each active tab
-            keeps its own category color (from typeFillColors), joined
-            into one shape rather than separate buttons. */}
-        <div style={{ display: 'inline-flex', flexWrap: 'wrap', borderRadius: '0.375rem', border: '1px solid #334155', overflow: 'hidden', marginBottom: '1rem' }}>
+        {/* Type filter - these are filters within one list (an "All" option
+            already shows everything), not a switch to a different view, so
+            they stay as standalone chips rather than a connected segmented
+            control - per the style guide's distinction between the two. */}
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
           <button 
             onClick={() => setTypeFilter('all')} 
             style={{ 
               ...s.btnSec, 
-              borderRadius: 0,
               background: typeFilter === 'all' ? '#256B45' : '#334155',
               fontWeight: typeFilter === 'all' ? '600' : '400'
             }}
@@ -726,8 +724,6 @@ export default function Ideas() {
               onClick={() => setTypeFilter(t)}
               style={{ 
                 ...s.btnSec, 
-                borderRadius: 0,
-                borderLeft: '1px solid #334155',
                 background: typeFilter === t ? `${typeFillColors[t]}` : '#334155',
                 fontWeight: typeFilter === t ? '600' : '400'
               }}
