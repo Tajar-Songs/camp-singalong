@@ -17,13 +17,21 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
   const toggle = (value) => {
     onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
   };
-  const hiddenValues = new Set([...selected, ...(otherSelected || [])]);
+  // otherSelected genuinely can't appear here, but selected values stay in
+  // the list rather than being filtered out of it - removing a clicked item
+  // the instant it's selected made the list reflow on every click, which is
+  // what made picking several things in a row feel tedious. Keeping the
+  // list stable and just highlighting selections in place (StoryGraph-
+  // style: like holding ctrl and clicking down a list) fixes that. The
+  // dropdown is also now an absolutely-positioned overlay rather than
+  // in-flow, so it doesn't push the rest of the panel down while open.
+  const otherHidden = new Set(otherSelected || []);
   const suggestions = options
-    .filter(o => !hiddenValues.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
+    .filter(o => !otherHidden.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
     .slice(0, 50);
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
       <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0 }}>
         {selected.map(v => (
           <span key={v} className="inline-flex items-center gap-1 bg-slate-700 px-2 py-1 rounded text-xs mr-1 mb-1">
@@ -42,18 +50,24 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
         className="w-full bg-slate-900 border border-[#838C95]/20 rounded-lg px-3 py-2 text-sm mb-1"
       />
       {isFocused && suggestions.length > 0 && (
-        <div className="max-h-40 overflow-y-auto border border-[#838C95]/20 rounded-lg">
-          {suggestions.map(o => (
-            <button
-              key={o.value}
-              onClick={() => { toggle(o.value); setInputValue(''); }}
-              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-700"
-            >{o.label}</button>
-          ))}
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-56 overflow-y-auto border border-[#838C95]/20 rounded-lg bg-slate-900 shadow-lg">
+          {suggestions.map(o => {
+            const isSelected = selected.includes(o.value);
+            return (
+              <button
+                key={o.value}
+                onClick={() => toggle(o.value)}
+                className={`flex items-center gap-1.5 w-full text-left px-3 py-1.5 text-sm ${isSelected ? 'bg-[#3B9B73]/20 text-[#3B9B73]' : 'hover:bg-slate-700'}`}
+              >
+                {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}
+                {o.label}
+              </button>
+            );
+          })}
         </div>
       )}
       {isFocused && suggestions.length === 0 && (
-        <div className="text-xs text-[#838C95] p-1.5">No matches</div>
+        <div className="absolute left-0 right-0 z-50 mt-1 text-xs text-[#838C95] p-1.5 border border-[#838C95]/20 rounded-lg bg-slate-900">No matches</div>
       )}
     </div>
   );
