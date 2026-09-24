@@ -373,12 +373,12 @@ export default function AdminSuggestions() {
           <p style={{ color: '#838C95', fontSize: '0.875rem' }}>{filtered.length} submission(s)</p>
         </div>
 
-        {/* Filters - connected segmented control (style guide: toggle
-            controls vs. action buttons), since these switch which
-            submissions the same list shows. */}
-        <div style={{ display: 'inline-flex', borderRadius: '0.375rem', border: '1px solid #334155', overflow: 'hidden', marginBottom: '1rem' }}>
-          {['all', 'pending', 'approved', 'rejected'].map((f, i) => (
-            <button key={f} onClick={() => setStatusFilter(f)} style={{ ...s.filterBtn(statusFilter === f), borderLeft: i > 0 ? '1px solid #334155' : 'none' }}>
+        {/* Filters - these narrow one list that already has an "All" view,
+            not a switch to a different view, so they stay as standalone
+            chips per the style guide's distinction. */}
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          {['all', 'pending', 'approved', 'rejected'].map((f) => (
+            <button key={f} onClick={() => setStatusFilter(f)} style={{ ...s.filterBtn(statusFilter === f), borderRadius: '0.375rem' }}>
               {f.charAt(0).toUpperCase() + f.slice(1)}
               {f === 'pending' && ` (${pendingCount})`}
             </button>
