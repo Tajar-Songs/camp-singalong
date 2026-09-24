@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
-import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
+import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray, songMatchesFilters } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -24,7 +24,7 @@ const SECTION_INFO = {
 // collapse on its own so a long multi-book list doesn't have to stay fully
 // expanded to be usable - particularly relevant on mobile, where this panel
 // gets used a lot and vertical space is scarce.
-function GroupedSectionFilter({ songbookIds, songbooks, songbookSections, selected, onChange, collapsedSongbooks, onToggleSongbookCollapse }) {
+function GroupedSectionFilter({ songbookIds, songbooks, songbookSections, selected, onChange, collapsedSongbooks, onToggleSongbookCollapse, accentColor = '#3B9B73' }) {
   const [inputValue, setInputValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const toggle = (id) => onChange(selected.includes(id) ? selected.filter(v => v !== id) : [...selected, id]);
@@ -46,7 +46,7 @@ function GroupedSectionFilter({ songbookIds, songbooks, songbookSections, select
       {selected.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: '0.375rem', marginBottom: '0.5rem', height: '2.25rem', alignItems: 'center' }}>
           {selected.map(id => (
-            <button key={id} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(id)} style={{ flexShrink: 0, whiteSpace: 'nowrap', padding: '0.3rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: '#256B45', color: '#fff' }}>
+            <button key={id} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(id)} style={{ flexShrink: 0, whiteSpace: 'nowrap', padding: '0.3rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: accentColor, color: '#fff' }}>
               {labelFor(id)}{grouped ? ` · ${songbookNameFor(id)}` : ''} ×
             </button>
           ))}
@@ -88,7 +88,7 @@ function GroupedSectionFilter({ songbookIds, songbooks, songbookSections, select
                     <button
                       key={s.id}
                       onClick={() => toggle(s.id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', width: '100%', textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', background: isSelected ? '#3B9B7320' : 'transparent', color: isSelected ? '#3B9B73' : '#fff' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', width: '100%', textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.8rem', border: 'none', cursor: 'pointer', background: isSelected ? `${accentColor}20` : 'transparent', color: isSelected ? accentColor : '#fff' }}
                     >
                       {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}
                       {sectionLabel(s)}
@@ -132,23 +132,28 @@ export default function Admin() {
   const [changeLog, setChangeLog] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [browseSongbookIds, setBrowseSongbookIds] = useState([]); // multi-select, for the song browse/list filter
+  const [browseSongbookMode, setBrowseSongbookMode] = useState('any');
   const [allTags, setAllTags] = useState([]); // system tags
   const [songTagLinks, setSongTagLinks] = useState([]); // song_id <-> tag_id rows
   const [browseTagFilter, setBrowseTagFilter] = useState([]); // multi-select tag ids
   const [browseFiltersExpanded, setBrowseFiltersExpanded] = useState(true); // collapse state - selections persist either way
   const [browseSections, setBrowseSections] = useState([]); // multi-select, real section ids
+  const [browseSectionMode, setBrowseSectionMode] = useState('any');
+  const [browseExcludeSections, setBrowseExcludeSections] = useState([]);
   // Each filter group (Songbook / Section / Platform Tag) collapses
   // independently rather than as one block, so a busy Filters panel doesn't
   // force everything open at once. A group defaults open only if it already
   // has something selected in it - otherwise closed, so the resting state
   // stays compact.
-  const [browseGroupExpanded, setBrowseGroupExpanded] = useState({ songbook: false, section: false, tags: false });
+  const [browseGroupExpanded, setBrowseGroupExpanded] = useState({ songbook: false, section: false, excludeSection: false, tags: false });
   // When multiple songbooks are selected, the Section dropdown groups its
   // results under a header per songbook (so a duplicate section name like
   // "A: Graces" appearing in two related songbooks is never ambiguous about
   // which one you're picking) - each of those per-songbook groups can also
-  // collapse independently, tracked here by songbook id.
+  // collapse independently, tracked here by songbook id. Include and Exclude
+  // are separate GroupedSectionFilter instances, so each tracks its own.
   const [collapsedSectionSongbooks, setCollapsedSectionSongbooks] = useState({});
+  const [collapsedExcludeSectionSongbooks, setCollapsedExcludeSectionSongbooks] = useState({});
   const [selectedSong, setSelectedSong] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [songEditTab, setSongEditTab] = useState('basic');
@@ -1957,15 +1962,20 @@ export default function Admin() {
 
   const filteredSongs = allSongs.filter(song => { 
     const pageInfo = getSongPage(song.id);
-    // Section filter - checks the song's entries in whichever songbook(s) are
-    // selected, using real section ids (works for any songbook, including
-    // ones with no letter/number codes, unlike the old hardcoded version).
-    if (browseSongbookIds.length > 0 || browseSections.length > 0) {
-      const entries = getSongSongbookEntries(song.id);
-      const relevant = browseSongbookIds.length > 0 ? entries.filter(e => browseSongbookIds.includes(e.songbook_id)) : entries;
-      if (browseSongbookIds.length > 0 && relevant.length === 0) return false;
-      if (browseSections.length > 0 && !relevant.some(e => browseSections.includes(e.section_id))) return false;
-    }
+    // Songbook / section (include + exclude) filtering now goes through the
+    // same shared songMatchesFilters used by songs.js, rather than a second,
+    // separately-maintained version of the same logic - this is also what
+    // brings any/all support here for free. Tag filtering stays as its own
+    // simple inline check below since it isn't changing.
+    if (!songMatchesFilters(
+      getSongSongbookEntries(song.id),
+      [], [],
+      {
+        songbookIds: browseSongbookIds, songbookMode: browseSongbookMode,
+        sections: browseSections, sectionMode: browseSectionMode,
+        excludeSections: browseExcludeSections
+      }
+    )) return false;
     // Tag filter - multi-select, OR logic (song needs at least one of the selected tags)
     if (browseTagFilter.length > 0) {
       const songTagIds = songTagLinks.filter(st => st.song_id === song.id).map(st => st.tag_id);
@@ -2136,7 +2146,7 @@ export default function Admin() {
           <div style={s.panel}>
             <input type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={s.searchInput} />
             {(() => {
-              const activeCount = browseSongbookIds.length + browseSections.length + browseTagFilter.length;
+              const activeCount = browseSongbookIds.length + browseSections.length + browseExcludeSections.length + browseTagFilter.length;
               return (
                 <div
                   onClick={() => setBrowseFiltersExpanded(prev => !prev)}
@@ -2159,6 +2169,7 @@ export default function Admin() {
               // filter behind a second click.
               const songbookOpen = browseGroupExpanded.songbook || browseSongbookIds.length > 0;
               const sectionOpen = browseGroupExpanded.section || browseSections.length > 0;
+              const excludeSectionOpen = browseGroupExpanded.excludeSection || browseExcludeSections.length > 0;
               const tagsOpen = browseGroupExpanded.tags || browseTagFilter.length > 0;
               const groupHeader = (key, label, count, isOpen) => (
                 <div
@@ -2171,30 +2182,47 @@ export default function Admin() {
                   <i className={`ti ti-chevron-${isOpen ? 'up' : 'down'}`} style={{ fontSize: '0.85em', color: '#838C95' }} aria-hidden="true"></i>
                 </div>
               );
+              // Compact any/all pair for a group's header row. Stops
+              // propagation so clicking it doesn't also toggle the group
+              // collapsed/open.
+              const anyAllToggle = (mode, setMode) => (
+                <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.7rem', marginTop: '0.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', cursor: 'pointer', color: '#838C95' }}>
+                    <input type="radio" checked={mode === 'any'} onChange={() => setMode('any')} /> any
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', cursor: 'pointer', color: '#838C95' }}>
+                    <input type="radio" checked={mode === 'all'} onChange={() => setMode('all')} /> all
+                  </label>
+                </div>
+              );
               return (
                 <>
                   <div style={{ marginBottom: '0.5rem' }}>
                     {groupHeader('songbook', 'Songbook', browseSongbookIds.length, songbookOpen)}
                     {songbookOpen && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem' }}>
-                        {filterableSongbooks.map(sb => {
-                          const isSelected = browseSongbookIds.includes(sb.id);
-                          return (
-                            <button
-                              key={sb.id}
-                              onClick={() => {
-                                const next = toggleInArray(browseSongbookIds, sb.id);
-                                setBrowseSongbookIds(next);
-                                // dropped songbooks may leave stale section ids selected - prune to what's still valid
-                                setBrowseSections(prev => prev.filter(id => getAvailableSections(songbookSections, next).some(s => s.id === id)));
-                              }}
-                              style={{ padding: '0.4rem 0.75rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: isSelected ? '#256B45' : '#334155', color: isSelected ? '#fff' : '#838C95' }}
-                            >
-                              {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>} {sb.name}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <>
+                        {browseSongbookIds.length > 1 && anyAllToggle(browseSongbookMode, setBrowseSongbookMode)}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem' }}>
+                          {filterableSongbooks.map(sb => {
+                            const isSelected = browseSongbookIds.includes(sb.id);
+                            return (
+                              <button
+                                key={sb.id}
+                                onClick={() => {
+                                  const next = toggleInArray(browseSongbookIds, sb.id);
+                                  setBrowseSongbookIds(next);
+                                  // dropped songbooks may leave stale section ids selected - prune to what's still valid
+                                  setBrowseSections(prev => prev.filter(id => getAvailableSections(songbookSections, next).some(s => s.id === id)));
+                                  setBrowseExcludeSections(prev => prev.filter(id => getAvailableSections(songbookSections, next).some(s => s.id === id)));
+                                }}
+                                style={{ padding: '0.4rem 0.75rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600', border: 'none', cursor: 'pointer', background: isSelected ? '#256B45' : '#334155', color: isSelected ? '#fff' : '#838C95' }}
+                              >
+                                {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>} {sb.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -2204,15 +2232,40 @@ export default function Admin() {
                       browseSongbookIds.length === 0 ? (
                         <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.375rem' }}>Select a songbook above to filter by section</div>
                       ) : (
+                        <>
+                          {browseSections.length > 1 && anyAllToggle(browseSectionMode, setBrowseSectionMode)}
+                          <div style={{ marginTop: '0.375rem' }}>
+                            <GroupedSectionFilter
+                              songbookIds={browseSongbookIds}
+                              songbooks={filterableSongbooks}
+                              songbookSections={songbookSections}
+                              selected={browseSections}
+                              onChange={setBrowseSections}
+                              collapsedSongbooks={collapsedSectionSongbooks}
+                              onToggleSongbookCollapse={(sbId) => setCollapsedSectionSongbooks(prev => ({ ...prev, [sbId]: !prev[sbId] }))}
+                            />
+                          </div>
+                        </>
+                      )
+                    )}
+                  </div>
+
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    {groupHeader('excludeSection', 'Exclude Section', browseExcludeSections.length, excludeSectionOpen)}
+                    {excludeSectionOpen && (
+                      browseSongbookIds.length === 0 ? (
+                        <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.375rem' }}>Select a songbook above to exclude a section</div>
+                      ) : (
                         <div style={{ marginTop: '0.375rem' }}>
                           <GroupedSectionFilter
                             songbookIds={browseSongbookIds}
                             songbooks={filterableSongbooks}
                             songbookSections={songbookSections}
-                            selected={browseSections}
-                            onChange={setBrowseSections}
-                            collapsedSongbooks={collapsedSectionSongbooks}
-                            onToggleSongbookCollapse={(sbId) => setCollapsedSectionSongbooks(prev => ({ ...prev, [sbId]: !prev[sbId] }))}
+                            selected={browseExcludeSections}
+                            onChange={setBrowseExcludeSections}
+                            collapsedSongbooks={collapsedExcludeSectionSongbooks}
+                            onToggleSongbookCollapse={(sbId) => setCollapsedExcludeSectionSongbooks(prev => ({ ...prev, [sbId]: !prev[sbId] }))}
+                            accentColor="#D45D25"
                           />
                         </div>
                       )
