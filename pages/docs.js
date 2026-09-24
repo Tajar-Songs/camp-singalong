@@ -294,9 +294,17 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
   const toggle = (value) => {
     onChange(selected.includes(value) ? selected.filter(v => v !== value) : [...selected, value]);
   };
-  const hidden = new Set([...selected, ...(otherSelected || [])]);
+  // otherSelected (e.g. already-excluded values, for an Include list) genuinely
+  // can't appear here, but selected values stay in the list rather than being
+  // filtered out - removing a clicked item from the list the moment it's
+  // selected made the list reflow and jump on every click, which is what
+  // made picking several things in a row feel tedious. Keeping the full list
+  // stable and just highlighting the selected ones (StoryGraph-style: like
+  // holding ctrl and clicking down a list, nothing disappears or shifts)
+  // lets someone click many items in a row without losing their place.
+  const otherHidden = new Set(otherSelected || []);
   const suggestions = options
-    .filter(o => !hidden.has(o) && (!inputValue || o.toLowerCase().includes(inputValue.toLowerCase())))
+    .filter(o => !otherHidden.has(o) && (!inputValue || o.toLowerCase().includes(inputValue.toLowerCase())))
     .slice(0, 50); // cap the visible list so a very large set doesn't render everything at once
   return (
     <div>
@@ -317,14 +325,25 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
         style={{ ...inputStyle, marginBottom: '0.375rem' }}
       />
       {isFocused && suggestions.length > 0 && (
-        <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.375rem' }}>
-          {suggestions.map(o => (
-            <button
-              key={o}
-              style={{ ...suggestionStyle, display: 'block', width: '100%', textAlign: 'left' }}
-              onClick={() => { toggle(o); setInputValue(''); }}
-            >{o}</button>
-          ))}
+        <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.375rem' }}>
+          {suggestions.map(o => {
+            const isSelected = selected.includes(o);
+            return (
+              <button
+                key={o}
+                style={{
+                  ...suggestionStyle, display: 'flex', alignItems: 'center', gap: '0.375rem',
+                  width: '100%', textAlign: 'left',
+                  background: isSelected ? '#3B9B7320' : (suggestionStyle?.background || 'transparent'),
+                  color: isSelected ? '#3B9B73' : suggestionStyle?.color,
+                }}
+                onClick={() => toggle(o)}
+              >
+                {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}
+                {o}
+              </button>
+            );
+          })}
         </div>
       )}
       {isFocused && suggestions.length === 0 && (
