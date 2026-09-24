@@ -310,7 +310,7 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
     <div>
       <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0 }}>
         {selected.map(v => (
-          <span key={v} style={chipStyle}>{v}<button style={chipRemoveStyle} onClick={() => toggle(v)}>×</button></span>
+          <span key={v} style={chipStyle}>{v}<button style={chipRemoveStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)}>×</button></span>
         ))}
       </div>
       <input
@@ -319,13 +319,22 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onFocus={() => setIsFocused(true)}
-        // Delay so a click on a suggestion (which fires its own onClick
-        // right after blur) still registers before the list disappears.
-        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        onBlur={() => setIsFocused(false)}
         style={{ ...inputStyle, marginBottom: '0.375rem' }}
       />
       {isFocused && suggestions.length > 0 && (
-        <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.375rem' }}>
+        <div
+          // preventDefault on mousedown (not click) stops the browser from
+          // ever moving focus off the input when someone clicks in here -
+          // so the input never blurs, the list never closes, and there's no
+          // timing race to get right. The old approach (a setTimeout delay
+          // after blur) worked for one quick click but not reliably for a
+          // second click that landed slightly later - the timeout could
+          // fire and close the list first, which is exactly what a video
+          // comparison against StoryGraph's version showed happening.
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.375rem' }}
+        >
           {suggestions.map(o => {
             const isSelected = selected.includes(o);
             return (
