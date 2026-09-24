@@ -45,11 +45,14 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
   // is an absolutely-positioned overlay, not in-flow - selecting an option
   // used to push everything below it down and immediately pull it back up
   // once the list re-filtered, which felt like the interaction kept
-  // resetting. As an overlay, the input and page stay still and multiple
-  // selections in a row feel continuous.
-  const hiddenValues = new Set([...selected, ...(otherSelected || [])]);
+  // resetting. On top of that, the list itself kept the full option set
+  // stable (StoryGraph-style: like holding ctrl and clicking down a list -
+  // selected items just highlight in place, nothing disappears or
+  // reflows), rather than removing each item the instant it's picked,
+  // which made picking several things in a row feel tedious.
+  const otherHiddenValues = new Set(otherSelected || []);
   const suggestions = options
-    .filter(o => !hiddenValues.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
+    .filter(o => !otherHiddenValues.has(o.value) && (!inputValue || o.label.toLowerCase().includes(inputValue.toLowerCase())))
     .slice(0, 50);
   const labelFor = (value) => options.find(o => o.value === value)?.label || value;
   return (
@@ -74,13 +77,24 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
       />
       {isFocused && (suggestions.length > 0 ? (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', maxHeight: '220px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50 }}>
-          {suggestions.map(o => (
-            <button
-              key={o.value}
-              onClick={() => { toggle(o.value); setInputValue(''); }}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.85rem', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
-            >{o.label}</button>
-          ))}
+          {suggestions.map(o => {
+            const isSelected = selected.includes(o.value);
+            return (
+              <button
+                key={o.value}
+                onClick={() => toggle(o.value)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.375rem', width: '100%', textAlign: 'left',
+                  padding: '0.5rem 0.75rem', fontSize: '0.85rem', border: 'none', cursor: 'pointer',
+                  background: isSelected ? `${accentColor}20` : 'transparent',
+                  color: isSelected ? accentColor : '#fff',
+                }}
+              >
+                {isSelected && <i className="ti ti-check" style={{ fontSize: '0.85em' }} aria-hidden="true"></i>}
+                {o.label}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', fontSize: '0.75rem', color: '#838C95', padding: '0.5rem 0.75rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', zIndex: 50 }}>No matches</div>
