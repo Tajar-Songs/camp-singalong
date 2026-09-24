@@ -60,7 +60,7 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
       {selected.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem' }}>
           {selected.map(v => (
-            <button key={v} onClick={() => toggle(v)} style={chipStyle(true)}>
+            <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={chipStyle(true)}>
               {labelFor(v)} ×
             </button>
           ))}
@@ -72,11 +72,19 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onFocus={() => setIsFocused(true)}
-        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        onBlur={() => setIsFocused(false)}
         style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', fontSize: '0.875rem', color: '#fff' }}
       />
       {isFocused && (suggestions.length > 0 ? (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', maxHeight: '220px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50 }}>
+        <div
+          // preventDefault on mousedown stops the input from ever blurring
+          // when clicking in here, so the list never closes and there's no
+          // timing race - see TypeaheadChips in docs.js for the full
+          // reasoning (a video comparison against StoryGraph showed the old
+          // blur-delay approach closing the list between clicks).
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '0.25rem', maxHeight: '220px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50 }}
+        >
           {suggestions.map(o => {
             const isSelected = selected.includes(o.value);
             return (
