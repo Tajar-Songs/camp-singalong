@@ -64,7 +64,13 @@ function AdaptiveMultiSelect({ options, selected, onChange, otherSelected, place
         // row below (My Songs, My Tags, the results list) further down the
         // page on every single click. Capping it keeps the rest of the
         // page stable regardless of how many things are selected.
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem', maxHeight: '5.5rem', overflowY: 'auto' }}>
+        // Fixed height (not max-height) the moment anything's selected -
+        // if it only capped growth, the first couple of chips would still
+        // nudge the input and dropdown down a line each time before the
+        // cap kicked in. Reserving the full height immediately means
+        // adding a 2nd or 3rd chip never resizes this box at all - it
+        // just scrolls within a box that's already the right size.
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '0.5rem', height: '5.5rem', overflowY: 'auto' }}>
           {selected.map(v => (
             <button key={v} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)} style={chipStyle(true)}>
               {labelFor(v)} ×
