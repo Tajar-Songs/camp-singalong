@@ -683,6 +683,7 @@ export default function Admin() {
   };
 
   const deleteAlias = async (alias) => {
+    if (!confirm(`Delete alias "${alias.alias_title}"?`)) return;
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_aliases', selectedSong.id, selectedSong.title, 'alias', alias.alias_title, null);
@@ -702,6 +703,7 @@ export default function Admin() {
 
   const deleteSecondarySection = async (section) => {
     if (section.is_primary) { showMessage('❌ Cannot delete primary section'); return; }
+    if (!confirm(`Delete section "${section.section}"?`)) return;
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', section.section, null);
@@ -1880,27 +1882,36 @@ export default function Admin() {
   const filteredChangeLog = changeLog.filter(log => { if (logTableFilter !== 'all' && log.table_name !== logTableFilter) return false; if (logUserFilter && !log.changed_by?.toLowerCase().includes(logUserFilter.toLowerCase())) return false; return true; });
 
   const s = {
-    container: { minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', padding: '1rem' },
+    container: { minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', padding: '1rem' },
     header: { maxWidth: '1400px', margin: '0 auto 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' },
-    nameInput: { padding: '0.5rem 1rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9', fontSize: '0.875rem' },
-    mainTabs: { display: 'flex', gap: '0.5rem', maxWidth: '1400px', margin: '0 auto 1rem' },
-    mainTab: (a) => ({ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', background: a ? '#22c55e' : '#334155', color: a ? '#fff' : '#94a3b8', fontWeight: 'bold', cursor: 'pointer' }),
+    nameInput: { padding: '0.5rem 1rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '0.875rem' },
+    // Connected segmented control (style guide: toggle controls vs. action
+    // buttons) - five genuinely separate views with no combined "All", so
+    // this is a real view-switch, not a filter.
+    mainTabs: { display: 'inline-flex', borderRadius: '0.5rem', border: '1px solid #334155', overflow: 'hidden', maxWidth: '1400px', margin: '0 auto 1rem' },
+    mainTab: (a, first) => ({ padding: '0.75rem 1.5rem', border: 'none', borderLeft: first ? 'none' : '1px solid #334155', background: a ? '#256B45' : '#334155', color: a ? '#fff' : '#838C95', fontWeight: 'bold', cursor: 'pointer' }),
     content: { maxWidth: '1400px', margin: '0 auto', display: 'grid', gridTemplateColumns: '350px 1fr', gap: '1rem', minHeight: '70vh' },
     panel: { background: '#1e293b', borderRadius: '0.75rem', padding: '1rem', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-    searchInput: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9', marginBottom: '0.75rem' },
+    searchInput: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', marginBottom: '0.75rem' },
     songList: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' },
-    songItem: (sel) => ({ padding: '0.75rem', borderRadius: '0.5rem', background: sel ? '#334155' : 'transparent', cursor: 'pointer', borderLeft: sel ? '3px solid #22c55e' : '3px solid transparent' }),
-    editTabs: { display: 'flex', gap: '0.25rem', marginBottom: '1rem', flexWrap: 'wrap' },
-    editTab: (a) => ({ padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', background: a ? '#22c55e' : '#334155', color: a ? '#fff' : '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }),
+    songItem: (sel) => ({ padding: '0.75rem', borderRadius: '0.5rem', background: sel ? '#334155' : 'transparent', cursor: 'pointer', borderLeft: sel ? '3px solid #3B9B73' : '3px solid transparent' }),
+    // Connected segmented control (style guide: toggle controls vs. action
+    // buttons) - each tab shows genuinely separate content with no combined
+    // view. Horizontal scroll rather than wrap: Song editing has 8 tabs,
+    // which could overflow on a narrow screen, and a wrapped connected
+    // control looks broken where the connection breaks across lines.
+    // Shared by both the Song (8-way) and Group (2-way) edit tabs.
+    editTabs: { display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', marginBottom: '1rem', borderRadius: '0.375rem', border: '1px solid #334155', width: 'fit-content', maxWidth: '100%' },
+    editTab: (a, first) => ({ padding: '0.5rem 1rem', border: 'none', borderLeft: first ? 'none' : '1px solid #334155', background: a ? '#256B45' : '#334155', color: a ? '#fff' : '#838C95', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }),
     formGroup: { marginBottom: '1rem' },
-    label: { display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8', marginBottom: '0.25rem', textTransform: 'uppercase' },
-    input: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9', fontSize: '0.875rem' },
-    textarea: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9', fontSize: '0.875rem', minHeight: '150px', fontFamily: 'inherit', resize: 'vertical' },
-    select: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9', fontSize: '0.875rem' },
-    btn: { padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', background: '#22c55e', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
-    btnSec: { padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', background: 'transparent', color: '#94a3b8', cursor: 'pointer' },
-    btnDanger: { padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', background: '#dc2626', color: '#fff', fontSize: '0.75rem', cursor: 'pointer' },
-    btnSmall: { padding: '0.25rem 0.5rem', borderRadius: '0.25rem', border: 'none', background: '#334155', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer' },
+    label: { display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#838C95', marginBottom: '0.25rem', textTransform: 'uppercase' },
+    input: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '0.875rem' },
+    textarea: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '0.875rem', minHeight: '150px', fontFamily: 'inherit', resize: 'vertical' },
+    select: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '0.875rem' },
+    btn: { padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', background: '#256B45', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+    btnSec: { padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: '1px solid #334155', background: 'transparent', color: '#838C95', cursor: 'pointer' },
+    btnDanger: { padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', background: '#C35522', color: '#fff', fontSize: '0.75rem', cursor: 'pointer' },
+    btnSmall: { padding: '0.25rem 0.5rem', borderRadius: '0.25rem', border: 'none', background: '#334155', color: '#838C95', fontSize: '0.75rem', cursor: 'pointer' },
     msg: { position: 'fixed', top: '1rem', right: '1rem', padding: '1rem', borderRadius: '0.5rem', background: '#1e293b', border: '1px solid #334155', zIndex: 1000 },
     card: { background: '#0f172a', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '0.5rem' },
     tag: { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#334155', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', marginRight: '0.5rem', marginBottom: '0.5rem' },
@@ -1909,9 +1920,9 @@ export default function Admin() {
   // Loading state
   if (!authChecked) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>🎵</div>
+          <div style={{ fontSize: '2rem', marginBottom: '1rem' }}><i className="ti ti-music" style={{ fontSize: '1em' }} aria-hidden="true"></i></div>
           <div>Loading...</div>
         </div>
       </div>
@@ -1921,16 +1932,16 @@ export default function Admin() {
   // Auth gate - require login
   if (!user) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
         <div style={{ background: '#1e293b', borderRadius: '1rem', padding: '2rem', maxWidth: '400px', width: '100%' }}>
           <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🎵</div>
+            <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}><i className="ti ti-music" style={{ fontSize: '1em' }} aria-hidden="true"></i></div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Song Admin</h1>
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Sign in to manage songs</p>
+            <p style={{ color: '#838C95', fontSize: '0.875rem' }}>Sign in to manage songs</p>
           </div>
           
-          {authError && <div style={{ background: '#7f1d1d', color: '#fecaca', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>{authError}</div>}
-          {authMessage && <div style={{ background: '#14532d', color: '#bbf7d0', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>{authMessage}</div>}
+          {authError && <div style={{ background: '#C3552220', color: '#D45D25', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>{authError}</div>}
+          {authMessage && <div style={{ background: '#256B4520', color: '#3B9B73', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>{authMessage}</div>}
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <input
@@ -1938,7 +1949,7 @@ export default function Admin() {
               placeholder="Email"
               value={authEmail}
               onChange={(e) => setAuthEmail(e.target.value)}
-              style={{ padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9' }}
+              style={{ padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
             />
             {authMode !== 'magic' && (
               <input
@@ -1947,13 +1958,13 @@ export default function Admin() {
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                style={{ padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#f1f5f9' }}
+                style={{ padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
               />
             )}
             <button
               onClick={authMode === 'magic' ? handleMagicLink : handleLogin}
               disabled={authLoading || !authEmail || (authMode !== 'magic' && !authPassword)}
-              style={{ padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: '#22c55e', color: '#fff', fontWeight: 'bold', cursor: 'pointer', opacity: authLoading ? 0.5 : 1 }}
+              style={{ padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: '#256B45', color: '#fff', fontWeight: 'bold', cursor: 'pointer', opacity: authLoading ? 0.5 : 1 }}
             >
               {authLoading ? 'Loading...' : authMode === 'magic' ? 'Send Magic Link' : 'Sign In'}
             </button>
@@ -1961,18 +1972,14 @@ export default function Admin() {
           
           <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155', textAlign: 'center' }}>
             {authMode === 'login' ? (
-              <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.875rem' }}>
+              <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#6882B6', cursor: 'pointer', fontSize: '0.875rem' }}>
                 Use magic link instead
               </button>
             ) : (
-              <button onClick={() => { setAuthMode('login'); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.875rem' }}>
+              <button onClick={() => { setAuthMode('login'); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#6882B6', cursor: 'pointer', fontSize: '0.875rem' }}>
                 Use password instead
               </button>
             )}
-          </div>
-          
-          <div style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-            <a href="/" style={{ color: '#94a3b8', fontSize: '0.875rem', textDecoration: 'none' }}>← Back to Singalong</a>
           </div>
         </div>
       </div>
@@ -1982,10 +1989,10 @@ export default function Admin() {
 // 1. NEW WAITING ROOM: If we have a user but no profile yet, show this first.
   if (user && !userProfile) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⌛</div>
-          <p style={{ color: '#94a3b8' }}>Verifying admin permissions...</p>
+          <p style={{ color: '#838C95' }}>Verifying admin permissions...</p>
         </div>
       </div>
     );
@@ -1994,14 +2001,13 @@ export default function Admin() {
   // 2. Access check: only show the page if the person holds at least one role.
   if (!hasAnyRole(userRoleKeys)) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
         <div style={{ background: '#1e293b', borderRadius: '1rem', padding: '2rem', maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}><i className="ti ti-lock" style={{ fontSize: '1em' }} aria-hidden="true"></i></div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Access Denied</h1>
-          <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1.5rem' }}>You need admin privileges to access this page.</p>
+          <p style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '1.5rem' }}>You need admin privileges to access this page.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <a href="/" style={{ padding: '0.75rem', borderRadius: '0.5rem', background: '#22c55e', color: '#fff', fontWeight: 'bold', textDecoration: 'none' }}>← Back to Singalong</a>
-            <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.875rem' }}>Sign out</button>
+            <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#D45D25', cursor: 'pointer', fontSize: '0.875rem' }}>Sign out</button>
           </div>
         </div>
       </div>
@@ -2012,16 +2018,16 @@ export default function Admin() {
   return (
     <div style={s.container}>
       <div style={{ padding: '1rem', maxWidth: '1400px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>🎵 Song Admin</h1>
+        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem', fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Song Admin</h1>
       </div>
 
       {message && <div style={s.msg}>{message}</div>}
 
       <div style={s.mainTabs}>
-        <button style={s.mainTab(mainTab === 'songs')} onClick={() => setMainTab('songs')}>Songs</button>
+        <button style={s.mainTab(mainTab === 'songs', true)} onClick={() => setMainTab('songs')}>Songs</button>
         <button style={s.mainTab(mainTab === 'groups')} onClick={() => setMainTab('groups')}>Groups</button>
         <button style={s.mainTab(mainTab === 'songbooks')} onClick={() => setMainTab('songbooks')}>Songbooks</button>
-        <button style={s.mainTab(mainTab === 'duplicates')} onClick={() => setMainTab('duplicates')}>Duplicates {(potentialDuplicates.filter(d => d.status === 'pending').length + autoDetectedDuplicates.length) > 0 && <span style={{ background: '#f59e0b', color: '#000', borderRadius: '9999px', padding: '0 0.4rem', fontSize: '0.7rem', marginLeft: '0.25rem' }}>{potentialDuplicates.filter(d => d.status === 'pending').length + autoDetectedDuplicates.length}</span>}</button>
+        <button style={s.mainTab(mainTab === 'duplicates')} onClick={() => setMainTab('duplicates')}>Duplicates {(potentialDuplicates.filter(d => d.status === 'pending').length + autoDetectedDuplicates.length) > 0 && <span style={{ background: '#C35522', color: '#fff', borderRadius: '9999px', padding: '0 0.4rem', fontSize: '0.7rem', marginLeft: '0.25rem' }}>{potentialDuplicates.filter(d => d.status === 'pending').length + autoDetectedDuplicates.length}</span>}</button>
         <button style={s.mainTab(mainTab === 'changelog')} onClick={() => setMainTab('changelog')}>Change Log</button>
       </div>
 
@@ -2036,10 +2042,10 @@ export default function Admin() {
                   onClick={() => setBrowseFiltersExpanded(prev => !prev)}
                   style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '0.25rem 0', marginBottom: '0.375rem', userSelect: 'none' }}
                 >
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#94a3b8' }}>
-                    🎯 Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#838C95' }}>
+                    <i className="ti ti-filter" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Filters{activeCount > 0 ? ` (${activeCount})` : ''}
                   </span>
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{browseFiltersExpanded ? '▲ Collapse' : '▼ Expand'}</span>
+                  <span style={{ fontSize: '0.7rem', color: '#838C95' }}>{browseFiltersExpanded ? '▲ Collapse' : '▼ Expand'}</span>
                 </div>
               );
             })()}
@@ -2072,14 +2078,14 @@ export default function Admin() {
                     <button
                       key={tag.id}
                       onClick={() => setBrowseTagFilter(prev => toggleInArray(prev, tag.id))}
-                      style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', border: isSelected ? '2px solid #22c55e' : (s.select.border || '1px solid #334155'), background: isSelected ? '#22c55e20' : (s.select.background || '#1e293b'), color: isSelected ? '#22c55e' : (s.select.color || '#fff') }}
+                      style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', border: isSelected ? '2px solid #3B9B73' : (s.select.border || '1px solid #334155'), background: isSelected ? '#3B9B7320' : (s.select.background || '#1e293b'), color: isSelected ? '#3B9B73' : (s.select.color || '#fff') }}
                     >
-                      {isSelected ? '✓ ' : ''}{tag.name}
+                      {isSelected && <i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i>} {tag.name}
                     </button>
                   );
                 })}
                 {browseTagFilter.length > 0 && (
-                  <button onClick={() => setBrowseTagFilter([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: '#94a3b8' }}>Clear</button>
+                  <button onClick={() => setBrowseTagFilter([])} style={{ ...s.select, cursor: 'pointer', fontSize: '0.75rem', padding: '0.3rem 0.5rem', color: '#838C95' }}>Clear</button>
                 )}
               </div>
             )}
@@ -2088,8 +2094,17 @@ export default function Admin() {
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <button style={s.btn} onClick={startAddNewSong}>+ Add Song</button>
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.5rem' }}>📄 lyrics 📝 notes 🎵 media ⚠️ flags 🏷️ aliases 👥 groups 📑 versions 📍 multi-section</div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{filteredSongs.length} songs</div>
+            <div style={{ fontSize: '0.7rem', color: '#838C95', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span><i className="ti ti-file-text" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> lyrics</span>
+              <span><i className="ti ti-notes" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> notes</span>
+              <span><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> media</span>
+              <span><i className="ti ti-flag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> flags</span>
+              <span><i className="ti ti-tag" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> aliases</span>
+              <span><i className="ti ti-users" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> groups</span>
+              <span><i className="ti ti-stack" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> versions</span>
+              <span><i className="ti ti-map-pin" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> multi-section</span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>{filteredSongs.length} songs</div>
             <div style={s.songList}>
               {filteredSongs.map(song => {
                 const pageInfo = getSongPage(song.id);
@@ -2118,13 +2133,20 @@ export default function Admin() {
                 return (
                   <div key={song.id} style={s.songItem(selectedSong?.id === song.id)} onClick={() => selectSong(song)}>
                     <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{song.title}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#838C95' }}>
                       {matchedEntry ? (
-                        <>Section {matchedSectionDef ? sectionLabel(matchedSectionDef) : matchedEntry.section} • Page {matchedEntry.page || 'N/A'} <span style={{ color: '#64748b' }}>(also {primarySectionDef ? sectionLabel(primarySectionDef) : pageInfo.section})</span></>
+                        <>Section {matchedSectionDef ? sectionLabel(matchedSectionDef) : matchedEntry.section} • Page {matchedEntry.page || 'N/A'} <span style={{ color: '#838C95' }}>(also {primarySectionDef ? sectionLabel(primarySectionDef) : pageInfo.section})</span></>
                       ) : (
                         <>Section {primarySectionDef ? sectionLabel(primarySectionDef) : pageInfo.section} • Page {displayPage}</>
                       )}
-                      {hasLyrics && ' 📄'}{hasNotes && ' 📝'}{hasMedia && ' 🎵'}{hasFlags && ' ⚠️'}{hasAliases && ' 🏷️'}{inGroups && ' 👥'}{multipleVersions && ' 📑'}{hasMultipleSections && ' 📍'}
+                      {hasLyrics && <i className="ti ti-file-text" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {hasNotes && <i className="ti ti-notes" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {hasMedia && <i className="ti ti-music" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {hasFlags && <i className="ti ti-flag" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {hasAliases && <i className="ti ti-tag" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {inGroups && <i className="ti ti-users" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {multipleVersions && <i className="ti ti-stack" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
+                      {hasMultipleSections && <i className="ti ti-map-pin" style={{ fontSize: '0.9em', marginLeft: '0.375rem' }} aria-hidden="true"></i>}
                     </div>
                   </div>
                 );
@@ -2133,16 +2155,16 @@ export default function Admin() {
           </div>
           <div style={s.panel}>
             {!selectedSong && !isAddingNew ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>Select a song to edit or click "Add Song"</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#838C95' }}>Select a song to edit or click "Add Song"</div>
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isAddingNew ? 'Add New Song' : formTitle}</h2>
-                  <button style={s.btnSec} onClick={cancelSongEdit}>✕ Close</button>
+                  <button style={s.btnSec} onClick={cancelSongEdit}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Close</button>
                 </div>
                 {!isAddingNew && (
                   <div style={s.editTabs}>
-                    <button style={s.editTab(songEditTab === 'basic')} onClick={() => setSongEditTab('basic')}>Basic Info</button>
+                    <button style={s.editTab(songEditTab === 'basic', true)} onClick={() => setSongEditTab('basic')}>Basic Info</button>
                     <button style={s.editTab(songEditTab === 'versions')} onClick={() => setSongEditTab('versions')}>Versions ({getSongVersions(selectedSong.id).length})</button>
                     <button style={s.editTab(songEditTab === 'notes')} onClick={() => setSongEditTab('notes')}>Notes ({getSongNotes(selectedSong.id).length})</button>
                     <button style={s.editTab(songEditTab === 'flags')} onClick={() => setSongEditTab('flags')}>Flags ({getSongFlags(selectedSong.id).length})</button>
@@ -2168,11 +2190,11 @@ export default function Admin() {
                       <div style={s.formGroup}><label style={s.label}>Tune Of</label><input type="text" value={formTuneOf} onChange={(e) => setFormTuneOf(e.target.value)} style={s.input} placeholder="If sung to the tune of another song" /></div>
                       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                         <button style={s.btn} onClick={saveSongBasic} disabled={saving}>{saving ? 'Saving...' : (isAddingNew ? 'Create Song' : 'Save Changes')}</button>
-                        {!isAddingNew && <button style={{ ...s.btnSec, background: '#78350f', borderColor: '#a16207' }} onClick={openDuplicateModal}>🔀 Flag as Duplicate</button>}
+                        {!isAddingNew && <button style={{ ...s.btnSec, background: '#C35522', borderColor: '#D45D25' }} onClick={openDuplicateModal}><i className="ti ti-arrows-shuffle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Flag as Duplicate</button>}
                       </div>
                       {!isAddingNew && getSongDuplicates(selectedSong.id).filter(d => d.status === 'pending').length > 0 && (
-                        <div style={{ background: '#78350f33', border: '1px solid #a16207', borderRadius: '0.5rem', padding: '0.75rem', marginTop: '0.5rem' }}>
-                          <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#fbbf24', marginBottom: '0.5rem' }}>⚠️ Potential Duplicate</div>
+                        <div style={{ background: '#C3552220', border: '1px solid #D45D25', borderRadius: '0.5rem', padding: '0.75rem', marginTop: '0.5rem' }}>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#D45D25', marginBottom: '0.5rem' }}><i className="ti ti-alert-triangle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Potential Duplicate</div>
                           {getSongDuplicates(selectedSong.id).filter(d => d.status === 'pending').map(dup => {
                             const otherSongId = dup.song_id_a === selectedSong.id ? dup.song_id_b : dup.song_id_a;
                             const otherSong = allSongs.find(s => s.id === otherSongId);
@@ -2191,7 +2213,7 @@ export default function Admin() {
                     <>
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddVersion}>+ Add Version</button>
                       {editingVersion && (
-                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #3B9B73', marginBottom: '1rem' }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div style={s.formGroup}>
                               <label style={s.label}>Label</label>
@@ -2216,7 +2238,7 @@ export default function Admin() {
                             <label style={s.label}>Attributes</label>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.25rem' }}>
                               {versionAttributeTypes.map(attr => (
-                                <label key={attr.value_key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.5rem', background: versionSelectedAttributes.includes(attr.value_key) ? '#22c55e33' : '#1e293b', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>
+                                <label key={attr.value_key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.5rem', background: versionSelectedAttributes.includes(attr.value_key) ? '#3B9B7333' : '#1e293b', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' }}>
                                   <input type="checkbox" checked={versionSelectedAttributes.includes(attr.value_key)} onChange={() => toggleVersionAttribute(attr.value_key)} />
                                   {attr.label}
                                 </label>
@@ -2247,15 +2269,15 @@ export default function Admin() {
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                                   <span style={{ fontWeight: 'bold' }}>{version.label || 'Untitled Version'}</span>
-                                  <span style={{ fontSize: '0.7rem', padding: '0.125rem 0.375rem', background: '#3b82f633', color: '#3b82f6', borderRadius: '0.25rem' }}>{versionTypes.find(t => t.value_key === version.version_type)?.label || version.version_type}</span>
-                                  {version.is_default_singalong && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#22c55e33', color: '#22c55e', borderRadius: '0.25rem' }}>★ Singalong</span>}
-                                  {version.is_default_explore && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#a855f733', color: '#a855f7', borderRadius: '0.25rem' }}>★ Explore</span>}
+                                  <span style={{ fontSize: '0.7rem', padding: '0.125rem 0.375rem', background: '#6882B633', color: '#6882B6', borderRadius: '0.25rem' }}>{versionTypes.find(t => t.value_key === version.version_type)?.label || version.version_type}</span>
+                                  {version.is_default_singalong && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#3B9B7333', color: '#3B9B73', borderRadius: '0.25rem' }}><i className="ti ti-star" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Singalong</span>}
+                                  {version.is_default_explore && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#3B9B7333', color: '#3B9B73', borderRadius: '0.25rem' }}><i className="ti ti-star" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Explore</span>}
                                 </div>
-                                {version.version_notes && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem' }}>{version.version_notes}</div>}
+                                {version.version_notes && <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>{version.version_notes}</div>}
                                 {attrs.length > 0 && (
                                   <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                                     {attrs.map(a => (
-                                      <span key={a.id} style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#64748b33', color: '#94a3b8', borderRadius: '0.25rem' }}>
+                                      <span key={a.id} style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#838C9533', color: '#838C95', borderRadius: '0.25rem' }}>
                                         {versionAttributeTypes.find(t => t.value_key === a.attribute_type)?.label || a.attribute_type}
                                       </span>
                                     ))}
@@ -2269,20 +2291,20 @@ export default function Admin() {
                                 <button style={s.btnDanger} onClick={() => deleteVersion(version)}>Delete</button>
                               </div>
                             </div>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto', background: '#0f172a', padding: '0.5rem', borderRadius: '0.25rem' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#838C95', whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto', background: '#0f172a', padding: '0.5rem', borderRadius: '0.25rem' }}>
                               {version.lyrics_content}
                             </div>
                           </div>
                         );
                       })}
-                      {getSongVersions(selectedSong.id).length === 0 && !editingVersion && <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No versions yet. Add one to include lyrics.</div>}
+                      {getSongVersions(selectedSong.id).length === 0 && !editingVersion && <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>No versions yet. Add one to include lyrics.</div>}
                     </>
                   )}
                   {songEditTab === 'notes' && !isAddingNew && (
                     <>
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddNote}>+ Add Note</button>
                       {editingNote && (
-                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #3B9B73', marginBottom: '1rem' }}>
                           <div style={s.formGroup}><label style={s.label}>Note Type</label><select value={noteType} onChange={(e) => setNoteType(e.target.value)} style={s.select}>{noteTypes.map(t => <option key={t.value_key} value={t.value_key}>{t.label}</option>)}</select></div>
                           <div style={s.formGroup}><label style={s.label}>Content</label><textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} style={s.textarea} /></div>
                           <div style={{ display: 'flex', gap: '0.5rem' }}><button style={s.btn} onClick={saveNote} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button><button style={s.btnSec} onClick={cancelNoteEdit}>Cancel</button></div>
@@ -2291,29 +2313,29 @@ export default function Admin() {
                       {getSongNotes(selectedSong.id).map(note => (
                         <div key={note.id} style={s.card}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#22c55e' }}>{noteTypes.find(t => t.value_key === note.note_type)?.label || note.note_type}</span>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#3B9B73' }}>{noteTypes.find(t => t.value_key === note.note_type)?.label || note.note_type}</span>
                             <div style={{ display: 'flex', gap: '0.25rem' }}><button style={s.btnSmall} onClick={() => startEditNote(note)}>Edit</button><button style={s.btnDanger} onClick={() => deleteNote(note)}>Delete</button></div>
                           </div>
                           <div style={{ fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>{note.note_content}</div>
                         </div>
                       ))}
-                      {getSongNotes(selectedSong.id).length === 0 && !editingNote && <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No notes yet</div>}
+                      {getSongNotes(selectedSong.id).length === 0 && !editingNote && <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>No notes yet</div>}
                     </>
                   )}
                   {songEditTab === 'flags' && !isAddingNew && (
                     <>
-                      <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#1e293b', borderRadius: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
-                        ⚠️ Flags are song-level warnings about content concerns. Use version attributes to mark when a specific version addresses these issues.
+                      <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#1e293b', borderRadius: '0.5rem', fontSize: '0.8rem', color: '#838C95' }}>
+                        <i className="ti ti-alert-triangle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Flags are song-level warnings about content concerns. Use version attributes to mark when a specific version addresses these issues.
                       </div>
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddFlag}>+ Add Flag</button>
                       {editingFlag && (
-                        <div style={{ ...s.card, border: '1px solid #f59e0b', marginBottom: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #D45D25', marginBottom: '1rem' }}>
                           <div style={s.formGroup}>
                             <label style={s.label}>Flag Type *</label>
                             <select value={flagType} onChange={(e) => setFlagType(e.target.value)} style={s.select}>
                               {flagTypes.map(t => <option key={t.value_key} value={t.value_key}>{t.label}</option>)}
                             </select>
-                            <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.25rem' }}>
+                            <div style={{ fontSize: '0.7rem', color: '#838C95', marginTop: '0.25rem' }}>
                               {flagTypes.find(t => t.value_key === flagType)?.description}
                             </div>
                           </div>
@@ -2333,17 +2355,17 @@ export default function Admin() {
                         </div>
                       )}
                       {getSongFlags(selectedSong.id).map(flag => (
-                        <div key={flag.id} style={{ ...s.card, borderLeft: '3px solid #f59e0b' }}>
+                        <div key={flag.id} style={{ ...s.card, borderLeft: '3px solid #D45D25' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#f59e0b' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#D45D25' }}>
                                   {flagTypes.find(t => t.value_key === flag.flag_type)?.label || flag.flag_type}
                                 </span>
                               </div>
                               <div style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>{flag.explanation}</div>
                               {flag.created_by && (
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.25rem' }}>Added by {flag.created_by}</div>
+                                <div style={{ fontSize: '0.7rem', color: '#838C95', marginTop: '0.25rem' }}>Added by {flag.created_by}</div>
                               )}
                             </div>
                             <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
@@ -2354,7 +2376,7 @@ export default function Admin() {
                         </div>
                       ))}
                       {getSongFlags(selectedSong.id).length === 0 && !editingFlag && (
-                        <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No flags. This song has no content concerns noted.</div>
+                        <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>No flags. This song has no content concerns noted.</div>
                       )}
                     </>
                   )}
@@ -2362,7 +2384,7 @@ export default function Admin() {
                     <>
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddMedia}>+ Add Media Link</button>
                       {editingMedia && (
-                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #3B9B73', marginBottom: '1rem' }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' }}>
                             <div style={s.formGroup}>
                               <label style={s.label}>Type *</label>
@@ -2406,15 +2428,15 @@ export default function Admin() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#22c55e' }}>{MEDIA_TYPES.find(t => t.value === media.media_type)?.label || media.media_type}</span>
-                                {media.display_explore && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#3b82f633', color: '#3b82f6', borderRadius: '0.25rem' }}>Explore</span>}
-                                {media.display_singalong && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#22c55e33', color: '#22c55e', borderRadius: '0.25rem' }}>Singalong</span>}
+                                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#3B9B73' }}>{MEDIA_TYPES.find(t => t.value === media.media_type)?.label || media.media_type}</span>
+                                {media.display_explore && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#6882B633', color: '#6882B6', borderRadius: '0.25rem' }}>Explore</span>}
+                                {media.display_singalong && <span style={{ fontSize: '0.6rem', padding: '0.125rem 0.375rem', background: '#3B9B7333', color: '#3B9B73', borderRadius: '0.25rem' }}>Singalong</span>}
                               </div>
                               {media.title && <div style={{ fontSize: '0.875rem', fontWeight: 'bold' }}>{media.title}</div>}
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                <a href={media.url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa' }}>{media.url}</a>
+                              <div style={{ fontSize: '0.75rem', color: '#838C95', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <a href={media.url} target="_blank" rel="noopener noreferrer" style={{ color: '#6882B6' }}>{media.url}</a>
                               </div>
-                              {media.description && <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>{media.description}</div>}
+                              {media.description && <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>{media.description}</div>}
                             </div>
                             <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
                               <button style={s.btnSmall} onClick={() => startEditMedia(media)}>Edit</button>
@@ -2423,14 +2445,14 @@ export default function Admin() {
                           </div>
                         </div>
                       ))}
-                      {getSongMedia(selectedSong.id).length === 0 && !editingMedia && <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No media links yet</div>}
+                      {getSongMedia(selectedSong.id).length === 0 && !editingMedia && <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>No media links yet</div>}
                     </>
                   )}
                   {songEditTab === 'songbooks' && !isAddingNew && (
                     <>
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddSongbookEntry}>+ Add to Songbook</button>
                       {editingSongbookEntry && (
-                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #3B9B73', marginBottom: '1rem' }}>
                           <div style={s.formGroup}>
                             <label style={s.label}>Songbook *</label>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -2472,7 +2494,7 @@ export default function Admin() {
                         const sbSections = getSongbookSections(sb.id);
                         return (
                           <div key={sb.id} style={{ marginBottom: '1rem' }}>
-                            <div style={{ fontWeight: 'bold', color: '#22c55e', marginBottom: '0.5rem' }}>{sb.name}</div>
+                            <div style={{ fontWeight: 'bold', color: '#3B9B73', marginBottom: '0.5rem' }}>{sb.name}</div>
                             {entries.map(entry => {
                               const sectionInfo = sbSections.find(s => s.id === entry.section_id);
                               const sectionDisplay = sectionInfo
@@ -2480,7 +2502,7 @@ export default function Admin() {
                                 : entry.section ? `Section ${entry.section}` : null;
                               return (
                                 <div key={entry.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem' }}>
-                                  <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
+                                  <div style={{ fontSize: '0.875rem', color: '#838C95' }}>
                                     {sectionDisplay && `${sectionDisplay} • `}Page {entry.page || 'N/A'}
                                   </div>
                                   <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -2495,7 +2517,7 @@ export default function Admin() {
                         );
                       })}
                       {getSongSongbookEntries(selectedSong.id).length === 0 && !editingSongbookEntry && (
-                        <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>Not in any songbooks yet</div>
+                        <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>Not in any songbooks yet</div>
                       )}
                     </>
                   )}
@@ -2505,21 +2527,21 @@ export default function Admin() {
                         {getSongAliases(selectedSong.id).map(alias => (
                           <div key={alias.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem' }}>
                             <span style={{ flex: 1 }}>{alias.alias_title}</span>
-                            <button style={s.btnSmall} onClick={() => swapAliasWithTitle(alias)} title="Promote to main title">🔀 Swap</button>
-                            <button onClick={() => deleteAlias(alias)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+                            <button style={s.btnSmall} onClick={() => swapAliasWithTitle(alias)} title="Promote to main title"><i className="ti ti-arrows-shuffle" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Swap</button>
+                            <button onClick={() => deleteAlias(alias)} style={{ background: 'none', border: 'none', color: '#D45D25', cursor: 'pointer', fontSize: '1rem' }}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i></button>
                           </div>
                         ))}
-                        {getSongAliases(selectedSong.id).length === 0 && <div style={{ color: '#64748b' }}>No aliases</div>}
+                        {getSongAliases(selectedSong.id).length === 0 && <div style={{ color: '#838C95' }}>No aliases</div>}
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem' }}><input type="text" value={newAlias} onChange={(e) => setNewAlias(e.target.value)} placeholder="Add alternate title..." style={s.input} /><button style={s.btn} onClick={addAlias} disabled={!newAlias.trim()}>Add</button></div>
                     </>
                   )}
                   {songEditTab === 'groups' && !isAddingNew && (
                     <>
-                      {getSongGroups(selectedSong.id).length === 0 ? <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>This song is not part of any groups</div> : getSongGroups(selectedSong.id).map(group => (
+                      {getSongGroups(selectedSong.id).length === 0 ? <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>This song is not part of any groups</div> : getSongGroups(selectedSong.id).map(group => (
                         <div key={group.id} style={s.card}>
                           <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>{group.group_name}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{group.group_type}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>{group.group_type}</div>
                           <button style={s.btnSmall} onClick={() => { setMainTab('groups'); selectGroup(group); }}>Edit Group →</button>
                         </div>
                       ))}
@@ -2537,28 +2559,28 @@ export default function Admin() {
           <div style={s.panel}>
             <input type="text" placeholder="Search groups..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={s.searchInput} />
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}><button style={s.btn} onClick={startAddNewGroup}>+ Add Group</button></div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{filteredGroups.length} groups</div>
+            <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>{filteredGroups.length} groups</div>
             <div style={s.songList}>
               {filteredGroups.map(group => (
                 <div key={group.id} style={s.songItem(selectedGroup?.id === group.id)} onClick={() => selectGroup(group)}>
                   <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{group.group_name}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{group.group_type} • {getGroupMembers(group.id).length} songs</div>
+                  <div style={{ fontSize: '0.75rem', color: '#838C95' }}>{group.group_type} • {getGroupMembers(group.id).length} songs</div>
                 </div>
               ))}
             </div>
           </div>
           <div style={s.panel}>
             {!selectedGroup && !isAddingNewGroup ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>Select a group to edit or click "Add Group"</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#838C95' }}>Select a group to edit or click "Add Group"</div>
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isAddingNewGroup ? 'Add New Group' : formGroupName}</h2>
-                  <button style={s.btnSec} onClick={cancelGroupEdit}>✕ Close</button>
+                  <button style={s.btnSec} onClick={cancelGroupEdit}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Close</button>
                 </div>
                 {!isAddingNewGroup && (
                   <div style={s.editTabs}>
-                    <button style={s.editTab(groupEditTab === 'info')} onClick={() => setGroupEditTab('info')}>Group Info</button>
+                    <button style={s.editTab(groupEditTab === 'info', true)} onClick={() => setGroupEditTab('info')}>Group Info</button>
                     <button style={s.editTab(groupEditTab === 'members')} onClick={() => setGroupEditTab('members')}>Members ({getGroupMembers(selectedGroup.id).length})</button>
                   </div>
                 )}
@@ -2583,7 +2605,7 @@ export default function Admin() {
                     <>
                       <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddMember}>+ Add Member Song</button>
                       {editingMember && (
-                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #3B9B73', marginBottom: '1rem' }}>
                           <div style={s.formGroup}><label style={s.label}>Song *</label><select value={memberSongId} onChange={(e) => setMemberSongId(e.target.value)} style={s.select}><option value="">Select a song...</option>{allSongs.map(so => <option key={so.id} value={so.id}>{so.title}</option>)}</select></div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div style={s.formGroup}><label style={s.label}>Position</label><input type="number" value={memberPosition} onChange={(e) => setMemberPosition(parseInt(e.target.value) || 1)} style={s.input} min="1" /></div>
@@ -2599,14 +2621,14 @@ export default function Admin() {
                         return (
                           <div key={member.id} style={s.card}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div><div style={{ fontWeight: 'bold' }}>{member.position_in_group}. {so?.title || 'Unknown'}</div><div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Role: {member.member_role || 'default'}{member.fragment_lyrics && ' • Has fragment lyrics'}</div></div>
+                              <div><div style={{ fontWeight: 'bold' }}>{member.position_in_group}. {so?.title || 'Unknown'}</div><div style={{ fontSize: '0.75rem', color: '#838C95' }}>Role: {member.member_role || 'default'}{member.fragment_lyrics && ' • Has fragment lyrics'}</div></div>
                               <div style={{ display: 'flex', gap: '0.25rem' }}><button style={s.btnSmall} onClick={() => startEditMember(member)}>Edit</button><button style={s.btnDanger} onClick={() => deleteMember(member)}>Remove</button></div>
                             </div>
-                            {member.fragment_lyrics && <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#64748b', whiteSpace: 'pre-wrap', maxHeight: '80px', overflow: 'hidden' }}>{member.fragment_lyrics.substring(0, 150)}...</div>}
+                            {member.fragment_lyrics && <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#838C95', whiteSpace: 'pre-wrap', maxHeight: '80px', overflow: 'hidden' }}>{member.fragment_lyrics.substring(0, 150)}...</div>}
                           </div>
                         );
                       })}
-                      {getGroupMembers(selectedGroup.id).length === 0 && !editingMember && <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No members yet</div>}
+                      {getGroupMembers(selectedGroup.id).length === 0 && !editingMember && <div style={{ color: '#838C95', textAlign: 'center', padding: '2rem' }}>No members yet</div>}
                     </>
                   )}
                 </div>
@@ -2622,12 +2644,12 @@ export default function Admin() {
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <button style={s.btn} onClick={startAddNewSongbook}>+ Add Songbook</button>
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{songbooks.length} songbooks</div>
+            <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>{songbooks.length} songbooks</div>
             <div style={s.songList}>
               {songbooks.map(sb => (
                 <div key={sb.id} style={s.songItem(selectedSongbook?.id === sb.id)} onClick={() => selectSongbook(sb)}>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{sb.name} {sb.is_primary && <span style={{ color: '#22c55e', fontSize: '0.75rem' }}>★ Primary</span>}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{sb.name} {sb.is_primary && <span style={{ color: '#3B9B73', fontSize: '0.75rem' }}><i className="ti ti-star" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Primary</span>}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#838C95' }}>
                     {sb.short_name} • {songbookEntries.filter(e => String(e.songbook_id) === String(sb.id)).length} songs
                     {sb.has_sections && ' • Has sections'}
                   </div>
@@ -2637,12 +2659,12 @@ export default function Admin() {
           </div>
           <div style={s.panel}>
             {!selectedSongbook && !isAddingNewSongbook ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>Select a songbook to edit or click "Add Songbook"</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#838C95' }}>Select a songbook to edit or click "Add Songbook"</div>
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{isAddingNewSongbook ? 'Add New Songbook' : formSongbookName}</h2>
-                  <button style={s.btnSec} onClick={cancelSongbookEdit}>✕ Close</button>
+                  <button style={s.btnSec} onClick={cancelSongbookEdit}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Close</button>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                   <div style={s.formGroup}>
@@ -2689,31 +2711,31 @@ export default function Admin() {
                           <div key={sec.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem' }}>
                             <span style={{ fontWeight: 'bold', width: '2rem' }}>{sec.section_code}</span>
                             <span style={{ flex: 1 }}>{sec.section_name}</span>
-                            <span style={{ color: '#64748b', fontSize: '0.75rem' }}>Order: {sec.display_order}</span>
+                            <span style={{ color: '#838C95', fontSize: '0.75rem' }}>Order: {sec.display_order}</span>
                             <button style={s.btnSmall} onClick={() => startEditSongbookSection(sec)}>Edit</button>
                             <button style={s.btnDanger} onClick={() => deleteSongbookSection(sec)}>×</button>
                           </div>
                         ))}
                         {getSongbookSections(selectedSongbook.id).length === 0 && (
-                          <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.5rem' }}>No sections defined. Songs will use the default section list.</div>
+                          <div style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '0.5rem' }}>No sections defined. Songs will use the default section list.</div>
                         )}
                         {!editingSongbookSection ? (
                           <button style={{ ...s.btnSmall, marginTop: '0.5rem' }} onClick={startAddSongbookSection}>+ Add Section</button>
                         ) : (
-                          <div style={{ ...s.card, border: '1px solid #22c55e', marginTop: '0.5rem', padding: '0.75rem' }}>
+                          <div style={{ ...s.card, border: '1px solid #3B9B73', marginTop: '0.5rem', padding: '0.75rem' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: selectedSongbook?.has_sections ? '80px 1fr 80px' : '1fr 80px', gap: '0.5rem', marginBottom: '0.5rem' }}>
                               {selectedSongbook?.has_sections && (
                                 <div>
-                                  <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Code</label>
+                                  <label style={{ fontSize: '0.75rem', color: '#838C95' }}>Code</label>
                                   <input type="text" value={sectionCode} onChange={(e) => setSectionCode(e.target.value.toUpperCase())} style={s.input} placeholder="e.g. A or RND" maxLength={3} />
                                 </div>
                               )}
                               <div>
-                                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Name *</label>
+                                <label style={{ fontSize: '0.75rem', color: '#838C95' }}>Name *</label>
                                 <input type="text" value={sectionName} onChange={(e) => setSectionName(e.target.value)} style={s.input} placeholder="Graces" />
                               </div>
                               <div>
-                                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Order</label>
+                                <label style={{ fontSize: '0.75rem', color: '#838C95' }}>Order</label>
                                 <input type="number" value={sectionOrder} onChange={(e) => setSectionOrder(e.target.value)} style={s.input} />
                               </div>
                             </div>
@@ -2721,7 +2743,7 @@ export default function Admin() {
                               <button style={{ ...s.btn, opacity: (saving || !sectionName.trim()) ? 0.5 : 1 }} onClick={saveSongbookSection} disabled={saving || !sectionName.trim()}>{saving ? 'Saving...' : 'Save'}</button>
                               <button style={s.btnSec} onClick={cancelSongbookSectionEdit}>Cancel</button>
                               {!sectionName.trim() && (
-                                <span style={{ fontSize: '0.75rem', color: '#f59e0b' }}>Name is required</span>
+                                <span style={{ fontSize: '0.75rem', color: '#D45D25' }}>Name is required</span>
                               )}
                             </div>
                           </div>
@@ -2735,7 +2757,7 @@ export default function Admin() {
                       {!addingSongToSongbook ? (
                         <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={startAddSongToSongbook}>+ Add Song to Songbook</button>
                       ) : (
-                        <div style={{ ...s.card, border: '1px solid #22c55e', marginBottom: '1rem', padding: '1rem' }}>
+                        <div style={{ ...s.card, border: '1px solid #3B9B73', marginBottom: '1rem', padding: '1rem' }}>
                           <div style={s.formGroup}>
                             <label style={s.label}>Search & Select Song *</label>
                             <input 
@@ -2754,7 +2776,7 @@ export default function Admin() {
                                   .map(s => (
                                     <div 
                                       key={s.id} 
-                                      style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid #1e293b', background: String(songbookAddSongId) === String(s.id) ? '#22c55e22' : 'transparent' }}
+                                      style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid #1e293b', background: String(songbookAddSongId) === String(s.id) ? '#3B9B7322' : 'transparent' }}
                                       onClick={() => { setSongbookAddSongId(s.id); setSongbookSongSearch(s.title); }}
                                     >
                                       {s.title}
@@ -2764,7 +2786,7 @@ export default function Admin() {
                               </div>
                             )}
                             {songbookAddSongId && (
-                              <div style={{ marginTop: '0.5rem', color: '#22c55e', fontSize: '0.875rem' }}>
+                              <div style={{ marginTop: '0.5rem', color: '#3B9B73', fontSize: '0.875rem' }}>
                                 Selected: {allSongs.find(s => String(s.id) === String(songbookAddSongId))?.title}
                               </div>
                             )}
@@ -2799,14 +2821,14 @@ export default function Admin() {
                             <div key={entry.id} style={{ padding: '0.5rem', background: '#0f172a', borderRadius: '0.25rem', marginBottom: '0.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span>{song?.title || group?.group_name || 'Unknown'}</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <span style={{ color: '#94a3b8' }}>{entry.section && `${entry.section}-`}{entry.page}</span>
+                                <span style={{ color: '#838C95' }}>{entry.section && `${entry.section}-`}{entry.page}</span>
                                 <button style={s.btnDanger} onClick={() => deleteSongbookEntry(entry)}>×</button>
                               </div>
                             </div>
                           );
                         })}
                         {songbookEntries.filter(e => String(e.songbook_id) === String(selectedSongbook.id)).length === 0 && (
-                          <div style={{ color: '#64748b', textAlign: 'center', padding: '1rem' }}>No songs in this songbook yet</div>
+                          <div style={{ color: '#838C95', textAlign: 'center', padding: '1rem' }}>No songs in this songbook yet</div>
                         )}
                       </div>
                     </>
@@ -2822,16 +2844,16 @@ export default function Admin() {
         <div style={s.content}>
           <div style={s.panel}>
             {autoDetectedDuplicates.length > 0 && (
-              <div style={{ background: '#3b82f622', border: '1px solid #3b82f6', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#3b82f6', marginBottom: '0.5rem' }}>
-                  🔍 Auto-Detected ({autoDetectedDuplicates.length})
+              <div style={{ background: '#6882B622', border: '1px solid #6882B6', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#6882B6', marginBottom: '0.5rem' }}>
+                  <i className="ti ti-search" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Auto-Detected ({autoDetectedDuplicates.length})
                 </div>
                 <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
                   {autoDetectedDuplicates.slice(0, 10).map((d, i) => (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: '#1e293b', borderRadius: '0.25rem', marginBottom: '0.25rem', fontSize: '0.75rem' }}>
                       <div style={{ flex: 1 }}>
-                        <div><strong>{d.songA.title}</strong> ↔ <strong>{d.songB.title}</strong></div>
-                        <div style={{ color: '#64748b', fontSize: '0.7rem' }}>{d.reason}</div>
+                        <div><strong>{d.songA.title}</strong> <i className="ti ti-arrows-left-right" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> <strong>{d.songB.title}</strong></div>
+                        <div style={{ color: '#838C95', fontSize: '0.7rem' }}>{d.reason}</div>
                       </div>
                       <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
                         <button style={s.btnSmall} onClick={() => saveAutoDetectedDuplicate(d.songA, d.songB, d.reason)}>Review</button>
@@ -2840,7 +2862,7 @@ export default function Admin() {
                     </div>
                   ))}
                   {autoDetectedDuplicates.length > 10 && (
-                    <div style={{ color: '#64748b', fontSize: '0.7rem', textAlign: 'center', padding: '0.5rem' }}>
+                    <div style={{ color: '#838C95', fontSize: '0.7rem', textAlign: 'center', padding: '0.5rem' }}>
                       + {autoDetectedDuplicates.length - 10} more suggestions
                     </div>
                   )}
@@ -2856,7 +2878,7 @@ export default function Admin() {
                 <option value="all">All</option>
               </select>
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{filteredDuplicates.length} items</div>
+            <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>{filteredDuplicates.length} items</div>
             <div style={s.songList}>
               {filteredDuplicates.map(dup => {
                 const songA = allSongs.find(s => s.id === dup.song_id_a);
@@ -2864,21 +2886,21 @@ export default function Admin() {
                 return (
                   <div key={dup.id} style={s.songItem(selectedDuplicate?.id === dup.id)} onClick={() => selectDuplicateForReview(dup)}>
                     <div style={{ fontWeight: 'bold', fontSize: '0.875rem' }}>{songA?.title || 'Unknown'}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#838C95' }}>
                       → {songB?.title || '(not specified)'}
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: dup.status === 'pending' ? '#f59e0b' : dup.status === 'merged' ? '#22c55e' : '#64748b', marginTop: '0.25rem' }}>
+                    <div style={{ fontSize: '0.7rem', color: dup.status === 'pending' ? '#D45D25' : dup.status === 'merged' ? '#3B9B73' : '#838C95', marginTop: '0.25rem' }}>
                       {dup.status} {dup.suggested_by === 'auto' && '• auto-detected'}
                     </div>
                   </div>
                 );
               })}
-              {filteredDuplicates.length === 0 && <div style={{ color: '#64748b', padding: '1rem', textAlign: 'center' }}>No duplicates found</div>}
+              {filteredDuplicates.length === 0 && <div style={{ color: '#838C95', padding: '1rem', textAlign: 'center' }}>No duplicates found</div>}
             </div>
           </div>
           <div style={s.panel}>
             {!selectedDuplicate ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>Select a duplicate to review</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#838C95' }}>Select a duplicate to review</div>
             ) : (() => {
               const songA = allSongs.find(s => s.id === selectedDuplicate.song_id_a);
               const songB = allSongs.find(s => s.id === selectedDuplicate.song_id_b);
@@ -2896,7 +2918,7 @@ export default function Admin() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Compare Songs</h2>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button style={s.btnSec} onClick={() => setSelectedDuplicate(null)}>✕ Close</button>
+                      <button style={s.btnSec} onClick={() => setSelectedDuplicate(null)}><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Close</button>
                     </div>
                   </div>
                   
@@ -2907,17 +2929,17 @@ export default function Admin() {
                   )}
                   
                   {selectedDuplicate.status === 'pending' && songB && (
-                    <div style={{ background: '#22c55e22', border: '1px solid #22c55e', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ background: '#3B9B7322', border: '1px solid #3B9B73', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem' }}>
                       <div style={{ fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Choose primary song (the one to keep):</div>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button 
-                          style={{ ...s.btn, flex: 1, background: mergePrimarySongId === songA?.id ? '#22c55e' : '#334155' }} 
+                          style={{ ...s.btn, flex: 1, background: mergePrimarySongId === songA?.id ? '#3B9B73' : '#334155' }} 
                           onClick={() => setMergePrimarySongId(songA?.id)}
                         >
                           Keep "{songA?.title}"
                         </button>
                         <button 
-                          style={{ ...s.btn, flex: 1, background: mergePrimarySongId === songB?.id ? '#22c55e' : '#334155' }} 
+                          style={{ ...s.btn, flex: 1, background: mergePrimarySongId === songB?.id ? '#3B9B73' : '#334155' }} 
                           onClick={() => setMergePrimarySongId(songB?.id)}
                         >
                           Keep "{songB?.title}"
@@ -2928,17 +2950,17 @@ export default function Admin() {
                   
                   <div style={{ display: 'grid', gridTemplateColumns: songB ? '1fr 1fr' : '1fr', gap: '1rem', marginBottom: '1rem' }}>
                     {/* Song A */}
-                    <div style={{ background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', border: mergePrimarySongId === songA?.id ? '2px solid #22c55e' : '1px solid #334155' }}>
+                    <div style={{ background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', border: mergePrimarySongId === songA?.id ? '2px solid #3B9B73' : '1px solid #334155' }}>
                       <div style={{ fontWeight: 'bold', fontSize: '1rem', marginBottom: '0.5rem' }}>{songA?.title || 'Unknown'}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
                         Section {songA ? getSongPage(songA.id).section : ''} • Page {(songA && getSongPage(songA.id).page) || 'N/A'}
                       </div>
-                      {songA?.author && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Author: {songA.author}</div>}
-                      {songA?.year_written && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Year: {songA.year_written}</div>}
+                      {songA?.author && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Author: {songA.author}</div>}
+                      {songA?.year_written && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Year: {songA.year_written}</div>}
                       <div style={{ marginTop: '0.75rem', fontSize: '0.75rem' }}>
-                        <div style={{ color: '#64748b' }}>📄 {songAVersions.length} version(s) • 📝 {songANotes.length} note(s) • 🎵 {songAMedia.length} media • 👥 {songAGroups.length} group(s)</div>
+                        <div style={{ color: '#838C95' }}><i className="ti ti-stack" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songAVersions.length} version(s) • <i className="ti ti-notes" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songANotes.length} note(s) • <i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songAMedia.length} media • <i className="ti ti-users" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songAGroups.length} group(s)</div>
                         {songAGroups.length > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                          <div style={{ fontSize: '0.7rem', color: '#838C95', marginTop: '0.25rem' }}>
                             Groups: {songAGroups.map(g => g.group_name).join(', ')}
                           </div>
                         )}
@@ -2953,17 +2975,17 @@ export default function Admin() {
                     
                     {/* Song B */}
                     {songB ? (
-                      <div style={{ background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', border: mergePrimarySongId === songB?.id ? '2px solid #22c55e' : '1px solid #334155' }}>
+                      <div style={{ background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', border: mergePrimarySongId === songB?.id ? '2px solid #3B9B73' : '1px solid #334155' }}>
                         <div style={{ fontWeight: 'bold', fontSize: '1rem', marginBottom: '0.5rem' }}>{songB?.title || 'Unknown'}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
                           Section {songB ? getSongPage(songB.id).section : ''} • Page {(songB && getSongPage(songB.id).page) || 'N/A'}
                         </div>
-                        {songB?.author && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Author: {songB.author}</div>}
-                        {songB?.year_written && <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Year: {songB.year_written}</div>}
+                        {songB?.author && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Author: {songB.author}</div>}
+                        {songB?.year_written && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Year: {songB.year_written}</div>}
                         <div style={{ marginTop: '0.75rem', fontSize: '0.75rem' }}>
-                          <div style={{ color: '#64748b' }}>📄 {songBVersions.length} version(s) • 📝 {songBNotes.length} note(s) • 🎵 {songBMedia.length} media • 👥 {songBGroups.length} group(s)</div>
+                          <div style={{ color: '#838C95' }}><i className="ti ti-stack" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songBVersions.length} version(s) • <i className="ti ti-notes" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songBNotes.length} note(s) • <i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songBMedia.length} media • <i className="ti ti-users" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {songBGroups.length} group(s)</div>
                           {songBGroups.length > 0 && (
-                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                            <div style={{ fontSize: '0.7rem', color: '#838C95', marginTop: '0.25rem' }}>
                               Groups: {songBGroups.map(g => g.group_name).join(', ')}
                             </div>
                           )}
@@ -2976,7 +2998,7 @@ export default function Admin() {
                         <button style={{ ...s.btnSmall, marginTop: '0.5rem' }} onClick={() => { setMainTab('songs'); selectSong(songB); }}>View Full Song →</button>
                       </div>
                     ) : (
-                      <div style={{ background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                      <div style={{ background: '#0f172a', borderRadius: '0.5rem', padding: '1rem', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#838C95' }}>
                         Other song not specified
                       </div>
                     )}
@@ -2990,7 +3012,7 @@ export default function Admin() {
                   )}
                   
                   {selectedDuplicate.status !== 'pending' && (
-                    <div style={{ textAlign: 'center', padding: '1rem', color: '#64748b', fontSize: '0.8rem' }}>
+                    <div style={{ textAlign: 'center', padding: '1rem', color: '#838C95', fontSize: '0.8rem' }}>
                       This duplicate was marked as "{selectedDuplicate.status}" 
                       {selectedDuplicate.resolved_by && ` by ${selectedDuplicate.resolved_by}`}
                       {selectedDuplicate.resolved_at && ` on ${new Date(selectedDuplicate.resolved_at).toLocaleDateString()}`}
@@ -3013,12 +3035,12 @@ export default function Admin() {
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                <thead><tr>{['Time', 'Action', 'Table', 'Song/Item', 'Field', 'Old', 'New', 'By'].map(h => <th key={h} style={{ textAlign: 'left', padding: '0.75rem', borderBottom: '1px solid #334155', color: '#94a3b8' }}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Time', 'Action', 'Table', 'Song/Item', 'Field', 'Old', 'New', 'By'].map(h => <th key={h} style={{ textAlign: 'left', padding: '0.75rem', borderBottom: '1px solid #334155', color: '#838C95' }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {filteredChangeLog.map(log => (
                     <tr key={log.id}>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{new Date(log.created_at).toLocaleString()}</td>
-                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}><span style={{ padding: '0.125rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', background: log.action === 'add' ? '#22c55e33' : log.action === 'delete' ? '#dc262633' : '#3b82f633', color: log.action === 'add' ? '#22c55e' : log.action === 'delete' ? '#dc2626' : '#3b82f6' }}>{log.action}</span></td>
+                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}><span style={{ padding: '0.125rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', background: log.action === 'add' ? '#3B9B7333' : log.action === 'delete' ? '#C3552233' : '#6882B633', color: log.action === 'add' ? '#3B9B73' : log.action === 'delete' ? '#C35522' : '#6882B6' }}>{log.action}</span></td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{log.table_name || 'songs'}</td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{log.song_title}</td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{log.field_changed || '-'}</td>
@@ -3030,7 +3052,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
-            {filteredChangeLog.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No changes found</div>}
+            {filteredChangeLog.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: '#838C95' }}>No changes found</div>}
           </div>
         </div>
       )}
@@ -3059,13 +3081,13 @@ export default function Admin() {
                       onMouseOver={(e) => e.currentTarget.style.background = '#334155'}
                       onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      {song.title} <span style={{ color: '#64748b', fontSize: '0.75rem' }}>({getSongPage(song.id).section}-{getSongPage(song.id).page})</span>
+                      {song.title} <span style={{ color: '#838C95', fontSize: '0.75rem' }}>({getSongPage(song.id).section}-{getSongPage(song.id).page})</span>
                     </div>
                   ))}
                 </div>
               )}
               {selectedDuplicateOf && (
-                <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#22c55e22', borderRadius: '0.25rem', fontSize: '0.8rem' }}>
+                <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#3B9B7322', borderRadius: '0.25rem', fontSize: '0.8rem' }}>
                   Selected: <strong>{selectedDuplicateOf.title}</strong>
                 </div>
               )}
