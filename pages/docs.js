@@ -312,7 +312,12 @@ function TypeaheadChips({ options, selected, onChange, otherSelected, placeholde
           this, each additional selection wraps to a new line and pushes
           everything below (other filter groups, the results list) further
           down the page on every single click. */}
-      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, maxHeight: selected.length > 0 ? '5.5rem' : 'auto', overflowY: 'auto' }}>
+      {/* Fixed height (not max-height) the moment anything's selected - if
+          it only capped growth, the first couple of chips would still
+          nudge the input and dropdown down a line each time before the cap
+          kicked in. Reserving the full height immediately means adding a
+          2nd or 3rd chip never resizes this box at all. */}
+      <div style={{ marginBottom: selected.length > 0 ? '0.375rem' : 0, height: selected.length > 0 ? '5.5rem' : 'auto', overflowY: 'auto' }}>
         {selected.map(v => (
           <span key={v} style={chipStyle}>{v}<button style={chipRemoveStyle} onMouseDown={(e) => e.preventDefault()} onClick={() => toggle(v)}>×</button></span>
         ))}
