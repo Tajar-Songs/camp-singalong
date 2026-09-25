@@ -66,6 +66,18 @@ const LIST_TITLES = {
 const prettifyKey = (key) => key.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 const slugify = (label) => label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
+// Icon picker is still emoji, matching the existing data (option_lists.icon
+// stores an emoji character) - switching this to Tabler icon names is the
+// bigger, separate fix flagged in the handoff (it's the actual root of why
+// songs.js needs its StatusIcon translation layer). This restores the
+// picker that existed on the old option-lists.js page, unchanged in kind.
+const ICON_CHOICES = ['⭐', '🌟', '✨', '💫', '❤️', '💔', '👍', '👎', '✅', '❌', '✓', '🔥', '🎯', '🎓', '🎤', '👂', '📚', '📖', '🔖', '✏️', '❓', '🎵', '🎶', '💡', '🏆', '⏳'];
+// Presets now draw from the site's own documented accent palette (Forest
+// Green, Twilight Blue, Dusty Purple, Campfire Orange, Stone Grey) instead
+// of the old generic rainbow set, so a newly-colored status option is more
+// likely to feel like it belongs on the site rather than an arbitrary hue.
+const COLOR_PRESETS = ['#3B9B73', '#6882B6', '#8F74B4', '#D45D25', '#838C95'];
+
 export default function Settings() {
   const [user, setUser] = useState(null);
   const [userRoleKeys, setUserRoleKeys] = useState([]);
@@ -273,19 +285,53 @@ export default function Settings() {
 
     const [newLabel, setNewLabel] = useState('');
     const [newDescription, setNewDescription] = useState('');
+    const [newIcon, setNewIcon] = useState('');
+    const [newColor, setNewColor] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [editLabel, setEditLabel] = useState('');
     const [editDescription, setEditDescription] = useState('');
+    const [editIcon, setEditIcon] = useState('');
+    const [editColor, setEditColor] = useState('');
+    const [pickerOpenFor, setPickerOpenFor] = useState(null);
 
     const startEdit = (item) => {
       setEditingId(item.id);
       setEditLabel(item.label);
       setEditDescription(item.description || '');
+      setEditIcon(item.icon || '');
+      setEditColor(item.color || '');
     };
     const saveEdit = async (item) => {
-      await updateOption(item, { label: editLabel.trim(), description: editDescription.trim() || null });
+      await updateOption(item, { label: editLabel.trim(), description: editDescription.trim() || null, icon: editIcon || null, color: editColor || null });
       setEditingId(null);
+      setPickerOpenFor(null);
     };
+
+    const IconPicker = ({ current, onPick }) => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: '0.25rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.5rem', marginTop: '0.375rem' }}>
+        {ICON_CHOICES.map(ic => (
+          <button
+            key={ic}
+            onClick={() => onPick(ic)}
+            style={{ fontSize: '1.1rem', padding: '0.25rem', borderRadius: '0.25rem', border: current === ic ? `2px solid ${accent}` : '1px solid transparent', background: current === ic ? `${accent}20` : 'transparent', cursor: 'pointer' }}
+          >
+            {ic}
+          </button>
+        ))}
+      </div>
+    );
+    const ColorPresets = ({ current, onPick }) => (
+      <div style={{ display: 'flex', gap: '0.375rem', marginTop: '0.375rem' }}>
+        {COLOR_PRESETS.map(c => (
+          <button
+            key={c}
+            onClick={() => onPick(c)}
+            title={c}
+            style={{ width: '1.5rem', height: '1.5rem', borderRadius: '50%', background: c, border: current === c ? '2px solid #fff' : '2px solid transparent', cursor: 'pointer' }}
+          />
+        ))}
+      </div>
+    );
 
     return (
       <div style={{ marginBottom: '0.5rem', border: '1px solid #1e293b', borderRadius: '0.5rem', overflow: 'hidden' }}>
@@ -308,23 +354,34 @@ export default function Settings() {
               <div key={item.id} style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.65rem', marginBottom: '0.5rem' }}>
                 {editingId === item.id ? (
                   <div>
-                    <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} style={{ ...inputStyle, maxWidth: 'none', marginBottom: '0.4rem' }} />
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <button
+                        onClick={() => setPickerOpenFor(pickerOpenFor === item.id ? null : item.id)}
+                        style={{ fontSize: '1.15rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.375rem 0.5rem', cursor: 'pointer', minWidth: '2.5rem' }}
+                      >
+                        {editIcon || '—'}
+                      </button>
+                      <input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} style={{ ...inputStyle, maxWidth: 'none', flex: 1 }} />
+                    </div>
+                    {pickerOpenFor === item.id && <IconPicker current={editIcon} onPick={(ic) => { setEditIcon(ic); setPickerOpenFor(null); }} />}
+                    <ColorPresets current={editColor} onPick={setEditColor} />
                     <input
                       placeholder="Description (optional)"
                       value={editDescription}
                       onChange={(e) => setEditDescription(e.target.value)}
-                      style={{ ...inputStyle, maxWidth: 'none', fontSize: '0.8rem' }}
+                      style={{ ...inputStyle, maxWidth: 'none', fontSize: '0.8rem', marginTop: '0.5rem' }}
                     />
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                       <button onClick={() => saveEdit(item)} style={{ background: '#256B45', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.375rem 0.75rem', cursor: 'pointer', fontSize: '0.8rem' }}>Save</button>
-                      <button onClick={() => setEditingId(null)} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.375rem 0.75rem', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
+                      <button onClick={() => { setEditingId(null); setPickerOpenFor(null); }} style={{ background: '#334155', color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.375rem 0.75rem', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
                     </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span style={{ fontWeight: 'bold' }}>{item.label}</span>
+                        {item.icon && <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>}
+                        <span style={{ fontWeight: 'bold', color: item.color || '#fff' }}>{item.label}</span>
                         <span style={{ fontSize: '0.7rem', color: '#838C95' }}>({item.value_key})</span>
                       </div>
                       {item.description && <div style={{ fontSize: '0.8rem', color: '#838C95', marginTop: '0.2rem' }}>{item.description}</div>}
@@ -345,6 +402,12 @@ export default function Settings() {
             {isAdmin && (
               <div style={{ background: '#1e293b', border: '1px dashed #334155', borderRadius: '0.5rem', padding: '0.65rem' }}>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => setPickerOpenFor(pickerOpenFor === 'new' ? null : 'new')}
+                    style={{ fontSize: '1.15rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.375rem 0.5rem', cursor: 'pointer', minWidth: '2.5rem' }}
+                  >
+                    {newIcon || '—'}
+                  </button>
                   <input
                     placeholder="New option label..."
                     value={newLabel}
@@ -352,13 +415,15 @@ export default function Settings() {
                     style={{ ...inputStyle, maxWidth: 'none', flex: 1 }}
                   />
                   <button
-                    onClick={async () => { await addOption(listKey, newLabel, newDescription, null, null); setNewLabel(''); setNewDescription(''); }}
+                    onClick={async () => { await addOption(listKey, newLabel, newDescription, newIcon, newColor); setNewLabel(''); setNewDescription(''); setNewIcon(''); setNewColor(''); }}
                     disabled={!newLabel.trim()}
                     style={{ background: accent, color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.5rem 0.9rem', cursor: 'pointer', opacity: newLabel.trim() ? 1 : 0.5, whiteSpace: 'nowrap' }}
                   >
                     <i className="ti ti-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Add
                   </button>
                 </div>
+                {pickerOpenFor === 'new' && <IconPicker current={newIcon} onPick={(ic) => { setNewIcon(ic); setPickerOpenFor(null); }} />}
+                <ColorPresets current={newColor} onPick={setNewColor} />
                 <input
                   placeholder="Description (optional)"
                   value={newDescription}
