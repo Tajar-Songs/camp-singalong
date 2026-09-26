@@ -838,7 +838,16 @@ export default function Docs() {
           await clearDraft(selectedDoc.id);
           showMessage('✅ Saved!'); await loadDocs(); setSelectedDoc({ ...selectedDoc, ...docData }); setEditMode(false);
         }
-        else { showMessage('❌ Error saving'); }
+        else {
+          // Surface the actual database error (e.g. a slug uniqueness
+          // violation) instead of a generic message - the create path above
+          // already did this; the update path was silently swallowing detail
+          // that would have made a problem like a slug collision immediately
+          // obvious instead of a fast, undiagnoseable toast.
+          let detail = 'Could not save';
+          try { const error = await res.json(); detail = error.message || detail; } catch (e) { /* response body wasn't JSON */ }
+          showMessage(`❌ Error: ${detail}`);
+        }
       }
     } catch (error) { console.error(error); showMessage('❌ Error saving'); }
     setSaving(false);
@@ -863,13 +872,21 @@ export default function Docs() {
 
   const saveDraft = async () => {
     if (!currentUserId) return;
+    // Guard against the existing-doc path ever falling through to a null
+    // record_id the way the new-doc path already explicitly avoids (see the
+    // comment below) - selectedDoc being unset here means the editor is in
+    // an inconsistent state, and saving now would silently create an
+    // orphaned draft (not tied to any real doc, and not findable by
+    // findDraft() for the doc the person actually thinks they're editing).
+    // Skipping this autosave is safe; the next successful one will catch up.
+    if (!isCreatingNew && !selectedDoc?.id) return;
     setDraftStatus('saving');
     try {
       const draftRow = {
         table_name: 'docs',
         // Use the stable pending id for an unpublished new doc, never null -
         // see pendingNewDocIdRef's comment for why null breaks the upsert.
-        record_id: isCreatingNew ? pendingNewDocIdRef.current : (selectedDoc?.id || null),
+        record_id: isCreatingNew ? pendingNewDocIdRef.current : selectedDoc.id,
         user_id: currentUserId,
         content: currentDraftContent(),
         updated_at: new Date().toISOString()
