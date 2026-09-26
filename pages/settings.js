@@ -31,6 +31,14 @@ const PERMISSION_SECTION = {
   'settings.health': 'platform_admin'
 };
 const ADMIN_ROLE_ORDER = ['platform_admin', 'song_admin', 'governance_admin'];
+// The one permission that governs everything in each admin section. The
+// view-only banner is decided once per section from this - not per item -
+// so nothing in a section can be missed.
+const SECTION_PERMISSION = {
+  platform_admin: 'settings.health',
+  song_admin: 'settings.song',
+  governance_admin: 'permissions.manage'
+};
 
 const CATEGORY_LABELS = {
   access_safety: 'Access & Safety',
@@ -562,7 +570,6 @@ export default function Settings() {
         >
           <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>
             {listTitle(listKey)} <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>({items.length})</span>
-            {!canEdit && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.75rem' }}> · view only</span>}
           </span>
           <i className={`ti ti-chevron-${isOpen ? 'up' : 'down'}`} style={{ fontSize: '0.85em', color: GREY_TEXT }} aria-hidden="true"></i>
         </button>
@@ -574,7 +581,9 @@ export default function Settings() {
                 <span>This list isn't assigned a managing permission yet, so nobody can change it. Assigning one needs "Manage permissions".</span>
               </p>
             )}
-            {info && !canEdit && <ViewOnly permissionKey={info.required_permission} />}
+            {/* Normally covered by the section's banner. Only shown when this
+                list needs a different permission than its section. */}
+            {info && !canEdit && info.required_permission !== SECTION_PERMISSION[sectionForList(listKey)] && <ViewOnly permissionKey={info.required_permission} />}
             {/* Existing values always shown before the add-new form, so
                 someone can see what's already there before typing a
                 near-duplicate (style guide: Preventing near-duplicate values). */}
@@ -753,7 +762,6 @@ export default function Settings() {
     return (
       <div>
         <h2 style={subheadStyle}>Which roles have each permission</h2>
-        {!canManagePermissions && <ViewOnly permissionKey="permissions.manage" />}
         <Matrix
           caption="Permissions by role"
           table="role_permissions"
@@ -824,6 +832,9 @@ export default function Settings() {
           const hasContent = hasSettings || lists.length > 0 || !!role;
           const accent = sectionAccent(section);
           const isOpen = !!expandedSections[section];
+          // One decision per section: can this person change what's in it?
+          const sectionPermission = SECTION_PERMISSION[section];
+          const sectionViewOnly = !!sectionPermission && !can(sectionPermission);
           return (
             <div key={section} style={{ marginBottom: '1rem', border: '1px solid #1e293b', borderRadius: '0.75rem', overflow: 'hidden' }}>
               <button
@@ -834,11 +845,22 @@ export default function Settings() {
                 <span style={{ fontSize: '1rem', fontWeight: 'bold', color: accent }}>
                   {sectionLabel(section)}
                   {role?.key === 'governance_admin' && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}> · a rare, high-trust role</span>}
+                  {sectionViewOnly && (
+                    <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.75rem', marginLeft: '0.5rem' }}>
+                      <i className="ti ti-eye" aria-hidden="true"></i> view only
+                    </span>
+                  )}
                 </span>
                 <i className={`ti ti-chevron-${isOpen ? 'up' : 'down'}`} style={{ color: GREY_TEXT }} aria-hidden="true"></i>
               </button>
               {isOpen && (
                 <div style={{ padding: '1rem', borderTop: '1px solid #1e293b' }}>
+                  {sectionViewOnly && (
+                    <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.65rem 0.8rem', fontSize: '0.85rem', margin: '0 0 1rem 0' }}>
+                      <i className="ti ti-eye" style={{ color: GREY_TEXT, marginTop: '0.1rem' }} aria-hidden="true"></i>
+                      <span>Everything in this section is view only for you. Changing it requires "{permissionLabel(sectionPermission)}" ({whoHas(sectionPermission)}).</span>
+                    </p>
+                  )}
                   {!hasContent && <p style={{ color: GREY_TEXT, fontSize: '0.875rem' }}>Nothing configured here yet.</p>}
 
                   {role?.key === 'governance_admin' && (
@@ -872,7 +894,7 @@ export default function Settings() {
                             {isExpanded && (
                               <p style={{ color: GREY_TEXT, fontSize: '0.8rem', marginTop: '0.375rem', maxWidth: '560px' }}>{setting.description}</p>
                             )}
-                            {!canEdit && (
+                            {!canEdit && setting.required_permission !== SECTION_PERMISSION[section] && (
                               <p style={{ ...viewOnlyStyle, marginTop: '0.5rem', marginBottom: 0 }}>
                                 <i className="ti ti-eye" style={{ marginTop: '0.1rem' }} aria-hidden="true"></i>
                                 <span>{viewOnlyNote(setting.required_permission).replace('these', 'this')}</span>
