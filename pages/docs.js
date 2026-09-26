@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { fetchMyPermissions, hasPermission } from '../lib/permissions';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -370,8 +370,17 @@ export default function Docs() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [userRoleKeys, setUserRoleKeys] = useState([]);
+  // What the logged-in user is allowed to do in Docs, from the configurable
+  // role -> permission mapping (role_permissions table). Replaces the old
+  // "holds any role = admin" check. Only controls which buttons show - the
+  // database access rules enforce the same permissions for real.
+  const [myPermissions, setMyPermissions] = useState([]);
   const [docs, setDocs] = useState([]);
+  // Trash: published docs moved to the trash are hidden everywhere else,
+  // but kept (restorable) until someone with docs.empty_trash permanently
+  // deletes them.
+  const [showTrash, setShowTrash] = useState(false);
+  const [trashDocs, setTrashDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -479,7 +488,8 @@ export default function Docs() {
   };
 
   useEffect(() => { checkAuth(); loadDocs(); loadAudienceOptions(); loadAllDocAudiences(); }, []);
-  useEffect(() => { if (user) loadDocs(); }, [user, userRoleKeys]); // Reload when roles are known, to get admin-only docs
+  useEffect(() => { if (user) loadDocs(); }, [user, myPermissions]); // Reload when permissions are known, to get admin-only docs
+  useEffect(() => { if (hasPermission(myPermissions, 'docs.trash')) loadTrash(); }, [myPermissions]); // populate the Trash count badge
   useEffect(() => { if (currentUserId) loadUserDrafts(); }, [currentUserId]); // populate the Drafts count badge as soon as we know who's logged in
 
   // Narrow, initial-load-only URL support: if the page was reached with
@@ -522,8 +532,8 @@ export default function Docs() {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) setUserProfile(data[0]);
-      const roleKeys = await fetchUserRoleKeys(userId, headers);
-      setUserRoleKeys(roleKeys);
+      const permissionKeys = await fetchMyPermissions(headers);
+      setMyPermissions(permissionKeys);
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
@@ -535,19 +545,33 @@ export default function Docs() {
     // not be allowed to overwrite the more current result.
     const thisRequestId = ++loadDocsRequestId.current;
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers: getAuthHeaders(false), cache: 'no-store' });
+      // deleted_at=is.null: docs in the trash never appear in the normal list.
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&deleted_at=is.null&order=title.asc`, { headers: getAuthHeaders(false), cache: 'no-store' });
       const data = await res.json();
       if (thisRequestId !== loadDocsRequestId.current) return; // a newer request has since started; discard this one
       if (Array.isArray(data)) {
-        const isAdmin = hasAnyRole(userRoleKeys);
-        const visibleDocs = isAdmin ? data : data.filter(doc => doc.visibility === 'user');
+        // Once the database access rules are tightened, admin docs won't
+        // even be sent to people without docs.read_internal - this filter
+        // stays as a second layer, not the only one.
+        const visibleDocs = hasPermission(myPermissions, 'docs.read_internal') ? data : data.filter(doc => doc.visibility === 'user');
         setDocs(visibleDocs);
       }
     } catch (error) { console.error('Error loading docs:', error); }
   };
 
+  const loadTrash = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&deleted_at=not.is.null&order=deleted_at.desc`, { headers: getAuthHeaders(false), cache: 'no-store' });
+      if (!res.ok) { console.error('Error loading trash:', res.status, await res.text()); return; }
+      const data = await res.json();
+      if (Array.isArray(data)) setTrashDocs(data);
+    } catch (error) { console.error('Error loading trash:', error); }
+  };
+
   const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
-  const isAdmin = hasAnyRole(userRoleKeys);
+  const canEdit = hasPermission(myPermissions, 'docs.edit');
+  const canTrash = hasPermission(myPermissions, 'docs.trash');
+  const canEmptyTrash = hasPermission(myPermissions, 'docs.empty_trash');
   const folders = [...new Set(docs.map(d => d.folder).filter(f => f))].sort();
   
   const allExistingTags = useMemo(() => {
@@ -1347,15 +1371,76 @@ export default function Docs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editTitle, editSlug, editContentMd, editContentHtml, orgFolder, orgVisibility, orgTags, orgAudienceKeys]);
 
-  const deleteDoc = async () => {
-    if (!confirm(`Delete "${selectedDoc.title}"?`)) return;
+  // --- Trash (soft delete) ---
+  // "Delete" no longer removes a doc. It moves it to the trash (sets
+  // deleted_at), which hides it everywhere but keeps it restorable.
+  // Permanent deletion is a separate action, only on docs already in the
+  // trash, and only for people with docs.empty_trash.
+  //
+  // Every one of these asks the database to send back the changed row
+  // (Prefer: return=representation) and checks that a row actually came
+  // back. When an access rule blocks an update or delete, the database
+  // doesn't return an error - it just changes zero rows. Without this
+  // check, a blocked action would show a false "✅" (the same silent-
+  // success problem the old delete had: it never checked the response).
+  const changeDocRows = async (docId, method, body) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${docId}`, {
+      method,
+      headers: { ...getAuthHeaders(!!body), 'Prefer': 'return=representation' },
+      ...(body ? { body: JSON.stringify(body) } : {})
+    });
+    if (!res.ok) {
+      let detail = `database returned ${res.status}`;
+      try { const error = await res.json(); detail = error.message || detail; } catch (e) { /* response body wasn't JSON */ }
+      throw new Error(detail);
+    }
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error("nothing was changed - you may not have permission for this");
+    }
+    return rows[0];
+  };
+
+  const moveToTrash = async () => {
+    if (!confirm(`Move "${selectedDoc.title}" to the trash?\n\nIt will be hidden from Docs and the API, but can be restored from Trash.`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
-      showMessage('✅ Deleted');
+      await changeDocRows(selectedDoc.id, 'PATCH', { deleted_at: new Date().toISOString(), deleted_by: currentUserId });
+      showMessage('✅ Moved to trash');
       setSelectedDoc(null);
       setEditMode(false);
       await loadDocs();
-    } catch (error) { showMessage('❌ Error deleting'); }
+      await loadTrash();
+    } catch (error) {
+      console.error('Error moving doc to trash:', error);
+      showMessage(`❌ Couldn't move to trash: ${error.message}`);
+    }
+  };
+
+  const restoreFromTrash = async () => {
+    try {
+      const restored = await changeDocRows(selectedDoc.id, 'PATCH', { deleted_at: null, deleted_by: null });
+      showMessage('✅ Restored');
+      await loadDocs();
+      await loadTrash();
+      setShowTrash(false);
+      setSelectedDoc(restored);
+    } catch (error) {
+      console.error('Error restoring doc:', error);
+      showMessage(`❌ Couldn't restore: ${error.message}`);
+    }
+  };
+
+  const deletePermanently = async () => {
+    if (!confirm(`Permanently delete "${selectedDoc.title}"?\n\nThis can't be undone. The doc and its audience settings will be removed. (Its saved version history is kept.)`)) return;
+    try {
+      await changeDocRows(selectedDoc.id, 'DELETE');
+      showMessage('✅ Permanently deleted');
+      setSelectedDoc(null);
+      await loadTrash();
+    } catch (error) {
+      console.error('Error permanently deleting doc:', error);
+      showMessage(`❌ Couldn't delete: ${error.message}`);
+    }
   };
 
   // Discards the in-progress DRAFT only - never touches the published doc.
@@ -1635,7 +1720,7 @@ export default function Docs() {
           than sitting visually under the mode toggle. */}
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem 2rem 0 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <h1 style={{ ...s.title, fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-books" aria-hidden="true"></i> Docs</h1>
-        {isAdmin && (
+        {canEdit && (
           <div style={{ display: 'flex', borderRadius: '0.5rem', border: '1px solid #334155', overflow: 'hidden' }}>
             <button
               style={{ ...s.btnSec, borderRadius: 0, background: pageMode === 'browse' ? '#256B45' : '#334155', fontWeight: pageMode === 'browse' ? '600' : '400' }}
@@ -1653,7 +1738,7 @@ export default function Docs() {
         {/* Sidebar */}
         <div>
           <div style={s.header}>
-            {isAdmin && !editMode && <button style={s.btn} onClick={startCreate}>+ New</button>}
+            {canEdit && !editMode && <button style={s.btn} onClick={startCreate}>+ New</button>}
           </div>
           {/* About/Credits/Disclaimer - pinned here, always visible regardless
               of filters, rather than living behind a separate nav dropdown
@@ -1683,25 +1768,45 @@ export default function Docs() {
           {/* Published / Drafts toggle - reuses the same list styling below,
               just swaps the data source, rather than building a separate UI.
               Counts reflect the currently active filters below, not totals. */}
-          {isAdmin && (
+          {canEdit && (
             <div style={{ display: 'flex', borderRadius: '0.5rem', border: '1px solid #334155', overflow: 'hidden', marginBottom: '0.75rem' }}>
               <button
-                style={{ ...s.btnSec, borderRadius: 0, flex: 1, background: !showDrafts ? '#256B45' : '#334155', fontWeight: !showDrafts ? '600' : '400' }}
-                onClick={() => setShowDrafts(false)}
+                style={{ ...s.btnSec, borderRadius: 0, flex: 1, background: !showDrafts && !showTrash ? '#256B45' : '#334155', fontWeight: !showDrafts && !showTrash ? '600' : '400' }}
+                onClick={() => { setShowDrafts(false); setShowTrash(false); }}
               >Published{filteredDocs.length > 0 ? ` (${filteredDocs.length})` : ''}</button>
               <button
                 style={{ ...s.btnSec, borderRadius: 0, borderLeft: '1px solid #334155', flex: 1, background: showDrafts ? '#256B45' : '#334155', fontWeight: showDrafts ? '600' : '400' }}
-                onClick={() => { setShowDrafts(true); loadUserDrafts(); }}
+                onClick={() => { setShowDrafts(true); setShowTrash(false); loadUserDrafts(); }}
               >Drafts{filteredDrafts.length > 0 ? ` (${filteredDrafts.length})` : ''}</button>
+              {canTrash && (
+                <button
+                  style={{ ...s.btnSec, borderRadius: 0, borderLeft: '1px solid #334155', flex: 1, background: showTrash ? '#256B45' : '#334155', fontWeight: showTrash ? '600' : '400' }}
+                  onClick={() => { setShowTrash(true); setShowDrafts(false); loadTrash(); }}
+                ><i className="ti ti-trash" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Trash{trashDocs.length > 0 ? ` (${trashDocs.length})` : ''}</button>
+              )}
             </div>
           )}
-          {!showDrafts && (
+          {!showDrafts && !showTrash && (
             <input type="text" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={s.input} />
           )}
-          {renderFilterPanel()}
+          {/* Filters don't apply to Trash - it's a short, temporary holding
+              list, shown newest-trashed first. */}
+          {!showTrash && renderFilterPanel()}
           <div style={s.card}>
             <div style={s.docList}>
-              {!showDrafts ? (
+              {showTrash ? (
+                <>
+                  {trashDocs.map(doc => (
+                    <div key={doc.id} onClick={() => viewDoc(doc)} style={s.docItem(selectedDoc?.id === doc.id)}>
+                      <div style={{ fontWeight: '500' }}>{doc.title}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>
+                        <i className="ti ti-trash" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> trashed {new Date(doc.deleted_at).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                  {trashDocs.length === 0 && <div style={{ padding: '2rem', textAlign: 'center', color: '#838C95' }}>Trash is empty</div>}
+                </>
+              ) : !showDrafts ? (
                 <>
                   {Object.entries(docsByFolder).map(([folder, folderDocs]) => (
                     <div key={folder}>
@@ -1901,15 +2006,28 @@ export default function Docs() {
                     </div>
                     {selectedDoc.tags?.length > 0 && <div style={{ marginTop: '0.5rem' }}>{selectedDoc.tags.map(tag => <span key={tag} style={s.tag}>{tag}</span>)}</div>}
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {isAdmin && <button style={s.btn} onClick={() => startEdit(selectedDoc)}><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Edit</button>}
-                    {isAdmin && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}><i className="ti ti-clock" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> History</button>}
-                    {isAdmin && <button style={s.btnSec} onClick={openOrganize}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Organize</button>}
-                    {isAdmin && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
-                    {/* Real deletion, moved here from the editor toolbar - it now
-                        only ever appears alongside an already-published doc, never
-                        implied to be "just discard my edits" the way it read before. */}
-                    {isAdmin && <button style={s.btnDanger} onClick={deleteDoc}><i className="ti ti-trash" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Delete</button>}
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {selectedDoc.deleted_at ? (
+                      <>
+                        {/* A doc in the trash: read-only, no editing or
+                            organizing - only restore or permanently delete. */}
+                        <span style={{ alignSelf: 'center', fontSize: '0.75rem', background: '#C3552233', color: '#C35522', padding: '0.25rem 0.5rem', borderRadius: '0.25rem' }}>
+                          <i className="ti ti-trash" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> In trash since {new Date(selectedDoc.deleted_at).toLocaleString()}
+                        </span>
+                        {canTrash && <button style={s.btn} onClick={restoreFromTrash}><i className="ti ti-restore" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Restore</button>}
+                        {canEmptyTrash && <button style={s.btnDanger} onClick={deletePermanently}><i className="ti ti-trash-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Delete permanently</button>}
+                      </>
+                    ) : (
+                      <>
+                        {canEdit && <button style={s.btn} onClick={() => startEdit(selectedDoc)}><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Edit</button>}
+                        {canEdit && <button style={s.btnSec} onClick={() => { setShowHistory(true); loadDocVersions(selectedDoc); }}><i className="ti ti-clock" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> History</button>}
+                        {canEdit && <button style={s.btnSec} onClick={openOrganize}><i className="ti ti-folder" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Organize</button>}
+                        {canEdit && <button style={s.btnSec} onClick={startCreate}>+ New</button>}
+                        {/* Moves to the trash (restorable), not a real deletion -
+                            only appears alongside an already-published doc. */}
+                        {canTrash && <button style={s.btnDanger} onClick={moveToTrash}><i className="ti ti-trash" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Move to trash</button>}
+                      </>
+                    )}
                     <button style={s.btnSec} onClick={() => { setSelectedDoc(null); resetHistoryView(); }}>×</button>
                   </div>
                 </div>
