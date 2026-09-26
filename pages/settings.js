@@ -671,61 +671,135 @@ export default function Settings() {
     );
   };
 
-  // ---------- A checkbox row for a governance pair ----------
-  const PairCheckbox = ({ table, a, b, label, description }) => {
+  // ---------- Governance matrices ----------
+  // Who-can-do-what is configured in ONE place: the Governance section,
+  // because that's who can change it (permissions.manage). The sections of
+  // the roles it affects only show a read-only summary. Configuration lives
+  // with whoever can change it, not with whoever it affects.
+  //
+  // Each matrix: a row per item, a column per role, a checkbox per cell.
+  // Checking or unchecking only marks a pending change; nothing applies
+  // until "Review & save".
+  const MatrixCell = ({ table, a, b, rowLabel, colLabel }) => {
     const checked = effectiveHas(table, a, b);
     const changed = pending[table][pairKey(a, b)] !== undefined;
     return (
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', padding: '0.35rem 0', cursor: canManagePermissions ? 'pointer' : 'default' }}>
+      <td style={{ textAlign: 'center', padding: '0.4rem', borderBottom: '1px solid #1e293b', background: changed ? `${ORANGE_TEXT}1A` : 'transparent' }}>
         <input
           type="checkbox"
           checked={checked}
           disabled={!canManagePermissions}
           onChange={() => togglePending(table, a, b)}
-          style={{ marginTop: '0.2rem', accentColor: GREEN_FILL }}
+          aria-label={`${rowLabel} - ${colLabel}${changed ? ' (unsaved change)' : ''}`}
+          style={{ width: '1.05rem', height: '1.05rem', accentColor: GREEN_FILL, cursor: canManagePermissions ? 'pointer' : 'default' }}
         />
-        <span style={{ fontSize: '0.875rem' }}>
-          {label}
-          {changed && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: ORANGE_TEXT }}><i className="ti ti-point-filled" aria-hidden="true"></i> unsaved</span>}
-          {description && <span style={{ display: 'block', color: GREY_TEXT, fontSize: '0.75rem' }}>{description}</span>}
-        </span>
-      </label>
+        {changed && <span style={{ display: 'block', fontSize: '0.6rem', color: ORANGE_TEXT }}>unsaved</span>}
+      </td>
     );
   };
 
-  // ---------- Who can do what, for one role ----------
-  const RoleGovernance = ({ role }) => {
-    const otherRoles = roles.filter(r => r.id !== role.id);
+  // rows: [{ id, label, description?, group? }]; cell(row, role) -> { a, b } or null (not applicable)
+  const Matrix = ({ caption, table, rows, cell, rowHeader }) => {
+    let lastGroup = null;
     return (
-      <div style={{ marginBottom: '1.25rem' }}>
-        <h2 style={subheadStyle}>Permissions</h2>
-        {!canManagePermissions && <ViewOnly permissionKey="permissions.manage" />}
-        <div style={cardStyle}>
-          {Object.entries(permissionGroups).map(([group, perms]) => (
-            <div key={group} style={{ marginBottom: '0.6rem' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: GREY_TEXT, marginBottom: '0.15rem' }}>{PERMISSION_GROUP_LABELS[group] || prettifyKey(group)}</div>
-              {perms.map(p => (
-                <PairCheckbox key={p.key} table="role_permissions" a={role.id} b={p.key} label={p.label} description={p.description} />
+      <div style={{ overflowX: 'auto', border: '1px solid #1e293b', borderRadius: '0.5rem', marginBottom: '1.25rem' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: `${14 + roles.length * 7}rem` }}>
+          <caption style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{caption}</caption>
+          <thead>
+            <tr style={{ background: '#1e293b' }}>
+              <th scope="col" style={{ textAlign: 'left', padding: '0.5rem 0.6rem', position: 'sticky', left: 0, background: '#1e293b', fontSize: '0.75rem', color: GREY_TEXT }}>{rowHeader}</th>
+              {roles.map(role => (
+                <th key={role.id} scope="col" style={{ padding: '0.5rem 0.4rem', fontSize: '0.75rem', color: GREY_TEXT, fontWeight: 'bold', width: '7rem' }}>{role.label}</th>
               ))}
-            </div>
-          ))}
-        </div>
-
-        <h2 style={subheadStyle}>Who can grant or remove {role.label}</h2>
-        <div style={cardStyle}>
-          {roles.map(granter => (
-            <PairCheckbox key={granter.id} table="role_grant_permissions" a={granter.id} b={role.id} label={granter.label} />
-          ))}
-        </div>
-
-        <h2 style={subheadStyle}>Who can be given {role.label}</h2>
-        <div style={cardStyle}>
-          <p style={{ fontSize: '0.8rem', color: GREY_TEXT, margin: '0 0 0.35rem 0' }}>Only people who already hold every role checked here. Nothing checked = anyone.</p>
-          {otherRoles.map(req => (
-            <PairCheckbox key={req.id} table="role_prerequisites" a={role.id} b={req.id} label={`Must already hold ${req.label}`} />
-          ))}
-        </div>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const groupHeader = row.group && row.group !== lastGroup;
+              lastGroup = row.group || lastGroup;
+              return [
+                groupHeader && (
+                  <tr key={`g-${row.group}`}>
+                    <th colSpan={roles.length + 1} scope="colgroup" style={{ textAlign: 'left', padding: '0.6rem 0.6rem 0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: GREY_TEXT }}>
+                      {PERMISSION_GROUP_LABELS[row.group] || prettifyKey(row.group)}
+                    </th>
+                  </tr>
+                ),
+                <tr key={row.id}>
+                  <th scope="row" style={{ textAlign: 'left', padding: '0.45rem 0.6rem', fontWeight: 'normal', borderBottom: '1px solid #1e293b', position: 'sticky', left: 0, background: '#0f172a' }}>
+                    <span style={{ fontWeight: 'bold' }}>{row.label}</span>
+                    {row.description && <span style={{ display: 'block', fontSize: '0.72rem', color: GREY_TEXT, maxWidth: '22rem' }}>{row.description}</span>}
+                  </th>
+                  {roles.map(role => {
+                    const pair = cell(row, role);
+                    if (!pair) {
+                      return <td key={role.id} style={{ textAlign: 'center', color: '#334155', borderBottom: '1px solid #1e293b' }} aria-label="Not applicable">—</td>;
+                    }
+                    return <MatrixCell key={role.id} table={table} a={pair.a} b={pair.b} rowLabel={row.label} colLabel={role.label} />;
+                  })}
+                </tr>
+              ];
+            })}
+          </tbody>
+        </table>
       </div>
+    );
+  };
+
+  const GovernanceMatrices = () => {
+    const permissionRows = Object.entries(permissionGroups).flatMap(([group, perms]) =>
+      perms.map(p => ({ id: p.key, label: p.label, description: p.description, group })));
+    const roleRows = roles.map(r => ({ id: r.id, label: r.label }));
+    return (
+      <div>
+        <h2 style={subheadStyle}>Which roles have each permission</h2>
+        {!canManagePermissions && <ViewOnly permissionKey="permissions.manage" />}
+        <Matrix
+          caption="Permissions by role"
+          table="role_permissions"
+          rowHeader="Permission"
+          rows={permissionRows}
+          cell={(row, role) => ({ a: role.id, b: row.id })}
+        />
+
+        <h2 style={subheadStyle}>Which roles can grant or remove each role</h2>
+        <p style={{ fontSize: '0.8rem', color: GREY_TEXT, margin: '0 0 0.5rem 0' }}>Rows are the role being granted; columns are who can grant it.</p>
+        <Matrix
+          caption="Who can grant each role"
+          table="role_grant_permissions"
+          rowHeader="Role being granted"
+          rows={roleRows}
+          cell={(row, role) => ({ a: role.id, b: row.id })}
+        />
+
+        <h2 style={subheadStyle}>Who can be given each role</h2>
+        <p style={{ fontSize: '0.8rem', color: GREY_TEXT, margin: '0 0 0.5rem 0' }}>A checked box means someone must already hold that column's role before they can be given the row's role. An empty row means anyone can be given it.</p>
+        <Matrix
+          caption="Role eligibility"
+          table="role_prerequisites"
+          rowHeader="Role"
+          rows={roleRows}
+          cell={(row, role) => row.id === role.id ? null : ({ a: row.id, b: role.id })}
+        />
+      </div>
+    );
+  };
+
+  // Read-only summary in each role's own section: what the role can do,
+  // and where that's decided.
+  const RoleSummary = ({ role }) => {
+    const perms = rolePermissions
+      .filter(rp => rp.role_id === role.id)
+      .map(rp => permissionLabel(rp.permission_key))
+      .sort();
+    return (
+      <p style={{ ...viewOnlyStyle, marginBottom: '1.25rem' }}>
+        <i className="ti ti-shield-check" style={{ marginTop: '0.1rem' }} aria-hidden="true"></i>
+        <span>
+          This role currently has: {perms.length > 0 ? perms.join(', ') : 'no permissions'}.
+          {' '}Which roles get which permissions is decided in the {sectionLabel('governance_admin')} section.
+        </span>
+      </p>
     );
   };
 
@@ -865,7 +939,8 @@ export default function Settings() {
                     </div>
                   )}
 
-                  {role && <RoleGovernance role={role} />}
+                  {role && role.key !== 'governance_admin' && <RoleSummary role={role} />}
+                  {role?.key === 'governance_admin' && <GovernanceMatrices />}
 
                   {role?.key === 'governance_admin' && user && (
                     <div>
