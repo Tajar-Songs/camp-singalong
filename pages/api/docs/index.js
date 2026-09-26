@@ -24,7 +24,8 @@ export default async function handler(req, res) {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`
-      }
+      },
+      cache: 'no-store'
     });
 
     if (!response.ok) {
@@ -33,6 +34,10 @@ export default async function handler(req, res) {
 
     const docs = await response.json();
     
+    // Explicit no-cache, matching [slug].js - nothing between this server
+    // and the client should serve a cached copy of this list.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+
     // Return simplified list
     res.status(200).json({
       count: docs.length,
