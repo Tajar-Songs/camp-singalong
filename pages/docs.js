@@ -1265,10 +1265,27 @@ export default function Docs() {
   // Resume editing a draft picked from the Drafts list. "Published" here
   // means the draft's record_id actually matches a real doc already loaded
   // in `docs` - that's true for an edit-in-progress on an existing doc, and
-  // false for an unpublished new doc (whether its record_id is the pending
-  // client-generated id, or - for any leftover rows from before that fix -
-  // still literally null; either way, no real published doc will match it).
+  // false for a genuinely new, not-yet-published doc (using the pending
+  // client-generated id from pendingNewDocIdRef).
+  //
+  // A draft with record_id === null is different from both of those: it's
+  // not a new doc, it's an existing-doc draft that lost its connection to
+  // the real doc it was for (see the null-record_id bug in saveDraft, now
+  // fixed going forward, but old orphaned rows can still exist). Silently
+  // treating this as "just a new doc" - the previous behavior - is exactly
+  // what caused a real incident: publishing it went through the create
+  // path instead of update, and collided with the real doc's slug. Now
+  // this case is surfaced explicitly instead of being guessed at.
   const resumeDraft = (draft) => {
+    if (draft.record_id === null) {
+      const proceed = confirm(
+        `This draft (titled "${draft.content?.title || 'untitled'}") lost its connection to the document it was originally for - this can happen after a save error. ` +
+        `Resuming it will treat it as a brand-new, unpublished document, which will create a SEPARATE doc rather than update the original if you publish it.\n\n` +
+        `Recommended: Cancel, then copy what you need from here and paste it into a fresh edit of the actual document instead.\n\n` +
+        `Resume anyway as a new document?`
+      );
+      if (!proceed) return;
+    }
     setEditMode(true);
     resetHistoryView();
     skipNextAutosaveRef.current = true;
@@ -1278,8 +1295,9 @@ export default function Docs() {
       setSelectedDoc(liveDoc);
       setIsCreatingNew(false);
     } else {
-      // Not a real published doc - resuming an unpublished new-doc draft.
-      // Restore the pending id so further saves keep targeting this same row.
+      // Not a real published doc - resuming an unpublished new-doc draft
+      // (or, per the confirm above, a broken-link draft being deliberately
+      // treated as one).
       setSelectedDoc(null);
       setIsCreatingNew(true);
       pendingNewDocIdRef.current = draft.record_id || crypto.randomUUID();
