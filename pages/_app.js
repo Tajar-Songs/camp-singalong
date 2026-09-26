@@ -16,6 +16,24 @@ export default function App({ Component, pageProps }) {
   const [checking, setChecking] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  // Shared page messages (see lib/notify.js). Drawn here, once, just below
+  // the nav bar, so no page's message can end up hidden underneath it.
+  const [notices, setNotices] = useState([]);
+
+  useEffect(() => {
+    const onNotify = (e) => {
+      const notice = e.detail;
+      // Keep at most 3 on screen; newest at the bottom.
+      setNotices(prev => [...prev.slice(-2), notice]);
+      // Errors stay longer than successes - they usually explain why
+      // something didn't work, which takes longer to read.
+      const ms = notice.type === 'error' ? 10000 : notice.type === 'info' ? 6000 : 4000;
+      setTimeout(() => setNotices(prev => prev.filter(n => n.id !== notice.id)), ms);
+    };
+    window.addEventListener('app-notify', onNotify);
+    return () => window.removeEventListener('app-notify', onNotify);
+  }, []);
+  const dismissNotice = (id) => setNotices(prev => prev.filter(n => n.id !== id));
 
   useEffect(() => {
     checkAuth();
@@ -422,6 +440,55 @@ export default function App({ Component, pageProps }) {
       <div style={{ paddingTop: !checking ? '3rem' : 0, fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
         <Component {...pageProps} />
       </div>
+
+      {/* Shared page messages - always just below the nav bar, above page
+          content but under the nav's own dropdown. Each type has its own
+          icon and label, never color alone (style guide: Accessibility). */}
+      {notices.length > 0 && (
+        <div
+          className="app-notices"
+          style={{
+            position: 'fixed', top: !checking ? '3.75rem' : '1rem', right: '1rem',
+            zIndex: 9990, display: 'flex', flexDirection: 'column', gap: '0.5rem',
+            width: 'min(26rem, calc(100vw - 2rem))', fontFamily: "'Atkinson Hyperlegible', sans-serif"
+          }}
+        >
+          {notices.map(n => {
+            const kind = {
+              success: { icon: 'ti-circle-check', color: '#3B9B73', label: 'Done' },
+              error:   { icon: 'ti-alert-triangle', color: '#D45D25', label: 'Problem' },
+              info:    { icon: 'ti-info-circle', color: '#838C95', label: 'Note' }
+            }[n.type] || { icon: 'ti-info-circle', color: '#838C95', label: 'Note' };
+            return (
+              <div
+                key={n.id}
+                role={n.type === 'error' ? 'alert' : 'status'}
+                aria-live={n.type === 'error' ? 'assertive' : 'polite'}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
+                  background: '#1e293b', color: '#fff', border: '1px solid #334155',
+                  borderLeft: `4px solid ${kind.color}`, borderRadius: '0.5rem',
+                  padding: '0.75rem 0.85rem', fontSize: '0.875rem', lineHeight: 1.4,
+                  boxShadow: '0 6px 18px rgba(0,0,0,0.35)'
+                }}
+              >
+                <i className={`ti ${kind.icon}`} style={{ color: kind.color, fontSize: '1.1rem', marginTop: '0.05rem' }} aria-hidden="true"></i>
+                <span style={{ flex: 1 }}>
+                  <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{kind.label}: </span>
+                  {n.text}
+                </span>
+                <button
+                  onClick={() => dismissNotice(n.id)}
+                  aria-label="Dismiss message"
+                  style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', padding: 0, fontSize: '1rem' }}
+                >
+                  <i className="ti ti-x" aria-hidden="true"></i>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       
       <style jsx global>{`
         @media (max-width: 768px) {
