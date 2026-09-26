@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { fetchMyPermissions, hasPermission } from '../lib/permissions';
+import { notifyLegacy } from '../lib/notify';
+import { createGuardedFetch } from '../lib/guardedFetch';
 import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray, songMatchesFilters } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
+
 
 const SECTION_INFO = {
   A: "Graces", B: "Girl Scout Standards", C: "Camp Arrowhead Songs", D: "Patriotic Songs",
@@ -119,6 +123,15 @@ export default function Admin() {
   const [authMessage, setAuthMessage] = useState('');
 
   const [mainTab, setMainTab] = useState('songs');
+  // The logged-in user's permissions (from the configurable role ->
+  // permission mapping). Decides view-only vs. editable on this page.
+  const [myPermissions, setMyPermissions] = useState([]);
+  const permissionsRef = useRef([]);
+  permissionsRef.current = myPermissions;
+  // Shared choke point for every database call on this page (lib/guardedFetch.js).
+  const guard = useRef(null);
+  if (!guard.current) guard.current = createGuardedFetch(() => permissionsRef.current);
+  const adminFetch = guard.current.guardedFetch;
   const [allSongs, setAllSongs] = useState([]);
   const [songVersions, setSongVersions] = useState([]);
   const [songNotes, setSongNotes] = useState([]);
@@ -370,7 +383,7 @@ export default function Admin() {
       // Use the manualToken if we just logged in, otherwise use the saved one
       const token = manualToken || localStorage.getItem('supabase_access_token');
       
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
+      const res = await adminFetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, {
         headers: { 
           'apikey': SUPABASE_KEY, 
           'Authorization': `Bearer ${token}` 
@@ -386,6 +399,7 @@ export default function Admin() {
       }
       const roleKeys = await fetchUserRoleKeys(userId, { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` });
       setUserRoleKeys(roleKeys);
+      setMyPermissions(await fetchMyPermissions({ 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` }));
     } catch (error) { 
       console.error('Error loading profile:', error); 
     }
@@ -451,25 +465,25 @@ export default function Admin() {
     try {
       const headers = getAuthHeaders(false);
       const [songsRes, versionsRes, versionAttrsRes, notesRes, sectionsRes, aliasesRes, groupsRes, membersRes, entriesRes, songbooksRes, songbookSectionsRes, mediaRes, flagsRes, duplicatesRes, logRes, docsRes, optionListsRes, tagsRes, songTagsRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, { headers }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers })
+        adminFetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_notes?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_sections?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_aliases?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_groups?select=*&order=group_name.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_group_members?select=*&order=position_in_group.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*&order=display_order.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, { headers })
       ]);
       
       // Parse responses
@@ -537,7 +551,16 @@ export default function Admin() {
     } catch (error) { console.error('Error loading data:', error); }
   };
 
-  const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
+  // Messages use the shared ones below the nav bar (lib/notify.js) -
+  // previously they sat top-right under the nav bar, where they could be
+  // hidden. If adminFetch has just explained a failed change, the handler's
+  // own generic "❌ Error..." that follows is skipped.
+  const showMessage = (msg) => {
+    if (typeof msg === 'string' && msg.startsWith('❌') && guard.current.recentlyReported()) return;
+    notifyLegacy(msg);
+  };
+
+  const canEditSongs = hasPermission(myPermissions, 'songs.edit');
   
   // Get current user's display name for logging
   const currentUserName = userProfile?.display_name || user?.email || 'unknown';
@@ -548,7 +571,7 @@ export default function Admin() {
       // For song-related tables, recordId is the song_id
       // For non-song tables (songbooks, song_groups), recordId may be null
       const songId = recordId && typeof recordId === 'number' ? recordId : null;
-      await fetch(`${SUPABASE_URL}/rest/v1/change_log`, {
+      await adminFetch(`${SUPABASE_URL}/rest/v1/change_log`, {
         method: 'POST', headers,
         body: JSON.stringify({ 
           action, 
@@ -642,7 +665,7 @@ export default function Admin() {
         // makes PostgREST reject the whole request with a schema-cache error, since
         // it can't find those columns - this was silently breaking every save until
         // the .ok check above started surfacing it.
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/songs`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(songData) });
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/songs`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(songData) });
         if (response.ok) { 
           const created = await response.json(); 
           const newSongId = created[0].id;
@@ -650,13 +673,13 @@ export default function Admin() {
           // Create songbook entry for primary songbook (2025)
           const primarySongbook = songbooks.find(sb => sb.is_primary);
           if (primarySongbook && (formPage.trim() || formSection)) {
-            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: newSongId, songbook_id: primarySongbook.id, section: formSection, page: formPage.trim() || null }) });
+            await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: newSongId, songbook_id: primarySongbook.id, section: formSection, page: formPage.trim() || null }) });
           }
           
           // Create songbook entry for old songbook if old_page provided
           const oldSongbook = songbooks.find(sb => sb.display_order === 2);
           if (oldSongbook && formOldPage.trim()) {
-            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: newSongId, songbook_id: oldSongbook.id, section: formSection, page: formOldPage.trim() }) });
+            await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: newSongId, songbook_id: oldSongbook.id, section: formSection, page: formOldPage.trim() }) });
           }
           
           await logChange('add', 'songs', newSongId, created[0].title); 
@@ -685,7 +708,7 @@ export default function Admin() {
         // NOTE: section/page/old_page removed from this payload - see comment on the
         // POST above. These fields still exist as *form state* (formSection etc.) and
         // are still used correctly a few lines down when writing to song_songbook_entries.
-        const songUpdateRes = await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(songData) });
+        const songUpdateRes = await adminFetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(songData) });
         if (!songUpdateRes.ok) {
           const errorText = await songUpdateRes.text();
           console.error('Song update failed:', songUpdateRes.status, errorText);
@@ -699,9 +722,9 @@ export default function Admin() {
         if (primarySongbook) {
           const existingPrimaryEntry = songbookEntries.find(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(primarySongbook.id));
           if (existingPrimaryEntry) {
-            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingPrimaryEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ section: formSection, page: formPage.trim() || null }) });
+            await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingPrimaryEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ section: formSection, page: formPage.trim() || null }) });
           } else if (formPage.trim() || formSection) {
-            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, songbook_id: primarySongbook.id, section: formSection, page: formPage.trim() || null }) });
+            await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, songbook_id: primarySongbook.id, section: formSection, page: formPage.trim() || null }) });
           }
         }
         
@@ -711,13 +734,13 @@ export default function Admin() {
           const existingOldEntry = songbookEntries.find(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(oldSongbook.id));
           if (existingOldEntry) {
             if (formOldPage.trim()) {
-              await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ page: formOldPage.trim() }) });
+              await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ page: formOldPage.trim() }) });
             } else {
               // Remove entry if old_page is cleared
-              await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'DELETE', headers });
+              await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingOldEntry.id}`, { method: 'DELETE', headers });
             }
           } else if (formOldPage.trim()) {
-            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, songbook_id: oldSongbook.id, section: formSection, page: formOldPage.trim() }) });
+            await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, songbook_id: oldSongbook.id, section: formSection, page: formOldPage.trim() }) });
           }
         }
         
@@ -736,11 +759,11 @@ export default function Admin() {
     try {
       const existingVersion = getDefaultVersion(selectedSong.id);
       if (existingVersion) {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${existingVersion.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ lyrics_content: formLyrics.trim() || null }) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${existingVersion.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ lyrics_content: formLyrics.trim() || null }) });
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_versions`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, version_type: 'canonical', label: 'Original', lyrics_content: formLyrics.trim() || null, is_default_singalong: true, is_default_explore: true, created_by: currentUserName }) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_id: selectedSong.id, version_type: 'canonical', label: 'Original', lyrics_content: formLyrics.trim() || null, is_default_singalong: true, is_default_explore: true, created_by: currentUserName }) });
       }
-      await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ has_lyrics: formLyrics.trim().length > 0 }) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ has_lyrics: formLyrics.trim().length > 0 }) });
       await logChange('edit', 'song_versions', selectedSong.id, selectedSong.title, 'lyrics', existingVersion?.lyrics_content ? '[had lyrics]' : '[no lyrics]', formLyrics.trim() ? '[has lyrics]' : '[no lyrics]');
       showMessage('✅ Lyrics saved!'); await loadAllData();
     } catch (error) { console.error(error); showMessage('❌ Error saving lyrics'); }
@@ -757,10 +780,10 @@ export default function Admin() {
     const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
       if (editingNote.isNew) {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_notes`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, note_type: noteType, note_content: noteContent.trim(), created_by: currentUserName }) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_notes`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, note_type: noteType, note_content: noteContent.trim(), created_by: currentUserName }) });
         await logChange('add', 'song_notes', selectedSong.id, selectedSong.title, noteType, null, noteContent.trim());
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_notes?id=eq.${editingNote.id}`, { method: 'PATCH', headers, body: JSON.stringify({ note_type: noteType, note_content: noteContent.trim() }) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_notes?id=eq.${editingNote.id}`, { method: 'PATCH', headers, body: JSON.stringify({ note_type: noteType, note_content: noteContent.trim() }) });
         await logChange('edit', 'song_notes', selectedSong.id, selectedSong.title, noteType, editingNote.note_content, noteContent.trim());
       }
       showMessage('✅ Note saved!'); cancelNoteEdit(); await loadAllData();
@@ -771,7 +794,7 @@ export default function Admin() {
   const deleteNote = async (note) => {
     if (!confirm('Delete this note?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_notes?id=eq.${note.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_notes?id=eq.${note.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_notes', selectedSong.id, selectedSong.title, note.note_type, note.note_content, null);
       showMessage('✅ Note deleted'); await loadAllData();
     } catch (error) { showMessage('❌ Error deleting'); }
@@ -781,7 +804,7 @@ export default function Admin() {
     if (!newAlias.trim()) return;
     const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, alias_title: newAlias.trim() }) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_aliases`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, alias_title: newAlias.trim() }) });
       await logChange('add', 'song_aliases', selectedSong.id, selectedSong.title, 'alias', null, newAlias.trim());
       setNewAlias(''); showMessage('✅ Alias added!'); await loadAllData();
     } catch (error) { showMessage('❌ Error adding alias'); }
@@ -790,7 +813,7 @@ export default function Admin() {
   const deleteAlias = async (alias) => {
     if (!confirm(`Delete alias "${alias.alias_title}"?`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_aliases', selectedSong.id, selectedSong.title, 'alias', alias.alias_title, null);
       showMessage('✅ Alias removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing alias'); }
@@ -800,7 +823,7 @@ export default function Admin() {
     if (!newSecondarySection) return;
     const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_sections`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, section: newSecondarySection, is_primary: false, page: newSecondaryPage.trim() || null }) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_sections`, { method: 'POST', headers, body: JSON.stringify({ song_id: selectedSong.id, section: newSecondarySection, is_primary: false, page: newSecondaryPage.trim() || null }) });
       await logChange('add', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', null, newSecondarySection);
       setNewSecondarySection(''); setNewSecondaryPage(''); showMessage('✅ Section added!'); await loadAllData();
     } catch (error) { showMessage('❌ Error adding section'); }
@@ -810,7 +833,7 @@ export default function Admin() {
     if (section.is_primary) { showMessage('❌ Cannot delete primary section'); return; }
     if (!confirm(`Delete section "${section.section}"?`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_sections', selectedSong.id, selectedSong.title, 'secondary_section', section.section, null);
       showMessage('✅ Section removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing section'); }
@@ -852,7 +875,7 @@ export default function Admin() {
         if (songbookEntries.some(e => String(e.song_id) === String(selectedSong.id) && String(e.songbook_id) === String(entrySongbookId))) {
           showMessage('❌ Entry already exists for this songbook'); setSaving(false); return;
         }
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(entryData) });
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(entryData) });
         if (!response.ok) {
           const errorText = await response.text();
           console.error('Songbook entry save failed:', errorText);
@@ -862,7 +885,7 @@ export default function Admin() {
         try { await logChange('add', 'song_songbook_entries', selectedSong.id, selectedSong.title, 'songbook_entry', null, `${sb?.short_name}: ${entryPage.trim()}`); } catch (e) { console.error('Log failed:', e); }
         showMessage('✅ Songbook entry added!');
       } else {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${editingSongbookEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(entryData) });
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${editingSongbookEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(entryData) });
         if (!response.ok) {
           const errorText = await response.text();
           console.error('Songbook entry update failed:', errorText);
@@ -879,7 +902,7 @@ export default function Admin() {
   const deleteSongbookEntry = async (entry) => {
     if (!confirm('Delete this songbook entry?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${entry.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${entry.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       const sb = songbooks.find(s => s.id === entry.songbook_id);
       const song = allSongs.find(s => String(s.id) === String(entry.song_id));
       const songId = entry.song_id || selectedSong?.id;
@@ -925,7 +948,7 @@ export default function Admin() {
         display_order: parseInt(formSongbookDisplayOrder) || 10
       };
       if (isAddingNewSongbook) {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/songbooks`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(data) });
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/songbooks`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(data) });
         if (response.ok) { 
           const created = await response.json(); 
           await logChange('add', 'songbooks', null, created[0].name);
@@ -935,7 +958,7 @@ export default function Admin() {
           selectSongbook(created[0]); 
         }
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/songbooks?id=eq.${selectedSongbook.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(data) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/songbooks?id=eq.${selectedSongbook.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(data) });
         await logChange('edit', 'songbooks', null, data.name, 'songbook', selectedSongbook.name, data.name);
         showMessage('✅ Songbook updated!'); 
         await loadAllData();
@@ -948,7 +971,7 @@ export default function Admin() {
   const deleteSongbook = async () => {
     if (!confirm(`Delete "${selectedSongbook.name}"? This will also delete all song entries for this songbook.`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/songbooks?id=eq.${selectedSongbook.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/songbooks?id=eq.${selectedSongbook.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'songbooks', null, selectedSongbook.name);
       showMessage('✅ Songbook deleted'); 
       setSelectedSongbook(null);
@@ -987,7 +1010,7 @@ export default function Admin() {
         display_order: parseInt(sectionOrder) || 1
       };
       if (editingSongbookSection.isNew) {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/songbook_sections`, { 
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/songbook_sections`, { 
           method: 'POST', 
           headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify(sectionData) 
@@ -1000,7 +1023,7 @@ export default function Admin() {
           showMessage('❌ Error adding section');
         }
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?id=eq.${editingSongbookSection.id}`, { 
+        await adminFetch(`${SUPABASE_URL}/rest/v1/songbook_sections?id=eq.${editingSongbookSection.id}`, { 
           method: 'PATCH', 
           headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify(sectionData) 
@@ -1016,7 +1039,7 @@ export default function Admin() {
   const deleteSongbookSection = async (section) => {
     if (!confirm(`Delete section "${section.section_code} - ${section.section_name}"?`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/songbook_sections?id=eq.${section.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       showMessage('✅ Section deleted');
       await loadAllData();
     } catch (error) { showMessage('❌ Error deleting section'); }
@@ -1057,7 +1080,7 @@ export default function Admin() {
         section: matchedSection?.section_code || null,
         page: songbookAddPage.trim()
       };
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, {
+      const response = await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, {
         method: 'POST',
         headers: { ...headers, 'Prefer': 'return=minimal' },
         body: JSON.stringify(entryData)
@@ -1135,7 +1158,7 @@ export default function Admin() {
       
       if (isAddingNewDoc) {
         docData.created_by = userProfile?.display_name || user?.email || 'unknown';
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/docs`, {
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/docs`, {
           method: 'POST',
           headers: { ...headers, 'Prefer': 'return=representation' },
           body: JSON.stringify(docData)
@@ -1151,7 +1174,7 @@ export default function Admin() {
           showMessage(`❌ Error: ${error.message || 'Could not create document'}`);
         }
       } else {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
           method: 'PATCH',
           headers: { ...headers, 'Prefer': 'return=minimal' },
           body: JSON.stringify(docData)
@@ -1172,7 +1195,7 @@ export default function Admin() {
   const deleteDoc = async () => {
     if (!confirm(`Delete "${selectedDoc.title}"?`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
+      await adminFetch(`${SUPABASE_URL}/rest/v1/docs?id=eq.${selectedDoc.id}`, {
         method: 'DELETE',
         headers: getAuthHeaders(false)
       });
@@ -1256,11 +1279,11 @@ export default function Admin() {
         display_order: editingMedia.isNew ? getSongMedia(selectedSong.id).length : editingMedia.display_order
       };
       if (editingMedia.isNew) {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_media`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(mediaData) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_media`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(mediaData) });
         await logChange('add', 'song_media', selectedSong.id, selectedSong.title, 'media', null, `${mediaType}: ${mediaUrl.trim()}`);
         showMessage('✅ Media added!');
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_media?id=eq.${editingMedia.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(mediaData) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_media?id=eq.${editingMedia.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(mediaData) });
         await logChange('edit', 'song_media', selectedSong.id, selectedSong.title, 'media', editingMedia.url, mediaUrl.trim());
         showMessage('✅ Media updated!');
       }
@@ -1272,7 +1295,7 @@ export default function Admin() {
   const deleteMedia = async (media) => {
     if (!confirm('Delete this media link?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_media?id=eq.${media.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_media?id=eq.${media.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_media', selectedSong.id, selectedSong.title, 'media', `${media.media_type}: ${media.url}`, null);
       showMessage('✅ Media deleted'); await loadAllData();
     } catch (error) { showMessage('❌ Error deleting media'); }
@@ -1332,18 +1355,18 @@ export default function Admin() {
       if (editingVersion.isNew) {
         // If this will be default, unset other defaults first
         if (versionIsDefaultSingalong) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_singalong=eq.true`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_singalong=eq.true`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ is_default_singalong: false }) 
           });
         }
         if (versionIsDefaultExplore) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_explore=eq.true`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_explore=eq.true`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ is_default_explore: false }) 
           });
         }
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/song_versions`, { 
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions`, { 
           method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, 
           body: JSON.stringify(versionData) 
         });
@@ -1355,18 +1378,18 @@ export default function Admin() {
         versionId = editingVersion.id;
         // If setting as default, unset others first
         if (versionIsDefaultSingalong && !editingVersion.is_default_singalong) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_singalong=eq.true&id=neq.${versionId}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_singalong=eq.true&id=neq.${versionId}`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ is_default_singalong: false }) 
           });
         }
         if (versionIsDefaultExplore && !editingVersion.is_default_explore) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_explore=eq.true&id=neq.${versionId}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&is_default_explore=eq.true&id=neq.${versionId}`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ is_default_explore: false }) 
           });
         }
-        await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${versionId}`, { 
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${versionId}`, { 
           method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify(versionData) 
         });
@@ -1378,11 +1401,11 @@ export default function Admin() {
       const oldAttributes = getVersionAttributes(versionId).map(a => a.attribute_type).sort();
       const newAttributes = [...versionSelectedAttributes].sort();
       
-      await fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?song_version_id=eq.${versionId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_version_attributes?song_version_id=eq.${versionId}`, { 
         method: 'DELETE', headers 
       });
       for (const attrType of versionSelectedAttributes) {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_version_attributes`, { 
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_version_attributes`, { 
           method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify({ song_version_id: versionId, attribute_type: attrType }) 
         });
@@ -1397,7 +1420,7 @@ export default function Admin() {
       }
 
       // Update song's has_lyrics flag based on whether this version actually has lyrics content
-      await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ has_lyrics: !!(versionData.lyrics_content && versionData.lyrics_content.trim().length > 0) }) 
       });
@@ -1411,14 +1434,14 @@ export default function Admin() {
   const deleteVersion = async (version) => {
     if (!confirm('Delete this version?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${version.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${version.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_versions', selectedSong.id, selectedSong.title, 'version', version.label || 'version', null);
       // Update has_lyrics based on whether any remaining version actually has lyrics content
       const remainingVersions = songVersions.filter(v => v.song_id === selectedSong.id && v.id !== version.id);
       const anyRemainingHasLyrics = remainingVersions.some(v => v.lyrics_content && v.lyrics_content.trim().length > 0);
       {
         const headers = getAuthHeaders();
-        await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
+        await adminFetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
           method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify({ has_lyrics: anyRemainingHasLyrics }) 
         });
@@ -1435,12 +1458,12 @@ export default function Admin() {
       const currentDefault = songVersions.find(v => v.song_id === selectedSong.id && v[field]);
       
       // Unset others
-      await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&${field}=eq.true`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${selectedSong.id}&${field}=eq.true`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ [field]: false }) 
       });
       // Set this one
-      await fetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${version.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?id=eq.${version.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ [field]: true }) 
       });
@@ -1493,14 +1516,14 @@ export default function Admin() {
           setSaving(false); 
           return;
         }
-        await fetch(`${SUPABASE_URL}/rest/v1/song_flags`, { 
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_flags`, { 
           method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify(flagData) 
         });
         await logChange('add', 'song_flags', selectedSong.id, selectedSong.title, 'flag', null, flagType);
         showMessage('✅ Flag added!');
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${editingFlag.id}`, { 
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${editingFlag.id}`, { 
           method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
           body: JSON.stringify({ flag_type: flagType, explanation: flagExplanation.trim() }) 
         });
@@ -1516,7 +1539,7 @@ export default function Admin() {
   const deleteFlag = async (flag) => {
     if (!confirm('Delete this flag?')) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${flag.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${flag.id}`, { 
         method: 'DELETE', 
         headers: getAuthHeaders(false) 
       });
@@ -1555,7 +1578,7 @@ export default function Admin() {
         notes: duplicateNotes.trim() || null,
         created_by: currentUserName
       };
-      await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
         method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify(data) 
       });
@@ -1570,7 +1593,7 @@ export default function Admin() {
   const dismissDuplicate = async (dup) => {
     const headers = getAuthHeaders();
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?id=eq.${dup.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?id=eq.${dup.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ status: 'not_duplicate', resolved_at: new Date().toISOString(), resolved_by: currentUserName }) 
       });
@@ -1604,25 +1627,25 @@ export default function Admin() {
     
     try {
       // 1. Create alias from secondary song title
-      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_aliases`, { 
         method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId, alias_title: secondarySong.title }) 
       });
       
       // 2. Move versions from secondary to primary
-      await fetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${secondarySongId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_versions?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
       
       // 3. Move notes from secondary to primary
-      await fetch(`${SUPABASE_URL}/rest/v1/song_notes?song_id=eq.${secondarySongId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_notes?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
       
       // 4. Move media from secondary to primary
-      await fetch(`${SUPABASE_URL}/rest/v1/song_media?song_id=eq.${secondarySongId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_media?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
@@ -1632,7 +1655,7 @@ export default function Admin() {
       const primaryFlagTypes = songFlags.filter(f => f.song_id === mergePrimarySongId).map(f => f.flag_type);
       for (const flag of secondaryFlags) {
         if (!primaryFlagTypes.includes(flag.flag_type)) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${flag.id}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_flags?id=eq.${flag.id}`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ song_id: mergePrimarySongId }) 
           });
@@ -1640,7 +1663,7 @@ export default function Admin() {
       }
       
       // 6. Move aliases from secondary to primary
-      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?song_id=eq.${secondarySongId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_aliases?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
@@ -1650,19 +1673,19 @@ export default function Admin() {
       const primarySectionCodes = songSections.filter(s => s.song_id === mergePrimarySongId).map(s => s.section);
       for (const section of secondarySections) {
         if (!primarySectionCodes.includes(section.section)) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ song_id: mergePrimarySongId }) 
           });
         } else {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_sections?id=eq.${section.id}`, { 
             method: 'DELETE', headers 
           });
         }
       }
       
       // 8. Move songbook entries from secondary to primary
-      await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?song_id=eq.${secondarySongId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?song_id=eq.${secondarySongId}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ song_id: mergePrimarySongId }) 
       });
@@ -1672,26 +1695,26 @@ export default function Admin() {
       const primaryGroupIds = songGroupMembers.filter(m => m.song_id === mergePrimarySongId).map(m => m.group_id);
       for (const membership of secondaryMemberships) {
         if (!primaryGroupIds.includes(membership.group_id)) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${membership.id}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${membership.id}`, { 
             method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
             body: JSON.stringify({ song_id: mergePrimarySongId }) 
           });
         } else {
           // Delete duplicate membership
-          await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${membership.id}`, { 
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${membership.id}`, { 
             method: 'DELETE', headers 
           });
         }
       }
       
       // 10. Update duplicate record to merged
-      await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?id=eq.${selectedDuplicate.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?id=eq.${selectedDuplicate.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ status: 'merged', resolved_at: new Date().toISOString(), resolved_by: currentUserName }) 
       });
       
       // 11. Delete the secondary song
-      await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${secondarySongId}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${secondarySongId}`, { 
         method: 'DELETE', headers 
       });
       
@@ -1814,7 +1837,7 @@ export default function Admin() {
   const saveAutoDetectedDuplicate = async (songA, songB, reason) => {
     const headers = getAuthHeaders();
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
         method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({
           song_id_a: songA.id,
@@ -1833,7 +1856,7 @@ export default function Admin() {
   const dismissAutoDetected = (songA, songB) => {
     // For now just add to the DB as not_duplicate so it won't show again
     const headers = getAuthHeaders();
-    fetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
+    adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates`, { 
       method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, 
       body: JSON.stringify({
         song_id_a: songA.id,
@@ -1857,13 +1880,13 @@ export default function Admin() {
       const newTitle = alias.alias_title;
       
       // Update song title
-      await fetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/songs?id=eq.${selectedSong.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ title: newTitle }) 
       });
       
       // Update alias to old title
-      await fetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { 
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_aliases?id=eq.${alias.id}`, { 
         method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, 
         body: JSON.stringify({ alias_title: oldTitle }) 
       });
@@ -1902,24 +1925,24 @@ export default function Admin() {
     try {
       const groupData = { group_name: formGroupName.trim(), group_type: formGroupType, instructions: formGroupInstructions.trim() || null, is_requestable: formGroupRequestable };
       if (isAddingNewGroup) {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/song_groups`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(groupData) });
+        const response = await adminFetch(`${SUPABASE_URL}/rest/v1/song_groups`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(groupData) });
         if (response.ok) {
           const created = await response.json();
           await logChange('add', 'song_groups', null, created[0].group_name);
           if (formGroupPage.trim()) {
-            await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_group_id: created[0].id, songbook_id: 1, section: formGroupSection, page: formGroupPage.trim(), old_page: formGroupOldPage.trim() || null }) });
+            await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_group_id: created[0].id, songbook_id: 1, section: formGroupSection, page: formGroupPage.trim(), old_page: formGroupOldPage.trim() || null }) });
           }
           showMessage('✅ Group created!'); setIsAddingNewGroup(false); await loadAllData(); selectGroup(created[0]);
         }
       } else {
         if (selectedGroup.group_name !== groupData.group_name) await logChange('edit', 'song_groups', null, groupData.group_name, 'group_name', selectedGroup.group_name, groupData.group_name);
         if (selectedGroup.instructions !== groupData.instructions) await logChange('edit', 'song_groups', null, groupData.group_name, 'instructions', '[old]', '[new]');
-        await fetch(`${SUPABASE_URL}/rest/v1/song_groups?id=eq.${selectedGroup.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(groupData) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_groups?id=eq.${selectedGroup.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify(groupData) });
         const existingEntry = getGroupPage(selectedGroup.id);
         if (existingEntry) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ section: formGroupSection, page: formGroupPage.trim() || null, old_page: formGroupOldPage.trim() || null }) });
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?id=eq.${existingEntry.id}`, { method: 'PATCH', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ section: formGroupSection, page: formGroupPage.trim() || null, old_page: formGroupOldPage.trim() || null }) });
         } else if (formGroupPage.trim()) {
-          await fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_group_id: selectedGroup.id, songbook_id: 1, section: formGroupSection, page: formGroupPage.trim(), old_page: formGroupOldPage.trim() || null }) });
+          await adminFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ song_group_id: selectedGroup.id, songbook_id: 1, section: formGroupSection, page: formGroupPage.trim(), old_page: formGroupOldPage.trim() || null }) });
         }
         showMessage('✅ Group updated!'); await loadAllData(); setSelectedGroup({ ...selectedGroup, ...groupData });
       }
@@ -1939,10 +1962,10 @@ export default function Admin() {
       const memberData = { group_id: selectedGroup.id, song_id: parseInt(memberSongId), position_in_group: memberPosition, member_role: memberRole, fragment_lyrics: memberFragmentLyrics.trim() || null, specific_instructions: memberInstructions.trim() || null };
       const song = allSongs.find(s => s.id === parseInt(memberSongId));
       if (editingMember.isNew) {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_group_members`, { method: 'POST', headers, body: JSON.stringify(memberData) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_group_members`, { method: 'POST', headers, body: JSON.stringify(memberData) });
         await logChange('add', 'song_group_members', null, `${selectedGroup.group_name} + ${song?.title}`, 'member', null, song?.title);
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${editingMember.id}`, { method: 'PATCH', headers, body: JSON.stringify(memberData) });
+        await adminFetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${editingMember.id}`, { method: 'PATCH', headers, body: JSON.stringify(memberData) });
         await logChange('edit', 'song_group_members', null, `${selectedGroup.group_name} + ${song?.title}`, 'member', null, null);
       }
       showMessage('✅ Member saved!'); cancelMemberEdit(); await loadAllData();
@@ -1954,7 +1977,7 @@ export default function Admin() {
     const song = allSongs.find(s => s.id === member.song_id);
     if (!confirm(`Remove "${song?.title}" from this group?`)) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${member.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
+      await adminFetch(`${SUPABASE_URL}/rest/v1/song_group_members?id=eq.${member.id}`, { method: 'DELETE', headers: getAuthHeaders(false) });
       await logChange('delete', 'song_group_members', null, `${selectedGroup.group_name} - ${song?.title}`, 'member', song?.title, null);
       showMessage('✅ Member removed'); await loadAllData();
     } catch (error) { showMessage('❌ Error removing member'); }
@@ -2128,10 +2151,19 @@ export default function Admin() {
   return (
     <div style={s.container}>
       <div style={{ padding: '1rem', maxWidth: '1400px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem', fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Song Admin</h1>
+        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem', fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-music" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Song Management</h1>
       </div>
 
-      {message && <div style={s.msg}>{message}</div>}
+      {/* One view-only banner for the page, decided once from the live
+          permissions - rather than a note on every control. */}
+      {!canEditSongs && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto 1rem', padding: '0 1rem' }}>
+          <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.65rem 0.8rem', fontSize: '0.875rem', margin: 0 }}>
+            <i className="ti ti-eye" style={{ color: '#838C95', marginTop: '0.1rem' }} aria-hidden="true"></i>
+            <span>Song management is view only for you - you can browse everything here, but changing songs, songbooks, groups or duplicates requires "Edit songs and songbooks" (Platform Song Admin). If you try, you'll be told this rather than it failing quietly.</span>
+          </p>
+        </div>
+      )}
 
       <div style={s.mainTabs}>
         <button style={s.mainTab(mainTab === 'songs', true)} onClick={() => setMainTab('songs')}>Songs</button>
