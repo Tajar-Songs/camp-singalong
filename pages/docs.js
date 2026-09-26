@@ -929,7 +929,7 @@ export default function Docs() {
         : `record_id=is.null`;
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&${filter}&user_id=eq.${currentUserId}&select=*&order=updated_at.desc&limit=1`,
-        { headers: getAuthHeaders(false) }
+        { headers: getAuthHeaders(false), cache: 'no-store' }
       );
       const data = await res.json();
       return Array.isArray(data) && data.length > 0 ? data[0] : null;
@@ -945,10 +945,19 @@ export default function Docs() {
       const filter = recordId
         ? `record_id=eq.${recordId}`
         : `record_id=is.null`;
-      await fetch(
+      const res = await fetch(
         `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&${filter}&user_id=eq.${currentUserId}`,
         { method: 'DELETE', headers: getAuthHeaders(false) }
       );
+      // This delete failing silently was a real, live gap: a successful
+      // publish would call this, but if the delete itself was rejected
+      // (an RLS policy, a permission issue) there was no way to ever know -
+      // the draft would just keep existing, looking exactly like a publish
+      // that "didn't really work" even though it did.
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Failed to clear draft:', res.status, errorText);
+      }
       loadUserDrafts(); // keep the Drafts list/badge in sync
     } catch (error) {
       console.error('Error clearing draft:', error);
@@ -973,7 +982,7 @@ export default function Docs() {
     try {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/content_drafts?table_name=eq.docs&user_id=eq.${currentUserId}&select=*&order=updated_at.desc`,
-        { headers: getAuthHeaders(false) }
+        { headers: getAuthHeaders(false), cache: 'no-store' }
       );
       const data = await res.json();
       setUserDrafts(Array.isArray(data) ? data : []);
