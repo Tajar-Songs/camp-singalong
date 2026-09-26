@@ -738,6 +738,15 @@ export default function Docs() {
     if (!editTitle.trim()) { showMessage('❌ Title is required'); return; }
     if (!editSlug.trim()) { showMessage('❌ Slug is required'); return; }
     
+    // Cancel any pending debounced autosave immediately. Without this, a
+    // publish triggered soon after the last keystroke (well within the
+    // 4-second autosave window) leaves that already-scheduled timer alive -
+    // it fires later regardless of editMode (editMode isn't rechecked at
+    // fire time, only at the moment the timer was originally scheduled),
+    // silently recreating a draft with the same content that was just
+    // published. Exiting edit mode alone does not prevent this.
+    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
+    
     // Get final content based on current mode
     let finalHtml = editContentHtml;
     let finalMd = editContentMd;
@@ -1715,13 +1724,30 @@ export default function Docs() {
                 <>
                   {filteredDrafts.map(draft => {
                     const label = draft.content?.title?.trim() || 'Untitled draft';
-                    const isNewDoc = !docs.find(d => d.id === draft.record_id);
+                    const liveDoc = docs.find(d => d.id === draft.record_id);
+                    const isNewDoc = !liveDoc;
+                    // Safety net: a draft can end up identical to what's
+                    // already published (see the autosave-timer race this
+                    // was fixed for above) - if so, it's not meaningfully
+                    // "unpublished," and labeling it that way is misleading
+                    // even though the row technically still exists.
+                    const c = draft.content || {};
+                    const isIdenticalToLive = liveDoc &&
+                      (c.title ?? '') === (liveDoc.title ?? '') &&
+                      (c.slug ?? '') === (liveDoc.slug ?? '') &&
+                      (c.content ?? '') === (liveDoc.content ?? '') &&
+                      (c.content_md ?? '') === (liveDoc.content_md ?? '');
                     return (
                       <div key={draft.id} onClick={() => resumeDraft(draft)} style={{ ...s.docItem(false), display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: '500' }}>{label}</div>
                           <div style={{ fontSize: '0.75rem', color: '#838C95', marginTop: '0.25rem' }}>
-                            {isNewDoc ? <><i className="ti ti-file-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> unpublished new doc</> : <><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> unpublished edit</>} · saved {new Date(draft.updated_at).toLocaleString()}
+                            {isNewDoc
+                              ? <><i className="ti ti-file-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> unpublished new doc</>
+                              : isIdenticalToLive
+                                ? <><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> matches published version</>
+                                : <><i className="ti ti-edit" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> unpublished edit</>
+                            } · saved {new Date(draft.updated_at).toLocaleString()}
                           </div>
                         </div>
                         <button
@@ -1755,7 +1781,7 @@ export default function Docs() {
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     {/* Save = draft only, private, does not touch the live doc or
                         create a version. Save & Publish = the real save, as before. */}
-                    <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save'}</button>
+                    <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save Draft'}</button>
                     <button style={s.btn} onClick={savePublish} disabled={saving}>{saving ? 'Publishing...' : 'Save & Publish'}</button>
                     <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
                     {/* Available while editing (including a brand-new, not-yet-
@@ -1857,7 +1883,7 @@ export default function Docs() {
 
                 {/* Bottom save */}
                 <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '1rem', borderTop: '1px solid #334155', alignItems: 'center' }}>
-                  <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save'}</button>
+                  <button style={s.btnSec} onClick={saveDraft} disabled={draftStatus === 'saving'}>{draftStatus === 'saving' ? 'Saving draft...' : 'Save Draft'}</button>
                   <button style={s.btn} onClick={savePublish} disabled={saving}>{saving ? 'Publishing...' : 'Save & Publish'}</button>
                   <button style={s.btnSec} onClick={cancelEdit}>Cancel</button>
                   {draftStatus === 'saved' && <span style={{ fontSize: '0.75rem', color: '#838C95' }}>Draft saved</span>}
