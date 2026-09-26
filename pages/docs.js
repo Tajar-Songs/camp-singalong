@@ -535,7 +535,7 @@ export default function Docs() {
     // not be allowed to overwrite the more current result.
     const thisRequestId = ++loadDocsRequestId.current;
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers: getAuthHeaders(false) });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers: getAuthHeaders(false), cache: 'no-store' });
       const data = await res.json();
       if (thisRequestId !== loadDocsRequestId.current) return; // a newer request has since started; discard this one
       if (Array.isArray(data)) {
