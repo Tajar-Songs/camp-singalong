@@ -1,11 +1,19 @@
 // GET /api/docs/[slug] - Get a specific doc by slug
+// Optional query params:
+//   ?key=<DOCS_API_KEY>  required for admin-visibility docs (see lib/docsApi.js)
+//   ?v=... / ?t=...      ignored; only there to make the URL unique so
+//                        nothing serves a saved copy
+//
+// An admin doc requested without a valid key, or a doc in the trash,
+// returns 404 - the same as a doc that doesn't exist, so the API doesn't
+// reveal which internal slugs exist.
+//
 // content_md is the field docs.js actually writes to on save (confirmed by
 // reading the save function directly) - it is the live field. content is a
 // legacy/fallback field for docs that predate content_md, or were never
 // re-saved since. Prefer content_md; fall back to content only if empty.
 
-const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
+import { SUPABASE_URL, secretHeaders, hasInternalAccess, noStore } from '../../../lib/docsApi';
 
 // Convert HTML to simple markdown for AI readability (only used for the
 // content fallback, since content_md is already markdown)
@@ -40,6 +48,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  noStore(res);
+
   const { slug } = req.query;
 
   if (!slug) {
@@ -47,18 +57,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const url = `${SUPABASE_URL}/rest/v1/docs?slug=eq.${encodeURIComponent(slug)}&select=*`;
+    const internal = hasInternalAccess(req);
 
-    const response = await fetch(url, {
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`
-      },
-      cache: 'no-store'
-    });
+    let url = `${SUPABASE_URL}/rest/v1/docs?slug=eq.${encodeURIComponent(slug)}&deleted_at=is.null&select=*`;
+    if (!internal) url += `&visibility=eq.user`;
+
+    const response = await fetch(url, { headers: secretHeaders(), cache: 'no-store' });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch doc');
+      const detail = await response.text();
+      throw new Error(`Supabase returned ${response.status}: ${detail}`);
     }
 
     const docs = await response.json();
@@ -69,10 +77,6 @@ export default async function handler(req, res) {
 
     const doc = docs[0];
     const content = doc.content_md || htmlToMarkdown(doc.content);
-
-    // Explicit no-cache: nothing between this server and the client should
-    // ever serve a cached copy of this response.
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
 
     res.status(200).json({
       title: doc.title,
