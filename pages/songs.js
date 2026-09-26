@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { getFilterableSongbooks, getAvailableSections, songMatchesFilters, toggleInArray, sectionLabel } from '../lib/songFilters';
+import { notifyLegacy } from '../lib/notify';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -127,6 +128,95 @@ const STATUS_ICON_MAP = {
   '📚': 'book',
   '❌': 'x', '✗': 'x',
 };
+// Style guide palette: each color has a lighter shade for text/accents on
+// dark backgrounds and a deeper "universal button fill" shade that meets
+// contrast with white text. Status options store a palette color (the
+// Settings color presets are the text shades); a selected button draws its
+// fill shade so white text on it always stays readable.
+const PALETTE_FILL = {
+  '#3b9b73': '#318160', // Forest green
+  '#6882b6': '#5371AC', // Twilight blue
+  '#8f74b4': '#7959A6', // Dusty purple
+  '#d45d25': '#C35522', // Campfire orange
+  '#838c95': '#6E7881'  // Stone grey
+};
+const fillFor = (color) => PALETTE_FILL[(color || '').toLowerCase()] || color || '#6E7881';
+
+// Personal tag input. Style guide patterns it follows:
+//   - Preventing near-duplicate values: the tags you've already used (on
+//     any song) are visible while you add one, so "song" and "songs" don't
+//     both get created by accident.
+//   - Typeahead means a browsable list: the full list opens on focus and
+//     narrows as you type; tags already on this song stay in the list,
+//     highlighted with a check (clicking one removes it) rather than
+//     disappearing.
+// Implementation note: onMouseDown preventDefault on the list keeps the
+// input focused across several clicks.
+function PersonalTagInput({ allTags, currentTags, onAdd, onRemove }) {
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef(null);
+  const q = text.trim().toLowerCase();
+  const matches = allTags.filter(t => !q || t.includes(q));
+  const exactExists = allTags.includes(q);
+  const commit = (tag) => {
+    const t = tag.trim().toLowerCase();
+    if (!t) return;
+    if (currentTags.includes(t)) onRemove(t); else onAdd(t);
+    setText('');
+  };
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder="+ Add tag"
+        aria-label="Add a personal tag"
+        value={text}
+        onChange={(e) => { setText(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && q) { commit(q); }
+          if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); }
+        }}
+        style={{ background: '#0f172a', border: '1px solid #6882B6', borderRadius: '0.375rem', color: '#fff', width: '9rem', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+      />
+      {open && (matches.length > 0 || q) && (
+        <div
+          onMouseDown={(e) => e.preventDefault()}
+          role="listbox"
+          aria-label="Your tags"
+          style={{ position: 'absolute', top: '100%', left: 0, marginTop: '0.25rem', minWidth: '12rem', maxHeight: '220px', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', boxShadow: '0 8px 20px rgba(0,0,0,0.4)', zIndex: 50, padding: '0.25rem' }}
+        >
+          {q && !exactExists && (
+            <button onClick={() => commit(q)} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#6882B6', padding: '0.35rem 0.5rem', fontSize: '0.75rem', cursor: 'pointer' }}>
+              <i className="ti ti-plus" aria-hidden="true"></i> Create "{q}"
+            </button>
+          )}
+          {matches.length === 0 && !q && <div style={{ color: '#838C95', fontSize: '0.75rem', padding: '0.35rem 0.5rem' }}>No tags yet - type one to create it</div>}
+          {matches.map(tag => {
+            const onSong = currentTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                role="option"
+                aria-selected={onSong}
+                onClick={() => commit(tag)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', width: '100%', textAlign: 'left', border: 'none', borderRadius: '0.25rem', padding: '0.35rem 0.5rem', fontSize: '0.75rem', cursor: 'pointer', color: '#fff', background: onSong ? '#6882B633' : 'transparent' }}
+              >
+                <i className={`ti ${onSong ? 'ti-check' : 'ti-tag'}`} style={{ color: onSong ? '#6882B6' : '#838C95' }} aria-hidden="true"></i>
+                {tag}
+                {onSong && <span style={{ marginLeft: 'auto', color: '#838C95', fontSize: '0.65rem' }}>on this song</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusIcon({ emoji }) {
   const iconName = STATUS_ICON_MAP[emoji];
   return iconName
@@ -537,7 +627,8 @@ export default function Songs() {
     }
   };
 
-  const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
+  // Shared messages, drawn below the nav bar by _app.js (lib/notify.js).
+  const showMessage = (msg) => notifyLegacy(msg);
 
   // All songbook placements across all songs, in the {songbook_id, section_id} shape
   // the shared filter module expects - derived from the already-loaded, enriched
@@ -1001,7 +1092,7 @@ export default function Songs() {
     btnSec: { background: '#334155', color: '#fff', border: 'none', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem' },
     btnSmall: { background: '#334155', color: '#fff', border: 'none', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', cursor: 'pointer', fontSize: '0.75rem' },
     statusBtn: (active, color) => ({
-      background: active ? color : '#334155',
+      background: active ? fillFor(color) : '#334155',
       color: '#fff',
       border: 'none',
       padding: '0.375rem 0.75rem',
@@ -1029,7 +1120,6 @@ export default function Songs() {
 
   return (
     <div style={s.container}>
-      {message && <div style={s.message}>{message}</div>}
 
       <div style={s.wrapper}>
         {/* Song List Panel */}
@@ -1416,8 +1506,9 @@ export default function Songs() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                     {selectedSong.tags.map(tag => (
                       <span key={tag} style={{ 
-                        background: '#838C9520', 
-                        color: '#838C95',
+                        background: '#3B9B7320', 
+                        color: '#3B9B73',
+                        border: '1px solid #3B9B7355',
                         padding: '0.2rem 0.5rem', 
                         borderRadius: '0.25rem', 
                         fontSize: '0.75rem'
@@ -1474,6 +1565,7 @@ export default function Songs() {
                     <button
                       key={opt.value_key}
                       onClick={() => toggleStatus(selectedSong.id, opt.value_key)}
+                      aria-pressed={isSet}
                       style={s.statusBtn(isSet, opt.color || '#838C95')}
                     >
                       {opt.icon && <StatusIcon emoji={opt.icon} />} {opt.label}
@@ -1498,18 +1590,11 @@ export default function Songs() {
                       <button onClick={() => removePersonalTag(selectedSong.id, tag)} style={s.removeTag}>×</button>
                     </span>
                   ))}
-                  <input
-                    type="text"
-                    placeholder="+ Add tag"
-                    value={personalTagInput}
-                    onChange={(e) => setPersonalTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && personalTagInput.trim()) {
-                        addPersonalTag(selectedSong.id, personalTagInput.trim());
-                        setPersonalTagInput('');
-                      }
-                    }}
-                    style={{ ...s.input, width: '100px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                  <PersonalTagInput
+                    allTags={allPersonalTags}
+                    currentTags={pref?.personal_tags || []}
+                    onAdd={(tag) => addPersonalTag(selectedSong.id, tag)}
+                    onRemove={(tag) => removePersonalTag(selectedSong.id, tag)}
                   />
                 </div>
               </div>
