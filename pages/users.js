@@ -34,6 +34,8 @@ export default function UserManagement() {
   const [roleFilters, setRoleFilters] = useState([]); // [] = no filter (show all); 'none' = users with zero roles
   const [roleFilterMode, setRoleFilterMode] = useState('any');
   const [busyKey, setBusyKey] = useState(null);       // `${userId}|${roleId}` while a change is in flight
+  // Personal preference (Profile): hide roles this person can't grant.
+  const hideViewOnly = !!userProfile?.hide_view_only;
 
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
@@ -434,7 +436,7 @@ export default function UserManagement() {
           <span>
             {grantableRoles.length === 0
               ? 'Roles are view only for you - your roles can\'t grant or remove any role.'
-              : `You can grant or remove: ${grantableRoles.map(r => r.label).join(', ')}.${grantableRoles.length < allRoles.length ? ' Other roles are view only for you.' : ''}`}
+              : `You can grant or remove: ${grantableRoles.map(r => r.label).join(', ')}.${grantableRoles.length < allRoles.length ? (hideViewOnly ? " Roles you can't grant are hidden on each person (your Profile setting)." : ' Other roles are view only for you.') : ''}`}
           </span>
         </p>
 
@@ -550,7 +552,7 @@ export default function UserManagement() {
                       // Roles this person can't grant at all: a plain label,
                       // not a button (the banner above says why).
                       if (!canIGrant(r.id)) {
-                        return held ? (
+                        return held && !hideViewOnly ? (
                           <span key={r.id} className="px-3 py-2 rounded-lg border font-bold text-sm bg-[#3B9B73]/10 border-[#3B9B73]/50 text-[#3B9B73]">
                             <i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {lockIcon}{r.label}
                           </span>
