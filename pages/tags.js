@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { fetchMyPermissions, hasPermission } from '../lib/permissions';
+import { notifyLegacy } from '../lib/notify';
+import { createGuardedFetch } from '../lib/guardedFetch';
 import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
@@ -150,6 +153,17 @@ export default function TagManagement() {
     return headers;
   };
 
+  // The logged-in user's permissions (configurable role -> permission
+  // mapping). Decides view-only vs. editable on this page.
+  const [myPermissions, setMyPermissions] = useState([]);
+  const permissionsRef = useRef([]);
+  permissionsRef.current = myPermissions;
+  // Shared choke point for every database call on this page (lib/guardedFetch.js).
+  const guard = useRef(null);
+  if (!guard.current) guard.current = createGuardedFetch(() => permissionsRef.current);
+  const tagsFetch = guard.current.guardedFetch;
+  const canManageTags = hasPermission(myPermissions, 'tags.manage');
+
   // Check auth on load
   useEffect(() => { checkAuthSession(); }, []);
   useEffect(() => { if (hasAnyRole(userRoleKeys)) loadData(); }, [userRoleKeys]);
@@ -204,11 +218,12 @@ export default function TagManagement() {
   const loadUserProfile = async (userId) => {
     try {
       const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${localStorage.getItem('supabase_access_token')}` };
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
+      const res = await tagsFetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (data.length > 0) setUserProfile(data[0]);
       const roleKeys = await fetchUserRoleKeys(userId, headers);
       setUserRoleKeys(roleKeys);
+      setMyPermissions(await fetchMyPermissions(headers));
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
@@ -259,25 +274,25 @@ export default function TagManagement() {
     setLoading(true);
     try {
       const [tagsRes, songsRes, songTagsRes, versionsRes, songbooksRes, entriesRes, sectionDefsRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, {
           headers: getAuthHeaders(false)
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
           headers: getAuthHeaders(false)
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/song_tags?select=*`, {
           headers: getAuthHeaders(false)
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/song_versions?select=*`, {
           headers: getAuthHeaders(false)
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*`, {
           headers: getAuthHeaders(false)
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
           headers: getAuthHeaders(false)
         }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, {
+        tagsFetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, {
           headers: getAuthHeaders(false)
         })
       ]);
@@ -305,9 +320,12 @@ export default function TagManagement() {
     setLoading(false);
   };
 
+  // Messages use the shared ones below the nav bar (lib/notify.js). If
+  // tagsFetch has just explained a failed change, the handler's own generic
+  // "❌ Error..." that follows is skipped.
   const showMessage = (msg) => {
-    setMessage(msg);
-    setTimeout(() => setMessage(''), 3000);
+    if (typeof msg === 'string' && msg.startsWith('❌') && guard.current.recentlyReported()) return;
+    notifyLegacy(msg);
   };
 
   // Get page/section info for a song from songbook entries (primary songbook)
@@ -394,7 +412,7 @@ export default function TagManagement() {
   // Remove a single song from a tag
   const removeSongFromTag = async (songId, tagId) => {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${songId}&tag_id=eq.${tagId}`, {
+      await tagsFetch(`${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${songId}&tag_id=eq.${tagId}`, {
         method: 'DELETE',
         headers: getAuthHeaders(false)
       });
@@ -441,7 +459,7 @@ export default function TagManagement() {
       };
 
       if (isAddingTag) {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/tags`, {
+        const response = await tagsFetch(`${SUPABASE_URL}/rest/v1/tags`, {
           method: 'POST',
           headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
           body: JSON.stringify(tagData)
@@ -455,7 +473,7 @@ export default function TagManagement() {
           showMessage(`❌ Error: ${error.message || 'Could not create tag'}`);
         }
       } else {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${editingTag.id}`, {
+        const response = await tagsFetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${editingTag.id}`, {
           method: 'PATCH',
           headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
           body: JSON.stringify(tagData)
@@ -476,7 +494,7 @@ export default function TagManagement() {
     if (!confirm(`Delete platform tag "${tag.name}"? This will remove it from all songs.`)) return;
     
     try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${tag.id}`, {
+      const response = await tagsFetch(`${SUPABASE_URL}/rest/v1/tags?id=eq.${tag.id}`, {
         method: 'DELETE',
         headers: getAuthHeaders(false)
       });
@@ -580,7 +598,7 @@ export default function TagManagement() {
         tag_id: applyTagId
       }));
 
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/song_tags`, {
+      const response = await tagsFetch(`${SUPABASE_URL}/rest/v1/song_tags`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify(inserts)
@@ -618,7 +636,7 @@ export default function TagManagement() {
 
       // Delete each song_tag relationship
       for (const songId of songsWithTag) {
-        await fetch(`${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${songId}&tag_id=eq.${applyTagId}`, {
+        await tagsFetch(`${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${songId}&tag_id=eq.${applyTagId}`, {
           method: 'DELETE',
           headers: getAuthHeaders(false)
         });
@@ -759,11 +777,13 @@ export default function TagManagement() {
           </div>
         </header>
 
-        {/* Status Message */}
-        {message && (
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-slate-800 text-white px-8 py-4 rounded-2xl font-bold shadow-2xl border border-[#838C95]/35">
-            {message}
-          </div>
+        {/* One view-only banner for the page, decided once from the live
+            permissions - rather than a note on every control. */}
+        {!canManageTags && (
+          <p className="flex items-start gap-2 bg-slate-800 border border-[#334155] rounded-lg px-3 py-2 mb-6 text-sm">
+            <i className="ti ti-eye text-[#838C95]" style={{ marginTop: '0.15rem' }} aria-hidden="true"></i>
+            <span>Tag management is view only for you - you can browse everything here, but creating, editing or applying platform tags requires "Manage tags" (Platform Song Admin). If you try, you'll be told this rather than it failing quietly.</span>
+          </p>
         )}
 
         {/* Tabs - connected segmented control, per the style guide's
