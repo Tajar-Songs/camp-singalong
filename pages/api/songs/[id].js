@@ -46,7 +46,7 @@ export default async function handler(req, res) {
 
     // Fetch tags
     const tagsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${id}&select=tag`,
+      `${SUPABASE_URL}/rest/v1/song_tags?song_id=eq.${id}&select=tags(name)`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const tags = await tagsRes.json();
@@ -108,7 +108,7 @@ export default async function handler(req, res) {
       notes_field: song.notes,
       created_at: song.created_at,
       updated_at: song.updated_at,
-      tags: Array.isArray(tags) ? tags.map(t => t.tag) : [],
+      tags: Array.isArray(tags) ? tags.map(t => t.tags?.name).filter(Boolean) : [], // song_tags links to tags by id; the name lives on tags
       aliases: Array.isArray(aliases) ? aliases.map(a => a.alias) : [],
       songbooks: Array.isArray(entries) ? entries.map(e => ({
         songbook: songbookMap[e.songbook_id] || e.songbook_id,
