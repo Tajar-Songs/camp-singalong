@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { notify } from '../lib/notify';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -20,6 +22,9 @@ export default function Profile() {
   const [message, setMessage] = useState('');
 
   const [displayName, setDisplayName] = useState('');
+  // "Hide things I can't change" - only shown to people with an admin role.
+  const [hideViewOnly, setHideViewOnly] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -58,29 +63,52 @@ export default function Profile() {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setDisplayName(data[0].display_name || '');
+        setHideViewOnly(!!data[0].hide_view_only);
       }
+      setIsAdmin(hasAnyRole(await fetchUserRoleKeys(userId, getAuthHeaders(false))));
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
-  const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
-
-  const saveProfile = async () => {
-    if (!user) return;
-    setSaving(true);
+  // Saves only the fields passed, and checks that the save actually
+  // happened (previously it showed "Profile saved" without checking).
+  const saveFields = async (fields, successText) => {
+    if (!user) return false;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${user.id}`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${user.id}`, {
         method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ display_name: displayName.trim() || null })
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
+        body: JSON.stringify(fields)
       });
-      showMessage(<><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Profile saved</>);
-      // Dispatch auth change event so nav updates
+      if (!res.ok) {
+        let detail = `the database returned ${res.status}`;
+        try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
+        throw new Error(detail);
+      }
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error('nothing was saved - try logging out and back in');
+      notify.success(successText);
+      // Let the nav bar (and anything else listening) pick up the change
       window.dispatchEvent(new Event('auth-changed'));
+      return true;
     } catch (error) {
       console.error('Error saving profile:', error);
-      showMessage(<><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Error saving</>);
+      notify.error(`Couldn't save: ${error.message}`);
+      return false;
     }
+  };
+
+  const saveProfile = async () => {
+    setSaving(true);
+    await saveFields({ display_name: displayName.trim() || null }, 'Profile saved');
     setSaving(false);
+  };
+
+  const toggleHideViewOnly = async (next) => {
+    setHideViewOnly(next);
+    const ok = await saveFields({ hide_view_only: next }, next
+      ? "Areas you can't change will now be hidden"
+      : "Areas you can't change will now be shown, marked view only");
+    if (!ok) setHideViewOnly(!next);
   };
 
   const s = {
@@ -93,8 +121,7 @@ export default function Profile() {
     input: { width: '100%', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem', color: '#fff', outline: 'none', fontSize: '0.875rem' },
     // Personal-tier: this whole page is the person's own settings, so the
     // action leads blue rather than the platform-default green.
-    btn: { background: '#5371AC', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' },
-    message: { position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', border: '1px solid #334155', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', zIndex: 100 }
+    btn: { background: '#5371AC', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }
   };
 
   if (loading) {
@@ -105,7 +132,7 @@ export default function Profile() {
     return (
       <div style={s.container}>
         <div style={{ ...s.wrapper, textAlign: 'center', paddingTop: '4rem' }}>
-          <p>Please <Link href="/?login=true" style={{ color: '#256B45' }}>log in</Link> to view your profile.</p>
+          <p>Please <Link href="/?login=true" style={{ color: '#3B9B73' }}>log in</Link> to view your profile.</p>
         </div>
       </div>
     );
@@ -113,7 +140,6 @@ export default function Profile() {
 
   return (
     <div style={s.container}>
-      {message && <div style={s.message}>{message}</div>}
 
       <div style={s.wrapper}>
         <div style={s.header}>
@@ -136,6 +162,27 @@ export default function Profile() {
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
+
+        {/* Admin display preference - personal (blue), only for people with an admin role */}
+        {isAdmin && (
+          <div style={s.card}>
+            <h2 style={s.cardTitle}>Admin areas</h2>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={hideViewOnly}
+                onChange={(e) => toggleHideViewOnly(e.target.checked)}
+                style={{ marginTop: '0.2rem', width: '1.05rem', height: '1.05rem', accentColor: '#5371AC' }}
+              />
+              <span>
+                <span style={{ fontWeight: 'bold' }}>Hide things I can't change</span>
+                <span style={{ display: 'block', color: '#838C95', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                  By default, admin areas you can view but not change are still shown, marked "view only". Turn this on to hide them instead: admin menu links, Settings sections and roles you can't grant. You can turn it back off any time. Pages you open directly still load, view only.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
       </div>
     </div>
   );
