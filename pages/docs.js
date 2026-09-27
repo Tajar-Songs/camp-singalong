@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { fetchMyPermissions, hasPermission } from '../lib/permissions';
+import { notifyLegacy } from '../lib/notify';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -568,7 +569,8 @@ export default function Docs() {
     } catch (error) { console.error('Error loading trash:', error); }
   };
 
-  const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
+  // Shared messages, drawn just below the nav bar by _app.js (lib/notify.js).
+  const showMessage = (msg) => notifyLegacy(msg);
   const canEdit = hasPermission(myPermissions, 'docs.edit');
   const canTrash = hasPermission(myPermissions, 'docs.trash');
   const canEmptyTrash = hasPermission(myPermissions, 'docs.empty_trash');
@@ -1645,7 +1647,6 @@ export default function Docs() {
 
   return (
     <div style={s.container}>
-      {message && <div style={s.message}>{message}</div>}
       {showOrganize && (
         <div style={s.organizeOverlay} onClick={() => setShowOrganize(false)}>
           <div style={s.organizePanel} onClick={(e) => e.stopPropagation()}>
