@@ -87,6 +87,8 @@ export default function Settings() {
   const [changeLog, setChangeLog] = useState([]);
   const [profileNames, setProfileNames] = useState({});   // user id -> display name, for the change log
   const [loading, setLoading] = useState(true);
+  // Personal preference (Profile): hide sections this person can't change.
+  const [hideViewOnly, setHideViewOnly] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
   const [expandedLists, setExpandedLists] = useState({});
   // Pending governance changes (permissions, grant rules, eligibility),
@@ -124,6 +126,10 @@ export default function Settings() {
       const userData = await res.json();
       setUser(userData);
       setMyPermissions(await fetchMyPermissions(getAuthHeaders(false)));
+      try {
+        const [profile] = await getJson(`user_profiles?id=eq.${userData.id}&select=hide_view_only`);
+        setHideViewOnly(!!profile?.hide_view_only);
+      } catch (e) { /* preference is optional; default is to show everything */ }
       // The change log is only readable by role holders, so it's loaded
       // once we know who's asking.
       loadChangeLog();
@@ -824,7 +830,12 @@ export default function Settings() {
         </h1>
         <p style={{ color: GREY_TEXT, marginBottom: '1.5rem', fontSize: '0.875rem' }}>{editableSummary()}</p>
 
-        {sectionOrder.map(section => {
+        {hideViewOnly && sectionOrder.some(sec => SECTION_PERMISSION[sec] && !can(SECTION_PERMISSION[sec])) && (
+          <p style={{ color: GREY_TEXT, fontSize: '0.8rem', marginTop: '-1rem', marginBottom: '1.25rem' }}>
+            <i className="ti ti-eye-off" aria-hidden="true"></i> Sections you can't change are hidden (your Profile setting "Hide things I can't change").
+          </p>
+        )}
+        {sectionOrder.filter(sec => !(hideViewOnly && SECTION_PERMISSION[sec] && !can(SECTION_PERMISSION[sec]))).map(section => {
           const categories = settingsBySection[section] || {};
           const lists = listsBySection[section] || [];
           const role = roleByKey[section];
