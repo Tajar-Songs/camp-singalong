@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { notifyLegacy } from '../lib/notify';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -124,7 +125,8 @@ export default function Suggest() {
     } catch (error) { console.error('Error loading suggestions:', error); }
   };
 
-  const showMsg = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 4000); };
+  // Shared messages, drawn just below the nav bar by _app.js (lib/notify.js).
+  const showMsg = (msg) => notifyLegacy(msg);
 
   const resetForm = () => {
     setIncludeAuthor(false); setIncludeComposer(false); setIncludeYear(false);
@@ -207,6 +209,14 @@ export default function Suggest() {
 
   const removeFlagItem = (index) => {
     if (flagItems.length > 1) setFlagItems(flagItems.filter((_, i) => i !== index));
+  };
+
+  // Was missing: the flag fields called this but it didn't exist, so
+  // changing a flag's type or notes broke the form.
+  const updateFlagItem = (index, field, value) => {
+    const updated = [...flagItems];
+    updated[index] = { ...updated[index], [field]: value };
+    setFlagItems(updated);
   };
 
   // Generate UUID for batch
@@ -565,7 +575,6 @@ export default function Suggest() {
       <div style={s.wrapper}>
         <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1.5rem', fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-bulb" aria-hidden="true"></i> Suggest Song Info</h1>
 
-        {message && <div style={s.msg}>{message}</div>}
 
         {/* Mode Selection */}
         <div style={s.card}>
