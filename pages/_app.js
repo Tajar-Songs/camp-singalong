@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { useState, useEffect } from 'react'
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles'
+import { fetchMyPermissions, hasPermission } from '../lib/permissions'
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -13,6 +14,7 @@ export default function App({ Component, pageProps }) {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [userRoleKeys, setUserRoleKeys] = useState([]);
+  const [myPermissions, setMyPermissions] = useState([]);
   const [checking, setChecking] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
@@ -146,6 +148,7 @@ export default function App({ Component, pageProps }) {
       }
       const roleKeys = await fetchUserRoleKeys(userId, { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` });
       setUserRoleKeys(roleKeys);
+      setMyPermissions(await fetchMyPermissions({ 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}` }));
     } catch (error) {
       console.error('Error loading profile:', error);
     }
@@ -157,6 +160,7 @@ export default function App({ Component, pageProps }) {
     setUser(null);
     setUserProfile(null);
     setUserRoleKeys([]);
+    setMyPermissions([]);
     window.location.href = '/';
   };
 
@@ -173,15 +177,20 @@ export default function App({ Component, pageProps }) {
     { href: '/profile', label: 'Profile', show: !!user },
   ];
 
+  // canChange: whether this person can change anything on that page. Only
+  // used when they've turned on "Hide things I can't change" (Profile) -
+  // otherwise every admin page stays in the menu and opens view only.
+  // Pages without a check here always show.
+  const can = (key) => hasPermission(myPermissions, key);
   const adminNavItems = [
-    { href: '/admin', label: 'Songs' },
+    { href: '/admin', label: 'Songs', canChange: can('songs.edit') },
     { href: '/suggestions', label: 'Song Suggestions' },
     { href: '/ideas', label: 'Feedback' },
-    { href: '/tags', label: 'Tags' },
+    { href: '/tags', label: 'Tags', canChange: can('tags.manage') },
     { href: '/reports', label: 'Reports' },
     { href: '/users', label: 'Users' },
-    { href: '/settings', label: 'Settings' },
-  ];
+    { href: '/settings', label: 'Settings', canChange: can('settings.song') || can('settings.health') || can('permissions.manage') },
+  ].filter(item => !(userProfile?.hide_view_only && item.canChange === false));
 
   const visibleUserItems = userNavItems.filter(item => item.show);
   const isOnAdminPage = adminNavItems.some(item => currentPath === item.href);
