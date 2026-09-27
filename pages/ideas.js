@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { notifyLegacy } from '../lib/notify';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -244,7 +245,8 @@ export default function Ideas() {
     } catch (error) { console.error('Error loading data:', error); }
   };
 
-  const showMessage = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3000); };
+  // Shared messages, drawn just below the nav bar by _app.js (lib/notify.js).
+  const showMessage = (msg) => notifyLegacy(msg);
 
   const getVoteCount = (requestId) => votes[requestId]?.length || 0;
   const hasVoted = (requestId) => user && votes[requestId]?.includes(user.id);
@@ -581,7 +583,6 @@ export default function Ideas() {
 
   return (
     <div style={s.container}>
-      {message && <div style={s.message}>{message}</div>}
       
       <div style={s.wrapper}>
         <div style={s.header}>
