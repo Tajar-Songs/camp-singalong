@@ -184,7 +184,7 @@ export default function App({ Component, pageProps }) {
   const can = (key) => hasPermission(myPermissions, key);
   const adminNavItems = [
     { href: '/admin', label: 'Songs', canChange: can('songs.edit') },
-    { href: '/suggestions', label: 'Song Suggestions' },
+    { href: '/suggestions', label: 'Song Suggestions', canChange: can('songs.review_suggestions') },
     { href: '/ideas', label: 'Feedback' },
     { href: '/tags', label: 'Tags', canChange: can('tags.manage') },
     { href: '/reports', label: 'Reports' },
