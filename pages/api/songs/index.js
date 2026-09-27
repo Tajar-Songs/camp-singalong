@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 
     // Fetch song tags
     const tagsRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/song_tags?select=song_id,tag&limit=10000`,
+      `${SUPABASE_URL}/rest/v1/song_tags?select=song_id,tags(name)&limit=10000`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const tags = await tagsRes.json();
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     // Build enriched song list
     const enrichedSongs = songs.map(song => {
       const songEntries = (Array.isArray(entries) ? entries : []).filter(e => e.song_id === song.id);
-      const songTags = (Array.isArray(tags) ? tags : []).filter(t => t.song_id === song.id).map(t => t.tag);
+      const songTags = (Array.isArray(tags) ? tags : []).filter(t => t.song_id === song.id).map(t => t.tags?.name).filter(Boolean); // song_tags links to tags by id; the name lives on tags
       
       return {
         ...song,
