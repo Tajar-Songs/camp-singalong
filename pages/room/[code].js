@@ -975,7 +975,7 @@ export default function Room() {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-slate-950' : 'bg-green-50'}`}>
         <div className="text-center">
-          <div className="text-4xl mb-4">🎵</div>
+          <div className="text-4xl mb-4"><i className="ti ti-music" aria-hidden="true"></i></div>
           <p className={isDark ? 'text-white' : 'text-slate-900'}>Loading room...</p>
         </div>
       </div>
@@ -1058,7 +1058,7 @@ if (view === 'display' && showLyrics && currentSong) {
             <div className="space-y-2 mb-4">
               {/* Group instructions (if this is a group) */}
               {isGroup && groupInstructions && (
-                <div className="p-4 bg-[#256B45]/15 rounded-xl text-[#D4EDE1] text-sm mb-4 border border-[#256B45]/40">
+                <div className="p-4 bg-[#318160]/15 rounded-xl text-[#D4EDE1] text-sm mb-4 border border-[#318160]/40">
                   <div className="font-bold text-[#3B9B73] mb-2">Group Instructions</div>
                   <p className="whitespace-pre-wrap">{groupInstructions}</p>
                 </div>
@@ -1099,7 +1099,7 @@ if (view === 'display' && showLyrics && currentSong) {
               </div>
             ) : (
               <div className="text-[#838C95] py-8">
-                <div className="text-5xl mb-4">📄</div>
+                <div className="text-5xl mb-4"><i className="ti ti-file-text" aria-hidden="true"></i></div>
                 <div>No lyrics available for this song</div>
               </div>
             )}
@@ -1153,7 +1153,7 @@ if (view === 'display' && showLyrics && currentSong) {
         <div className="p-4 bg-black/80 border-t border-white/10">
           <button 
             onClick={() => setShowLyrics(false)}
-            className="w-full py-3 rounded-xl font-bold bg-[#256B45] hover:bg-[#2f8058] text-white transition-colors"
+            className="w-full py-3 rounded-xl font-bold bg-[#318160] hover:bg-[#3B9B73] text-white transition-colors"
           >
             Back to Display
           </button>
@@ -1233,7 +1233,7 @@ if (view === 'display' && showLyrics && currentSong) {
           <div className="flex-1 overflow-y-auto p-6">
             {/* Group Instructions (if this is a group) */}
             {isGroup && groupInstructions && (
-              <div className="mb-6 p-4 bg-[#256B45]/15 rounded-xl border border-[#256B45]/40">
+              <div className="mb-6 p-4 bg-[#318160]/15 rounded-xl border border-[#318160]/40">
                 <div className="text-sm font-bold text-[#3B9B73] mb-2">Group Instructions</div>
                 <p className="text-[#D4EDE1] text-lg whitespace-pre-wrap">{groupInstructions}</p>
               </div>
@@ -1260,7 +1260,7 @@ if (view === 'display' && showLyrics && currentSong) {
                 </div>
               ) : (
                 <div className="text-[#838C95] py-8">
-                  <div className="text-5xl mb-4">📄</div>
+                  <div className="text-5xl mb-4"><i className="ti ti-file-text" aria-hidden="true"></i></div>
                   <div>No lyrics available for this song</div>
                 </div>
               )}
@@ -1319,7 +1319,7 @@ if (view === 'display' && showLyrics && currentSong) {
               onClick={() => setView('control')} 
               className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
             >
-              📱 Control
+              <i className="ti ti-device-mobile" aria-hidden="true"></i> Control
             </button>
           </div>
           
@@ -1329,7 +1329,7 @@ if (view === 'display' && showLyrics && currentSong) {
             {currentSong ? (
               <div>
                 <div className="text-2xl font-black mb-1 leading-tight" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>
-                  {currentSong.title} {currentSong.has_lyrics && '📄'}
+                  {currentSong.title} {currentSong.has_lyrics && <i className="ti ti-file-text" title="Has lyrics" aria-label="Has lyrics" style={{ fontSize: '0.9em' }}></i>}
                 </div>
                 <div className="text-xl text-[#3B9B73] font-bold mb-4">
                   Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
@@ -1340,9 +1340,9 @@ if (view === 'display' && showLyrics && currentSong) {
                   {currentSong?.has_lyrics && (
                     <button 
                       onClick={() => setShowLyrics(true)}
-                      className="bg-[#256B45] hover:bg-[#2f8058] px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      className="bg-[#318160] hover:bg-[#3B9B73] px-4 py-2 rounded-lg text-sm font-bold transition-colors"
                     >
-                      📄 Lyrics
+                      <i className="ti ti-file-text" aria-hidden="true"></i> Lyrics
                     </button>
                   )}
                   {/* Note buttons for mobile */}
@@ -1443,16 +1443,16 @@ if (view === 'display' && showLyrics && currentSong) {
               onClick={() => setView('control')} 
               className="bg-white/10 hover:bg-white/20 px-4 py-3 tv:py-4 rounded-xl text-base tv:text-xl font-bold transition-colors mb-4"
             >
-              📱 Control
+              <i className="ti ti-device-mobile" aria-hidden="true"></i> Control
             </button>
             
             {/* Lyrics Button (when available) */}
             {currentSong?.has_lyrics && (
               <button 
                 onClick={() => setShowLyrics(true)}
-                className="bg-[#256B45] hover:bg-[#2f8058] px-4 py-3 tv:py-4 rounded-xl text-base tv:text-xl font-bold transition-colors mb-4"
+                className="bg-[#318160] hover:bg-[#3B9B73] px-4 py-3 tv:py-4 rounded-xl text-base tv:text-xl font-bold transition-colors mb-4"
               >
-                📄 Lyrics
+                <i className="ti ti-file-text" aria-hidden="true"></i> Lyrics
               </button>
             )}
 
@@ -1539,10 +1539,10 @@ if (view === 'display' && showLyrics && currentSong) {
                       className="w-full mb-4 px-4 py-3 rounded-xl relative flex items-center gap-4 tv:gap-6"
                       style={{ background: 'rgba(226,232,245,0.08)', border: '1px solid rgba(226,232,245,0.35)', boxShadow: '0 0 16px rgba(226,232,245,0.35)' }}
                     >
-                      <span style={{ fontSize: '14px', position: 'absolute', top: '-7px', right: '4px' }} aria-hidden="true">✨</span>
+                      <span style={{ fontSize: '14px', position: 'absolute', top: '-7px', right: '4px' }} aria-hidden="true"><i className="ti ti-sparkles"></i></span>
                       <div className="text-sm tv:text-lg uppercase font-bold opacity-70 shrink-0" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>Now Singing</div>
                       <div className="text-2xl tv:text-5xl font-black leading-tight flex-1 min-w-0 truncate" style={{ color: '#E2E8F5', fontFamily: "'Gloria Hallelujah', cursive" }}>
-                        {currentSong.title} {currentSong.has_lyrics && '📄'}
+                        {currentSong.title} {currentSong.has_lyrics && <i className="ti ti-file-text" title="Has lyrics" aria-label="Has lyrics" style={{ fontSize: '0.9em' }}></i>}
                       </div>
                       <div className="text-lg tv:text-3xl font-bold shrink-0" style={{ color: '#3B9B73' }}>
                         Page {currentSong.page} {currentSong.old_page && `(${currentSong.old_page})`}
@@ -1641,7 +1641,7 @@ if (view === 'display' && showLyrics && currentSong) {
                     <div key={song.id} className="flex justify-between items-start text-2xl tv:text-4xl font-medium gap-4">
                       <div className="truncate min-w-0">
                         <span className="opacity-50 mr-3">{i+1}.</span>
-                        {song.song_title} {song.has_lyrics && '📄'}
+                        {song.song_title} {song.has_lyrics && <i className="ti ti-file-text" title="Has lyrics" aria-label="Has lyrics" style={{ fontSize: '0.9em' }}></i>}
                       </div>
                       <div className="text-[#3B9B73] shrink-0 text-right">Page {song.song_page}</div>
                     </div>
@@ -1667,7 +1667,7 @@ if (view === 'display' && showLyrics && currentSong) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="true" />
         <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet" />
       </Head>
-    <div className={`min-h-screen p-2 sm:p-4 pb-20 ${isDark ? 'bg-slate-950 text-white' : 'bg-[#256B45]/5 text-[#0f172a]'}`} style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
+    <div className={`min-h-screen p-2 sm:p-4 pb-20 ${isDark ? 'bg-slate-950 text-white' : 'bg-[#318160]/5 text-[#0f172a]'}`} style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
       
       {/* Group Prompt Modal */}
       {groupPrompt && (
@@ -1697,9 +1697,9 @@ if (view === 'display' && showLyrics && currentSong) {
                   <button
                     key={group.id}
                     onClick={() => handleGroupPromptChoice('group', group)}
-                    className="w-full p-4 rounded-xl text-left border-2 border-[#256B45] bg-[#256B45]/10 hover:bg-[#256B45]/20 transition-colors"
+                    className="w-full p-4 rounded-xl text-left border-2 border-[#318160] bg-[#318160]/10 hover:bg-[#318160]/20 transition-colors"
                   >
-                    <div className="font-bold text-[#256B45]">{group.group_name}</div>
+                    <div className="font-bold text-[#318160]">{group.group_name}</div>
                     <div className="text-sm opacity-60">
                       Page {pageInfo?.page || 'N/A'} • {members.length} songs
                     </div>
@@ -1733,7 +1733,7 @@ if (view === 'display' && showLyrics && currentSong) {
             </div>
             
             {authError && <div className="bg-[#C35522]/10 text-[#C35522] p-3 rounded-lg mb-4 text-sm">{authError}</div>}
-            {authMessage && <div className="bg-[#256B45]/10 text-[#256B45] p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
+            {authMessage && <div className="bg-[#318160]/10 text-[#318160] p-3 rounded-lg mb-4 text-sm">{authMessage}</div>}
             
             <div className="space-y-3">
               {authMode === 'signup' && (
@@ -1742,7 +1742,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   placeholder="Display Name"
                   value={authDisplayName}
                   onChange={(e) => setAuthDisplayName(e.target.value)}
-                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#318160] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
                 />
               )}
               <input
@@ -1750,7 +1750,7 @@ if (view === 'display' && showLyrics && currentSong) {
                 placeholder="Email"
                 value={authEmail}
                 onChange={(e) => setAuthEmail(e.target.value)}
-                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
+                className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#318160] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
               />
               {authMode !== 'magic' && (
                 <input
@@ -1758,13 +1758,13 @@ if (view === 'display' && showLyrics && currentSong) {
                   placeholder="Password"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
-                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
+                  className={`w-full border rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-[#318160] ${isDark ? 'bg-slate-800 border-[#838C95]/30 text-white' : 'bg-white border-[#838C95]/25'}`}
                 />
               )}
               <button
                 onClick={authMode === 'signup' ? handleSignUp : authMode === 'magic' ? handleMagicLink : handleLogin}
                 disabled={authLoading || !authEmail || (authMode !== 'magic' && !authPassword)}
-                className="w-full bg-[#256B45] hover:bg-[#2f8058] text-white py-3 rounded-lg font-bold transition-all disabled:opacity-50"
+                className="w-full bg-[#318160] hover:bg-[#3B9B73] text-white py-3 rounded-lg font-bold transition-all disabled:opacity-50"
               >
                 {authLoading ? 'Loading...' : authMode === 'signup' ? 'Create Account' : authMode === 'magic' ? 'Send Magic Link' : 'Sign In'}
               </button>
@@ -1774,15 +1774,15 @@ if (view === 'display' && showLyrics && currentSong) {
               <div className="flex flex-col gap-2 text-sm text-center">
                 {authMode === 'login' && (
                   <>
-                    <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-[#256B45] hover:underline">Need an account? Sign up</button>
+                    <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-[#318160] hover:underline">Need an account? Sign up</button>
                     <button onClick={() => { setAuthMode('magic'); setAuthError(''); }} className="text-[#5371AC] hover:underline">Use magic link instead</button>
                   </>
                 )}
                 {authMode === 'signup' && (
-                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#256B45] hover:underline">Already have an account? Sign in</button>
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#318160] hover:underline">Already have an account? Sign in</button>
                 )}
                 {authMode === 'magic' && (
-                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#256B45] hover:underline">Use password instead</button>
+                  <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-[#318160] hover:underline">Use password instead</button>
                 )}
               </div>
             </div>
@@ -1793,9 +1793,9 @@ if (view === 'display' && showLyrics && currentSong) {
       <div className="max-w-4xl mx-auto space-y-4">
         
         {/* Header Section */}
-        <div className={`rounded-3xl shadow-xl p-6 ${isDark ? 'bg-slate-900 border border-[#838C95]/20' : 'bg-white border border-[#256B45]/20'}`}>
+        <div className={`rounded-3xl shadow-xl p-6 ${isDark ? 'bg-slate-900 border border-[#838C95]/20' : 'bg-white border border-[#318160]/20'}`}>
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-xl font-black tracking-tight" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>🎵 Tajar's Songbook</h1>
+            <h1 className="text-xl font-black tracking-tight" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}><iconify-icon icon="streamline-freehand:music-note-1" style={{ fontSize: '1em', verticalAlign: '-0.1em' }} aria-hidden="true"></iconify-icon> Tajar's Songbook</h1>
             <div className="flex items-center gap-2">
               {/* User status */}
               {user ? (
@@ -1805,44 +1805,15 @@ if (view === 'display' && showLyrics && currentSong) {
               ) : (
                 <button 
                   onClick={() => setShowAuthModal(true)}
-                  className="px-3 py-2 rounded-xl font-bold text-sm bg-[#256B45] text-white hover:bg-[#2f8058]"
+                  className="px-3 py-2 rounded-xl font-bold text-sm bg-[#318160] text-white hover:bg-[#3B9B73]"
                 >
                   Sign in
                 </button>
               )}
-              {userProfile?.role === 'admin' && (
-                <div className="relative">
-                  <button 
-                    onClick={() => setShowAdminMenu(!showAdminMenu)}
-                    className={`px-3 py-2 rounded-xl font-bold text-sm ${isDark ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`}
-                  >
-                    ⚙️ Admin
-                  </button>
-                  {showAdminMenu && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowAdminMenu(false)} />
-                      <div className={`absolute right-0 top-full mt-2 w-48 rounded-xl shadow-lg z-50 overflow-hidden ${isDark ? 'bg-slate-800 border border-[#838C95]/30' : 'bg-white border border-[#838C95]/25'}`}>
-                        <a href="/admin" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
-                          📝 Song Management
-                        </a>
-                        <a href="/admin/tags" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
-                          🏷️ Tags
-                        </a>
-                        <a href="/admin/users" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
-                          👥 Users
-                        </a>
-                        <a href="/reports" className={`block px-4 py-3 text-sm font-medium ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
-                          📊 Insights
-                        </a>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              <button onClick={() => setView('display')} className="bg-[#256B45] px-4 py-2 rounded-xl text-white font-bold text-sm">📺 Display View</button>
+              <button onClick={() => setView('display')} className="bg-[#318160] px-4 py-2 rounded-xl text-white font-bold text-sm"><i className="ti ti-device-tv" aria-hidden="true"></i> Display View</button>
             </div>
           </div>
-          <div className={`p-4 rounded-2xl mb-4 border-2 ${isDark ? 'bg-[#256B45]/20/20 border-[#256B45]/50' : 'bg-[#256B45]/5 border-[#256B45]/20'}`}>
+          <div className={`p-4 rounded-2xl mb-4 border-2 ${isDark ? 'bg-[#318160]/20 border-[#318160]/50' : 'bg-[#318160]/5 border-[#318160]/20'}`}>
              <div className="text-[10px] font-black uppercase opacity-60 mb-1">Room Code</div>
              <div className="flex justify-between items-center">
                <span className="text-3xl font-black tracking-tighter">{roomCode}</span>
@@ -1855,7 +1826,7 @@ if (view === 'display' && showLyrics && currentSong) {
           {currentSong && (
             <div className={`p-4 rounded-2xl border-2 ${isDark ? 'bg-[#5371AC]/20/20 border-[#5371AC]/50' : 'bg-[#5371AC]/5 border-[#5371AC]/20'}`}>
               <div className="text-[10px] font-black uppercase opacity-60 mb-1">Now Singing</div>
-              <div className="text-xl font-bold mb-2">{currentSong.title} {currentSong.has_lyrics && '📄'}</div>
+              <div className="text-xl font-bold mb-2">{currentSong.title} {currentSong.has_lyrics && <i className="ti ti-file-text" title="Has lyrics" aria-label="Has lyrics" style={{ fontSize: '0.9em' }}></i>}</div>
               {currentSong.has_lyrics && (
                 <button 
                   onClick={async () => {
@@ -1865,7 +1836,7 @@ if (view === 'display' && showLyrics && currentSong) {
                   }}
                   className={`w-full py-2 rounded-xl font-bold text-sm transition-colors border ${showLyricsOnTV ? 'bg-[#5371AC] text-white border-[#5371AC]' : 'bg-transparent border-[#838C95]/40 opacity-60'}`}
                 >
-                  {showLyricsOnTV ? '📄 Lyrics on TV: ON' : '📄 Lyrics on TV: OFF'}
+                  <><i className="ti ti-file-text" aria-hidden="true"></i> {showLyricsOnTV ? 'Lyrics on TV: ON' : 'Lyrics on TV: OFF'}</>
                 </button>
               )}
             </div>
@@ -1878,7 +1849,7 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={() => setShowQueue(!showQueue)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>👥 Up Next ({queue.length})</h2>
+            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-users" aria-hidden="true"></i> Up Next ({queue.length})</h2>
             <span className="text-xl opacity-50">{showQueue ? '▼' : '▶'}</span>
           </button>
           {showQueue && (
@@ -1891,13 +1862,13 @@ if (view === 'display' && showLyrics && currentSong) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate text-sm flex items-center gap-1">
-                      {song.song_title} {song.has_lyrics && '📄'}
+                      {song.song_title} {song.has_lyrics && <i className="ti ti-file-text" title="Has lyrics" aria-label="Has lyrics" style={{ fontSize: '0.9em' }}></i>}
                     </div>
                     <div className="text-[10px] opacity-60 uppercase font-black tracking-wide">P.{song.song_page} • {song.requester}</div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => playSong(song)} className="bg-[#256B45] text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
-                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-[#D45D25] transition-all">🗑️</button>
+                    <button onClick={() => playSong(song)} className="bg-[#318160] text-white px-3 py-1.5 rounded-lg text-xs font-bold">Play</button>
+                    <button onClick={() => removeFromQueue(song.id)} className="text-xl px-1 opacity-30 hover:opacity-100 hover:text-[#D45D25] transition-all" aria-label="Remove from queue"><i className="ti ti-trash" aria-hidden="true"></i></button>
                   </div>
                 </div>
               ))}
@@ -1912,7 +1883,7 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={() => setShowSectionFilter(!showSectionFilter)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>🎯 Filters</h2>
+            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-filter" aria-hidden="true"></i> Filters</h2>
             <div className="flex items-center gap-3">
               {!showSectionFilter && (
                 <span className="text-xs opacity-50">
@@ -1960,7 +1931,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             isSelected ? 'bg-[#5371AC] text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
-                          {isSelected ? '✓ ' : ''}{sb.name}
+                          {isSelected ? <><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : null}{sb.name}
                         </button>
                       );
                     })}
@@ -2033,12 +2004,12 @@ if (view === 'display' && showLyrics && currentSong) {
                           <div className="flex rounded-full overflow-hidden border border-[#838C95]/35 text-[10px] font-black uppercase">
                             <button
                               onClick={() => setIncludeMode('any')}
-                              className={`px-2 py-1 ${includeMode === 'any' ? 'bg-[#256B45] text-white' : isDark ? 'bg-slate-800 text-[#838C95]' : 'bg-slate-100 text-[#838C95]'}`}
+                              className={`px-2 py-1 ${includeMode === 'any' ? 'bg-[#318160] text-white' : isDark ? 'bg-slate-800 text-[#838C95]' : 'bg-slate-100 text-[#838C95]'}`}
                               title="Song matches if it has ANY of the selected tags"
                             >Any</button>
                             <button
                               onClick={() => setIncludeMode('all')}
-                              className={`px-2 py-1 ${includeMode === 'all' ? 'bg-[#256B45] text-white' : isDark ? 'bg-slate-800 text-[#838C95]' : 'bg-slate-100 text-[#838C95]'}`}
+                              className={`px-2 py-1 ${includeMode === 'all' ? 'bg-[#318160] text-white' : isDark ? 'bg-slate-800 text-[#838C95]' : 'bg-slate-100 text-[#838C95]'}`}
                               title="Song matches only if it has ALL of the selected tags"
                             >All</button>
                           </div>
@@ -2059,13 +2030,13 @@ if (view === 'display' && showLyrics && currentSong) {
                             )}
                             className={`px-3 py-2 rounded-full text-sm font-bold transition-all active:scale-95 ${
                               isSelected 
-                                ? 'bg-[#256B45] text-white' 
+                                ? 'bg-[#318160] text-white' 
                                 : isDark 
                                   ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' 
                                   : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                             }`}
                           >
-                            {isSelected ? '✓ ' : '+ '}{tag.name}
+                            {isSelected ? <><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : <><i className="ti ti-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </>}{tag.name}
                           </button>
                         );
                       })}
@@ -2100,7 +2071,7 @@ if (view === 'display' && showLyrics && currentSong) {
                                   : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                             }`}
                           >
-                            {isSelected ? '✗ ' : '− '}{tag.name}
+                            {isSelected ? <><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : <><i className="ti ti-minus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </>}{tag.name}
                           </button>
                         );
                       })}
@@ -2129,7 +2100,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
-                          {isSelected ? '✓ ' : '+ '}{tag}
+                          {isSelected ? <><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : <><i className="ti ti-plus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </>}{tag}
                         </button>
                       );
                     })}
@@ -2157,7 +2128,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             isSelected ? 'bg-[#C35522] text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
-                          {isSelected ? '✗ ' : '− '}{tag}
+                          {isSelected ? <><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : <><i className="ti ti-minus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </>}{tag}
                         </button>
                       );
                     })}
@@ -2185,7 +2156,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             isSelected ? 'bg-purple-600 text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
-                          {isSelected ? '✓ ' : ''}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                          {isSelected ? <><i className="ti ti-check" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : null}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
                         </button>
                       );
                     })}
@@ -2213,7 +2184,7 @@ if (view === 'display' && showLyrics && currentSong) {
                             isSelected ? 'bg-[#C35522] text-white' : isDark ? 'bg-slate-800 text-[#838C95] hover:bg-slate-700' : 'bg-slate-100 text-[#6E7881] hover:bg-slate-200'
                           }`}
                         >
-                          {isSelected ? '✗ ' : '− '}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
+                          {isSelected ? <><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </> : <><i className="ti ti-minus" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> </>}{opt.icon ? `${opt.icon} ` : ''}{opt.label}
                         </button>
                       );
                     })}
@@ -2230,7 +2201,7 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={generateRandomSong} 
             className="w-full bg-[#5371AC] text-white py-4 rounded-2xl font-black text-lg shadow-lg shadow-[#5371AC]/20 active:scale-[0.98] transition-all"
           >
-            🎲 Pick Random Song
+            <i className="ti ti-dice-5" aria-hidden="true"></i> Pick Random Song
           </button>
         </div>
 
@@ -2252,14 +2223,14 @@ if (view === 'display' && showLyrics && currentSong) {
             onClick={() => setShowAddSong(!showAddSong)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}>🔍 Add a Song</h2>
+            <h2 className="font-black text-lg" style={{ fontFamily: "'Gloria Hallelujah', cursive" }}><i className="ti ti-search" aria-hidden="true"></i> Add a Song</h2>
             <span className="text-xl opacity-50">{showAddSong ? '▼' : '▶'}</span>
           </button>
           {showAddSong && (
             <div className="mt-4">
               <input 
                 type="text" placeholder="Search title, lyrics, aliases..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-[#256B45] ${isDark ? 'bg-slate-800 border-[#838C95]/30' : 'bg-slate-50 border-[#838C95]/25'}`}
+                className={`w-full p-4 rounded-2xl mb-4 border outline-none focus:ring-2 focus:ring-[#318160] ${isDark ? 'bg-slate-800 border-[#838C95]/30' : 'bg-slate-50 border-[#838C95]/25'}`}
               />
               <div className="max-h-80 overflow-y-auto space-y-2 mb-6">
                 {filteredSongs.map(song => {
@@ -2278,7 +2249,7 @@ if (view === 'display' && showLyrics && currentSong) {
                         <div className="min-w-0 flex-1">
                           <div className="font-bold text-sm flex items-center gap-1 flex-wrap">
                             {song.title}
-                            {hasLyrics && '📄'}
+                            {hasLyrics && <i className="ti ti-file-text" title="Has lyrics" aria-label="Has lyrics" style={{ fontSize: '0.9em' }}></i>}
                             {inQueue && <span className="text-[10px] bg-[#5371AC]/50 text-white px-1.5 py-0.5 rounded">in queue</span>}
                             {alreadySung && <span className="text-[10px] bg-[#838C95] text-white px-1.5 py-0.5 rounded">sung</span>}
                           </div>
@@ -2295,7 +2266,7 @@ if (view === 'display' && showLyrics && currentSong) {
                                       isDark ? 'bg-[#C35522]/20 text-[#D45D25] hover:bg-[#C35522]/40' : 'bg-[#C35522]/15 text-[#C35522] hover:bg-[#C35522]/25'
                                     }`}
                                   >
-                                    ⚠️ {flag.flag_type} {isExpanded ? '▲' : '▼'}
+                                    <i className="ti ti-alert-triangle" aria-hidden="true"></i> {flag.flag_type} {isExpanded ? '▲' : '▼'}
                                   </button>
                                 );
                               })}
@@ -2316,7 +2287,7 @@ if (view === 'display' && showLyrics && currentSong) {
                               {isExpanded ? '▲' : '▼'}
                             </button>
                           )}
-                          <button onClick={() => addToQueue(song)} className="bg-[#256B45] text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
+                          <button onClick={() => addToQueue(song)} className="bg-[#318160] text-white w-10 h-10 rounded-full font-bold flex items-center justify-center">＋</button>
                         </div>
                       </div>
                       {isExpanded && version?.lyrics_content && (
@@ -2343,7 +2314,7 @@ if (view === 'display' && showLyrics && currentSong) {
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg font-bold text-sm z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
-          toast.type === 'success' ? 'bg-[#256B45] text-white' : 'bg-[#C35522] text-white'
+          toast.type === 'success' ? 'bg-[#318160] text-white' : 'bg-[#C35522] text-white'
         }`}>
           {toast.message}
         </div>
