@@ -1,14 +1,26 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
 import { notifyLegacy } from '../lib/notify';
+import { fetchMyPermissions, hasPermission } from '../lib/permissions';
+import { createGuardedFetch } from '../lib/guardedFetch';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
 export default function AdminSuggestions() {
   const router = useRouter();
+  // Reviewing (approve / reject / reset) needs "Review song suggestions"
+  // (Platform Song Admin by default). Other admins can view, not change.
+  const [myPermissions, setMyPermissions] = useState([]);
+  const permissionsRef = useRef([]);
+  permissionsRef.current = myPermissions;
+  // Shared choke point for changes on this page (lib/guardedFetch.js).
+  const guard = useRef(null);
+  if (!guard.current) guard.current = createGuardedFetch(() => permissionsRef.current);
+  const suggestionsFetch = guard.current.guardedFetch;
+  const canReview = hasPermission(myPermissions, 'songs.review_suggestions');
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [userRoleKeys, setUserRoleKeys] = useState([]);
@@ -52,6 +64,7 @@ export default function AdminSuggestions() {
       }
       setUserProfile(profileData[0]);
       setUserRoleKeys(roleKeys);
+      setMyPermissions(await fetchMyPermissions(getAuthHeaders(false)));
       
       await loadData();
     } catch (error) {
@@ -73,7 +86,7 @@ export default function AdminSuggestions() {
       if (Array.isArray(songsData)) songsData.forEach(s => { songsMap[s.id] = s; });
       setSongs(songsMap);
 
-      const usersRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=id,display_name,email`, { headers: getAuthHeaders(false) });
+      const usersRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=id,display_name`, { headers: getAuthHeaders(false) });
       const usersData = await usersRes.json();
       const usersMap = {};
       if (Array.isArray(usersData)) usersData.forEach(u => { usersMap[u.id] = u; });
@@ -83,7 +96,12 @@ export default function AdminSuggestions() {
   };
 
   // Shared messages, drawn just below the nav bar by _app.js (lib/notify.js).
-  const showMsg = (msg) => notifyLegacy(msg);
+  // If suggestionsFetch just explained a blocked change, skip the generic
+  // "❌ Error updating" that follows, so the real reason shows once.
+  const showMsg = (msg) => {
+    if (typeof msg === 'string' && msg.startsWith('❌') && guard.current.recentlyReported()) return;
+    notifyLegacy(msg);
+  };
 
   // Group suggestions by batch_id (null batch_id = standalone)
   const groupedSuggestions = useMemo(() => {
@@ -137,7 +155,7 @@ export default function AdminSuggestions() {
 
   const updateStatus = async (id, status, note = '') => {
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/song_suggestions?id=eq.${id}`, {
+      await suggestionsFetch(`${SUPABASE_URL}/rest/v1/song_suggestions?id=eq.${id}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -167,7 +185,7 @@ export default function AdminSuggestions() {
     setBatchNotes('');
   };
 
-  const getUserName = (userId) => users[userId]?.display_name || users[userId]?.email?.split('@')[0] || 'Unknown';
+  const getUserName = (userId) => users[userId]?.display_name || 'Unknown';
   const getSongTitle = (songId) => songs[songId]?.title || 'Unknown song';
 
   const typeLabels = {
@@ -373,6 +391,15 @@ export default function AdminSuggestions() {
           <h1 style={s.title}><i className="ti ti-inbox" aria-hidden="true"></i> Review Suggestions</h1>
           <p style={{ color: '#838C95', fontSize: '0.875rem' }}>{filtered.length} submission(s)</p>
         </div>
+
+        {/* One view-only banner for the page, decided once from the live
+            permissions - rather than a note on every button. */}
+        {!canReview && (
+          <p style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '0.65rem 0.8rem', fontSize: '0.875rem', margin: '0 0 1rem 0' }}>
+            <i className="ti ti-eye" style={{ color: '#838C95', marginTop: '0.1rem' }} aria-hidden="true"></i>
+            <span>Song suggestions are view only for you - approving, rejecting or resetting them requires "Review song suggestions" (Platform Song Admin). If you try, you'll be told this rather than it failing quietly.</span>
+          </p>
+        )}
 
         {/* Filters - these narrow one list that already has an "All" view,
             not a switch to a different view, so they stay as standalone
