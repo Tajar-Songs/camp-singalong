@@ -2016,8 +2016,10 @@ export default function Admin() {
     // which could overflow on a narrow screen, and a wrapped connected
     // control looks broken where the connection breaks across lines.
     // Shared by both the Song (8-way) and Group (2-way) edit tabs.
-    editTabs: { display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', marginBottom: '1rem', borderRadius: '0.375rem', border: '1px solid #334155', width: 'fit-content', maxWidth: '100%' },
-    editTab: (a, first) => ({ padding: '0.5rem 1rem', border: 'none', borderLeft: first ? 'none' : '1px solid #334155', background: a ? '#256B45' : '#334155', color: a ? '#fff' : '#838C95', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }),
+    // Tabs wrap onto another line on narrow screens instead of scrolling.
+    // The 1px gap over a darker background draws the dividers between tabs.
+    editTabs: { display: 'flex', flexWrap: 'wrap', gap: '1px', background: '#1e293b', marginBottom: '1rem', borderRadius: '0.375rem', border: '1px solid #334155', overflow: 'hidden', width: 'fit-content', maxWidth: '100%' },
+    editTab: (a) => ({ padding: '0.5rem 1rem', border: 'none', background: a ? '#256B45' : '#334155', color: a ? '#fff' : '#838C95', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', flexGrow: 1 }),
     formGroup: { marginBottom: '1rem' },
     label: { display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#838C95', marginBottom: '0.25rem', textTransform: 'uppercase' },
     input: { width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '0.875rem' },
