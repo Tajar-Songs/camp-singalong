@@ -209,6 +209,19 @@ export default function Admin() {
   const [logUserFilter, setLogUserFilter] = useState('');
   const [logLimit, setLogLimit] = useState(100);
 
+  // Change Log tab: "What changed" (content change history, no names) vs.
+  // "Who changed what" (the audit trail).
+  const [logView, setLogView] = useState('content');
+  const [contentChanges, setContentChanges] = useState([]);
+  const [contentChangesLoading, setContentChangesLoading] = useState(false);
+  const [contentChangesError, setContentChangesError] = useState('');
+  const [changeSongbook, setChangeSongbook] = useState('all');
+  const [changeSince, setChangeSince] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [expandedChange, setExpandedChange] = useState(null);
+
   // Songbook entry editing (for songs)
   const [editingSongbookEntry, setEditingSongbookEntry] = useState(null);
   const [entrySongbookId, setEntrySongbookId] = useState('');
@@ -569,6 +582,56 @@ export default function Admin() {
   // the page no longer writes its own log. The existing logChange(...) calls
   // are left in place and do nothing; they can be removed in a later cleanup.
   const logChange = async () => {};
+
+  // ---------- Content change history ("What changed") ----------
+  const loadContentChanges = async () => {
+    setContentChangesLoading(true);
+    setContentChangesError('');
+    try {
+      const since = new Date(`${changeSince}T00:00:00`).toISOString();
+      const url = changeSongbook === 'all'
+        ? `${SUPABASE_URL}/rest/v1/content_change_history?select=*&changed_at=gte.${encodeURIComponent(since)}&order=changed_at.desc,seq.desc&limit=1000`
+        : `${SUPABASE_URL}/rest/v1/rpc/content_changes_for_songbook?p_songbook_id=${changeSongbook}&p_since=${encodeURIComponent(since)}&limit=1000`;
+      const res = await adminFetch(url, { headers: getAuthHeaders(false) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || `Error ${res.status}`);
+      setContentChanges(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error loading content changes:', error);
+      setContentChanges([]);
+      setContentChangesError(error.message);
+    }
+    setContentChangesLoading(false);
+  };
+
+  useEffect(() => {
+    if (mainTab === 'changelog' && logView === 'content') loadContentChanges();
+  }, [mainTab, logView, changeSongbook, changeSince]);
+
+  const formatChangeValue = (v) => {
+    if (v === null || v === undefined || v === '') return '';
+    return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  };
+
+  // One row per changed field, so the file is easy to work through.
+  const exportContentChanges = () => {
+    const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [['When', 'Song', 'Songbook', 'Area', 'Change', 'Item', 'Field', 'Before', 'After']];
+    contentChanges.forEach(c => {
+      const base = [new Date(c.changed_at).toLocaleString(), c.song_title || '', c.songbook_name || '', c.area, c.operation, c.item_label || ''];
+      const fields = Object.keys(c.changes || {});
+      if (fields.length === 0) lines.push([...base, '', '', '']);
+      else fields.forEach(f => lines.push([...base, f, formatChangeValue(c.changes[f].before), formatChangeValue(c.changes[f].after)]));
+    });
+    const csv = lines.map(row => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    const bookName = changeSongbook === 'all' ? 'all-songbooks' : (songbooks.find(b => b.id === changeSongbook)?.name || 'songbook').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    link.href = URL.createObjectURL(blob);
+    link.download = `changes-${bookName}-since-${changeSince}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
 
   const getDefaultVersion = (songId) => songVersions.find(v => v.song_id === songId && v.is_default_singalong) || songVersions.find(v => v.song_id === songId);
   
@@ -3253,6 +3316,97 @@ export default function Admin() {
 
       {mainTab === 'changelog' && (
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          <div style={s.editTabs} role="tablist" aria-label="Change log views">
+            <button role="tab" aria-selected={logView === 'content'} style={s.editTab(logView === 'content')} onClick={() => setLogView('content')}>What changed</button>
+            <button role="tab" aria-selected={logView === 'audit'} style={s.editTab(logView === 'audit')} onClick={() => setLogView('audit')}>Who changed what</button>
+          </div>
+
+          {logView === 'content' && (
+            <div style={s.panel}>
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div>
+                  <label style={s.label}>Songbook</label>
+                  <select value={changeSongbook} onChange={(e) => { setChangeSongbook(e.target.value); setExpandedChange(null); }} style={s.select}>
+                    <option value="all">All songbooks</option>
+                    {songbooks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={s.label}>Changed since</label>
+                  <input type="date" value={changeSince} onChange={(e) => { if (e.target.value) { setChangeSince(e.target.value); setExpandedChange(null); } }} style={s.input} />
+                </div>
+                <button
+                  type="button"
+                  onClick={exportContentChanges}
+                  disabled={contentChanges.length === 0}
+                  style={{ padding: '0.5rem 1rem', borderRadius: '0.375rem', border: '1px solid #334155', background: '#334155', color: contentChanges.length === 0 ? '#838C95' : '#fff', fontSize: '0.8rem', fontWeight: 'bold', cursor: contentChanges.length === 0 ? 'default' : 'pointer' }}
+                >
+                  <i className="ti ti-download" aria-hidden="true"></i> Download CSV
+                </button>
+              </div>
+              <p style={{ color: '#838C95', fontSize: '0.8rem', marginTop: 0 }}>
+                {changeSongbook === 'all'
+                  ? 'Changes to song content. History starts from when this was turned on.'
+                  : 'Changes to songs currently in this songbook, and to the songbook itself. History starts from when this was turned on.'}
+                {' '}Select a row to see what changed.
+              </p>
+              {contentChangesLoading ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#838C95' }}>Loading changes…</div>
+              ) : contentChangesError ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#C35522' }}>Couldn't load changes: {contentChangesError}</div>
+              ) : contentChanges.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#838C95' }}>No changes found</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                    <thead><tr>{['When', 'Song', 'Area', 'Change', 'Item', 'Fields'].map(h => <th key={h} style={{ textAlign: 'left', padding: '0.75rem', borderBottom: '1px solid #334155', color: '#838C95' }}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {contentChanges.map(c => {
+                        const open = expandedChange === c.id;
+                        const colour = c.operation === 'Added' ? '#3B9B73' : c.operation === 'Removed' ? '#C35522' : '#6882B6';
+                        const fields = Object.keys(c.changes || {});
+                        return [
+                          <tr key={c.id} onClick={() => setExpandedChange(open ? null : c.id)} style={{ cursor: 'pointer', background: open ? '#1e293b' : 'transparent' }} aria-expanded={open}>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155', whiteSpace: 'nowrap' }}>{new Date(c.changed_at).toLocaleString()}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{c.song_title || c.songbook_name || '-'}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{c.area}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}><span style={{ padding: '0.125rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', background: `${colour}33`, color: colour }}>{c.operation}</span></td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155' }}>{c.item_label || '-'}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid #334155', color: '#838C95' }}>{c.fields_changed || '-'}</td>
+                          </tr>,
+                          open && (
+                            <tr key={`${c.id}-detail`}>
+                              <td colSpan={6} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #334155', background: '#1e293b' }}>
+                                {fields.length === 0 ? (
+                                  <span style={{ color: '#838C95' }}>{c.operation === 'Added' ? 'This item was added.' : c.operation === 'Removed' ? 'This item was removed.' : 'No field details.'}</span>
+                                ) : fields.map(f => (
+                                  <div key={f} style={{ marginBottom: '0.75rem' }}>
+                                    <div style={{ fontWeight: 'bold', fontSize: '0.8rem', marginBottom: '0.25rem' }}>{f}</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.5rem' }}>
+                                      <div>
+                                        <div style={{ fontSize: '0.7rem', color: '#C35522', fontWeight: 'bold' }}>BEFORE</div>
+                                        <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', color: '#cbd5e1' }}>{formatChangeValue(c.changes[f].before) || <em style={{ color: '#838C95' }}>empty</em>}</div>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: '0.7rem', color: '#3B9B73', fontWeight: 'bold' }}>AFTER</div>
+                                        <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem', color: '#cbd5e1' }}>{formatChangeValue(c.changes[f].after) || <em style={{ color: '#838C95' }}>empty</em>}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </td>
+                            </tr>
+                          )
+                        ];
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {logView === 'audit' && (
           <div style={s.panel}>
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
               <div><label style={s.label}>Table</label><select value={logTableFilter} onChange={(e) => setLogTableFilter(e.target.value)} style={s.select}><option value="all">All</option><option value="songs">Songs</option><option value="song_versions">Versions</option><option value="song_version_attributes">Version Attributes</option><option value="song_notes">Notes</option><option value="song_flags">Flags</option><option value="song_media">Media</option><option value="song_groups">Groups</option><option value="song_group_members">Members</option><option value="song_sections">Sections</option><option value="song_aliases">Aliases</option><option value="songbooks">Songbooks</option><option value="song_songbook_entries">Songbook Entries</option><option value="potential_duplicates">Duplicates</option></select></div>
@@ -3280,6 +3434,7 @@ export default function Admin() {
             </div>
             {filteredChangeLog.length === 0 && <div style={{ textAlign: 'center', padding: '2rem', color: '#838C95' }}>No changes found</div>}
           </div>
+          )}
         </div>
       )}
 
