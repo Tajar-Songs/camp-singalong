@@ -405,16 +405,21 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* My Songs - coming-soon placeholder, matching Communities'
-              treatment. This used to link straight to /songs with some
-              stats bolted on, which implied it was already a distinct
-              feature when it's really just another route to the same
-              song list. Honest about not being built yet until there's a
-              real personal insights page to point to instead. */}
-          <div className={`${card} opacity-60`}>
-            <h2 className={personalCardTitle}>My Songs</h2>
-            <p className={cardBody}>Coming soon — your favorites, familiarity, and personal tags in one place.</p>
-            <button disabled className={personalBtn} style={{ cursor: 'not-allowed', marginTop: 'auto' }}>Coming Soon</button>
+          {/* Tajar Tracks - each person's own insights and saved reports
+              (pages/insights.js). Personal tier, so it leads blue. It needs
+              an account, so logged-out visitors are asked to log in. */}
+          <div className={card}>
+            <h2 className={personalCardTitle}>Tajar Tracks</h2>
+            <p className={cardBody}>Your songs, stats and reports — what you know, love, and want to learn, all in one place.</p>
+            {user ? (
+              <Link href="/insights" className={personalBtn} style={{ display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 'auto' }}>
+                Open Tajar Tracks
+              </Link>
+            ) : (
+              <button onClick={() => setShowAuthModal(true)} className={personalBtn} style={{ marginTop: 'auto' }}>
+                Log in to see your tracks
+              </button>
+            )}
           </div>
 
           {/* Communities - placeholder for future feature. Purple, matching

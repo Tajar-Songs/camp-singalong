@@ -1,559 +1,516 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
-import { getFilterableSongbooks, getAvailableSections, sectionLabel, toggleInArray } from '../lib/songFilters';
+import { notify } from '../lib/notify';
+import { fetchMyPermissions } from '../lib/permissions';
+import {
+  SUPABASE_URL, authHeaders, getJson, writeJson, runReport, ReportResult, downloadCsv, slugify,
+  PERSONAL_TEXT, PERSONAL_FILL, GREY_TEXT, DANGER_TEXT
+} from '../lib/reports';
 
-const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
+// Report builder for Tajar Tracks. Everyone can use it; what each person can
+// report on depends on their permissions, and every report runs through the
+// database function run_report(), which enforces the field registry.
 
-export default function Reports() {
-  const router = useRouter();
-  const [authChecked, setAuthChecked] = useState(false);
-  const [userRoleKeys, setUserRoleKeys] = useState([]);
+const NO_VALUE_OPS = ['is_null', 'not_null'];
 
-  // Helper function to get auth headers (uses user token if available, otherwise anon key)
-  const getAuthHeaders = (includeContentType = true) => {
-    const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
-    const headers = {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${token}`
-    };
-    if (includeContentType) {
-      headers['Content-Type'] = 'application/json';
+// Which filters make sense for each kind of field, in plain words.
+const opsFor = (field) => {
+  if (!field) return [];
+  switch (field.value_type) {
+    case 'list':
+      return [
+        { op: 'contains', label: 'includes' },
+        { op: 'not_contains', label: "doesn't include" },
+        { op: 'not_null', label: 'has any' },
+        { op: 'is_null', label: 'is empty' }
+      ];
+    case 'date':
+    case 'timestamp':
+      return [
+        { op: 'gte', label: 'is on or after' },
+        { op: 'lte', label: 'is on or before' }
+      ];
+    case 'number':
+      return [
+        { op: 'eq', label: 'is' },
+        { op: 'gte', label: 'is at least' },
+        { op: 'lte', label: 'is at most' }
+      ];
+    case 'boolean':
+      return [{ op: 'eq', label: 'is' }];
+    default: {
+      const ops = [
+        { op: 'eq', label: 'is' },
+        { op: 'neq', label: 'is not' },
+        { op: 'like', label: 'contains' },
+        { op: 'not_null', label: 'is not empty' },
+        { op: 'is_null', label: 'is empty' }
+      ];
+      if (field.options_list) ops.splice(2, 0, { op: 'at_least', label: 'is at least' });
+      return ops;
     }
-    return headers;
-  };
+  }
+};
 
-  useEffect(() => { checkAuth(); }, []);
+export default function ReportBuilder() {
+  const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [datasets, setDatasets] = useState([]);
+  const [allFields, setAllFields] = useState([]);
+  const [options, setOptions] = useState({});      // list_key -> [labels]
 
-  const checkAuth = async () => {
+  // The report being built
+  const [reportId, setReportId] = useState(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [datasetKey, setDatasetKey] = useState('');
+  const [mode, setMode] = useState('summary');     // 'summary' | 'rows'
+  const [groupBy1, setGroupBy1] = useState('');
+  const [groupBy2, setGroupBy2] = useState('');
+  const [selectedFields, setSelectedFields] = useState([]);
+  const [filters, setFilters] = useState([]);      // [{ field, op, value }]
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateMode, setDateMode] = useState('any'); // 'any' | 'last' | 'custom'
+  const [lastDays, setLastDays] = useState('30');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortField, setSortField] = useState('');
+  const [sortDir, setSortDir] = useState('desc');
+  const [display, setDisplay] = useState('table');
+
+  const [result, setResult] = useState(null);
+  const [runError, setRunError] = useState('');
+  const [running, setRunning] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const dataset = datasets.find(d => d.key === datasetKey);
+  const fields = allFields.filter(f => f.dataset_key === datasetKey && f.reportable);
+  const fieldByKey = (key) => fields.find(f => f.field_key === key);
+  const groupable = fields.filter(f => f.groupable);
+  const showable = fields.filter(f => !f.aggregation_required);
+  const filterable = fields.filter(f => f.filterable);
+
+  useEffect(() => { if (router.isReady) start(); }, [router.isReady]);
+
+  const start = async () => {
     try {
       const token = localStorage.getItem('supabase_access_token');
       if (!token) { router.push('/?login=true'); return; }
-
-      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: getAuthHeaders(false) });
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: authHeaders(false) });
       if (!res.ok) { router.push('/?login=true'); return; }
+      setUser(await res.json());
 
-      const userData = await res.json();
-      const roleKeys = await fetchUserRoleKeys(userData.id, getAuthHeaders(false));
-      if (!hasAnyRole(roleKeys)) { router.push('/'); return; }
-      setUserRoleKeys(roleKeys);
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      router.push('/?login=true');
-    }
-    setAuthChecked(true);
-  };
-
-  const [activeTab, setActiveTab] = useState('songs');
-  const [allSongs, setAllSongs] = useState([]);
-  const [songbooks, setSongbooks] = useState([]);
-  const [songbookEntries, setSongbookEntries] = useState([]);
-  const [changeLog, setChangeLog] = useState([]);
-  const [reportViews, setReportViews] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [songbookIds, setSongbookIds] = useState([]);
-  const [sectionDefs, setSectionDefs] = useState([]);
-  const [selectedSections, setSelectedSections] = useState([]);
-  const [sectionsInitialized, setSectionsInitialized] = useState(false);
-  const [showSectionFilter, setShowSectionFilter] = useState(false);
-  
-  // New Filter States
-  const [viewerName, setViewerName] = useState('');
-  const [userFilter, setUserFilter] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [rowLimit, setRowLimit] = useState(100);
-  
-  // Field/column visibility filters
-  const [actionFilter, setActionFilter] = useState(['add', 'edit', 'delete']); // which actions to show
-  const [tableFilter, setTableFilter] = useState([]); // empty = all tables
-  const [showFieldFilters, setShowFieldFilters] = useState(false);
-  
-  const ALL_TABLES = [
-    { value: 'songs', label: 'Songs' },
-    { value: 'song_versions', label: 'Versions' },
-    { value: 'song_version_attributes', label: 'Version Attributes' },
-    { value: 'song_notes', label: 'Notes' },
-    { value: 'song_aliases', label: 'Aliases' },
-    { value: 'song_sections', label: 'Sections' },
-    { value: 'song_songbook_entries', label: 'Songbook Entries' },
-    { value: 'song_media', label: 'Media' },
-    { value: 'song_flags', label: 'Flags' },
-    { value: 'song_groups', label: 'Groups' },
-    { value: 'song_group_members', label: 'Group Members' },
-    { value: 'songbooks', label: 'Songbooks' },
-    { value: 'potential_duplicates', label: 'Duplicates' }
-  ];
-  
-  const [lastViewDate, setLastViewDate] = useState(null);
-  const [showSinceLastView, setShowSinceLastView] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const theme = {
-    bg: '#111827',
-    bgSecondary: '#1f2937',
-    text: '#f9fafb',
-    textSecondary: '#9ca3af',
-    primary: '#22c55e',
-    primaryHover: '#16a34a',
-    border: '#374151',
-    danger: '#dc2626'
-  };
-
-  const inputStyle = {
-    padding: '0.5rem',
-    borderRadius: '0.25rem',
-    border: `1px solid ${theme.border}`,
-    background: theme.bg,
-    color: theme.text,
-    fontSize: '0.875rem'
-  };
-
-  // 1. Only reload data when actual REPORT filters change
-  // We REMOVED lastViewDate and viewerName from the brackets below
-  useEffect(() => {
-    if (authChecked && hasAnyRole(userRoleKeys)) loadData();
-  }, [activeTab, startDate, endDate, userFilter, rowLimit, showSinceLastView, authChecked, userRoleKeys]); 
-
-  // 2. Separate logic to find the last view date when viewerName changes
-  // This stays local and doesn't trigger a database reload
-  useEffect(() => {
-    if (viewerName.trim()) {
-      const nameLower = viewerName.toLowerCase();
-      const lastView = reportViews
-        .filter(v => v.viewer_name?.toLowerCase() === nameLower)
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-      
-      setLastViewDate(lastView ? new Date(lastView.created_at) : null);
-    } else {
-      setLastViewDate(null);
-    }
-  }, [viewerName, reportViews]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      // Build Dynamic Change Log URL
-      let logParams = `select=*&order=created_at.desc&limit=${rowLimit}`;
-      
-      if (showSinceLastView && lastViewDate) {
-        logParams += `&created_at=gt.${lastViewDate.toISOString()}`;
-      } else {
-        if (startDate) logParams += `&created_at=gte.${startDate}`;
-        if (endDate) logParams += `&created_at=lte.${endDate}T23:59:59`;
-      }
-      
-      if (userFilter) logParams += `&changed_by=ilike.*${userFilter}*`;
-
-      const [songsRes, logRes, viewsRes, songbooksRes, entriesRes, sectionDefsRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/songs?select=*&order=title.asc`, {
-          headers: getAuthHeaders(false)
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/change_log?${logParams}`, {
-          headers: getAuthHeaders(false)
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/report_views?select=*&order=created_at.desc`, {
-          headers: getAuthHeaders(false)
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbooks?select=*`, {
-          headers: getAuthHeaders(false)
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/song_songbook_entries?select=*`, {
-          headers: getAuthHeaders(false)
-        }),
-        fetch(`${SUPABASE_URL}/rest/v1/songbook_sections?select=*&order=display_order.asc`, {
-          headers: getAuthHeaders(false)
-        })
+      const [allDatasets, fieldRows, permissions] = await Promise.all([
+        getJson('report_datasets?select=*&order=display_order.asc'),
+        getJson('report_fields?select=*&order=display_order.asc'),
+        fetchMyPermissions(authHeaders(false))
       ]);
-      
-      // Parse responses
-      const songsData = await songsRes.json();
-      const logData = await logRes.json();
-      const viewsData = await viewsRes.json();
-      const songbooksData = await songbooksRes.json();
-      const entriesData = await entriesRes.json();
-      const sectionDefsData = await sectionDefsRes.json();
-      if (Array.isArray(sectionDefsData)) setSectionDefs(sectionDefsData);
-      
-      // Only set state if we got arrays (not error objects)
-      if (Array.isArray(songsData)) setAllSongs(songsData);
-      if (Array.isArray(logData)) setChangeLog(logData);
-      if (Array.isArray(songbooksData)) setSongbooks(songbooksData);
-      if (Array.isArray(entriesData)) setSongbookEntries(entriesData);
-      if (Array.isArray(viewsData)) setReportViews(viewsData);
+      const usable = allDatasets.filter(d => d.audience === 'self' || permissions.includes(d.required_permission));
+      setDatasets(usable);
+      setAllFields(fieldRows);
+
+      const listKeys = [...new Set(fieldRows.map(f => f.options_list).filter(Boolean))];
+      if (listKeys.length > 0) {
+        const optionRows = await getJson(`option_lists?select=list_key,label,display_order&list_key=in.(${listKeys.join(',')})&order=display_order.asc`);
+        const byList = {};
+        optionRows.forEach(o => { (byList[o.list_key] = byList[o.list_key] || []).push(o.label); });
+        setOptions(byList);
+      }
+
+      const id = router.query.id;
+      if (id) {
+        const saved = await getJson(`saved_reports?id=eq.${id}&select=*`);
+        if (saved[0]) {
+          loadReport(saved[0], fieldRows);
+          run(saved[0].dataset_key, saved[0].definition);
+        } else {
+          notify.error("That report wasn't found. It may have been deleted, or it belongs to someone else.");
+        }
+      } else if (usable.length > 0) {
+        chooseDataset(usable[0].key, fieldRows, usable);
+      }
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error loading the report builder:', error);
+      notify.error(`Couldn't load the report builder: ${error.message}`);
     }
     setLoading(false);
   };
 
-  const recordView = async () => {
-    if (!viewerName.trim()) return;
+  // Put a saved report's settings into the form.
+  const loadReport = (report, fieldRows) => {
+    const def = report.definition || {};
+    setReportId(report.id);
+    setTitle(report.title || '');
+    setDescription(report.description || '');
+    setDatasetKey(report.dataset_key);
+    const grouped = Array.isArray(def.group_by) && def.group_by.length > 0;
+    setMode(grouped ? 'summary' : 'rows');
+    setGroupBy1(grouped ? def.group_by[0] : '');
+    setGroupBy2(grouped ? (def.group_by[1] || '') : '');
+    setSelectedFields(grouped ? [] : (def.fields || []));
+    const loadedFilters = (def.filters || []).map(f => ({ field: f.field, op: f.op, value: f.value ?? '' }));
+    setFilters(loadedFilters);
+    setShowFilters(loadedFilters.length > 0 || !!def.last_days || !!def.date_from || !!def.date_to);
+    if (def.last_days) { setDateMode('last'); setLastDays(String(def.last_days)); }
+    else if (def.date_from || def.date_to) { setDateMode('custom'); setDateFrom(def.date_from || ''); setDateTo(def.date_to || ''); }
+    else setDateMode('any');
+    const sort = (def.order_by || [])[0];
+    setSortField(sort?.field || '');
+    setSortDir(sort?.dir || 'desc');
+    setDisplay(report.display || 'table');
+  };
+
+  const chooseDataset = (key, fieldRows = allFields, list = datasets) => {
+    const d = list.find(x => x.key === key);
+    const dsFields = fieldRows.filter(f => f.dataset_key === key && f.reportable);
+    setDatasetKey(key);
+    const firstGroup = dsFields.find(f => f.groupable)?.field_key || '';
+    setMode(firstGroup ? 'summary' : 'rows');
+    setGroupBy1(firstGroup);
+    setGroupBy2('');
+    setSelectedFields(dsFields.filter(f => !f.aggregation_required).slice(0, 4).map(f => f.field_key));
+    setFilters([]);
+    setDateMode('any');
+    setSortField('');
+    setDisplay(firstGroup ? 'bar' : 'table');
+    setResult(null);
+    setRunError('');
+    if (d && !d.row_level_allowed) setMode('summary');
+  };
+
+  const buildDefinition = () => {
+    const def = {};
+    if (mode === 'summary') def.group_by = [groupBy1, groupBy2].filter(Boolean);
+    else def.fields = selectedFields;
+    def.filters = filters
+      .filter(f => f.field && f.op && (NO_VALUE_OPS.includes(f.op) || String(f.value).trim() !== ''))
+      .map(f => (NO_VALUE_OPS.includes(f.op) ? { field: f.field, op: f.op } : { field: f.field, op: f.op, value: f.value }));
+    if (dataset?.date_column) {
+      if (dateMode === 'last' && Number(lastDays) > 0) def.last_days = Number(lastDays);
+      if (dateMode === 'custom') {
+        if (dateFrom) def.date_from = dateFrom;
+        if (dateTo) def.date_to = dateTo;
+      }
+    }
+    if (sortField) def.order_by = [{ field: sortField, dir: sortDir }];
+    return def;
+  };
+
+  const run = async (key = datasetKey, definition = buildDefinition()) => {
+    setRunning(true);
+    setRunError('');
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/report_views`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ viewer_name: viewerName.trim() })
-      });
-      await loadData();
+      setResult(await runReport(key, definition));
     } catch (error) {
-      console.error('Error recording view:', error);
+      setResult(null);
+      setRunError(error.message);
+    }
+    setRunning(false);
+  };
+
+  const download = async () => {
+    try {
+      const data = await runReport(datasetKey, { ...buildDefinition(), export: true, limit: 5000 });
+      downloadCsv(`${slugify(title || dataset?.title)}.csv`, data.columns, data.rows, fields);
+    } catch (error) {
+      notify.error(`Couldn't download: ${error.message}`);
     }
   };
 
-  // Get page/section info for a song from songbook entries (primary songbook), plus
-  // the pre-2025 book's page as "old page" for reference
-  const getSongPage = (songId) => {
-    const primarySongbook = songbooks.find(sb => sb.is_primary);
-    const entry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === primarySongbook?.id);
-    const oldSongbook = songbooks.find(sb => sb.display_order === 2);
-    const oldEntry = songbookEntries.find(e => e.song_id === songId && e.songbook_id === oldSongbook?.id);
-    return { page: entry?.page || null, section: entry?.section || null, old_page: oldEntry?.page || null };
-  };
-
-  const toggleSection = (section) => {
-    setSelectedSections(selectedSections.includes(section)
-      ? selectedSections.filter(s => s !== section)
-      : [...selectedSections, section]);
-  };
-
-  // Filterable songbooks and their real sections (replaces the old hardcoded,
-  // single-songbook SECTION_INFO map, which broke for any book beyond the
-  // original one - especially books with no letter/number codes at all).
-  const filterableSongbooks = getFilterableSongbooks(songbooks, songbookEntries);
-  const availableSections = getAvailableSections(sectionDefs, songbookIds);
-
-  useEffect(() => {
-    if (sectionsInitialized) return;
-    if (songbookIds.length === 0 && filterableSongbooks.length > 0) {
-      const primary = filterableSongbooks.find(sb => sb.is_primary) || filterableSongbooks[0];
-      setSongbookIds([primary.id]);
-    }
-  }, [filterableSongbooks, sectionsInitialized]);
-  useEffect(() => {
-    if (!sectionsInitialized && songbookIds.length > 0 && availableSections.length > 0) {
-      setSelectedSections(availableSections.map(s => s.id));
-      setSectionsInitialized(true);
-    }
-  }, [availableSections, songbookIds, sectionsInitialized]);
-
-  const filteredSongs = allSongs.filter(song => {
-    if (!song.title.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    if (songbookIds.length === 0 && selectedSections.length === 0) return true;
-    const entries = songbookEntries.filter(e => e.song_id === song.id);
-    const relevant = songbookIds.length > 0 ? entries.filter(e => songbookIds.includes(e.songbook_id)) : entries;
-    if (songbookIds.length > 0 && relevant.length === 0) return false;
-    if (selectedSections.length > 0 && !relevant.some(e => selectedSections.includes(e.section_id))) return false;
-    return true;
-  });
-
-  // Note: filteredLog is now handled mostly by the server, 
-  // but we keep the search filter for song titles here for "instant" feel.
-  const displayLog = changeLog.filter(entry => {
-    // Search filter
-    if (!entry.song_title?.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    // Action filter
-    if (!actionFilter.includes(entry.action)) return false;
-    // Table filter (empty = all)
-    if (tableFilter.length > 0 && !tableFilter.includes(entry.table_name)) return false;
-    return true;
-  });
-
-  const exportSongsCSV = () => {
-    const headers = ['Title', 'Section', 'Page', 'Old Page'];
-    const rows = filteredSongs.map(song => {
-      const pageInfo = getSongPage(song.id);
-      return [
-        `"${song.title.replace(/"/g, '""')}"`,
-        pageInfo.section,
-        pageInfo.page || '',
-        pageInfo.old_page || ''
-      ];
-    });
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadCSV(csv, 'songs-report.csv');
-  };
-
-  const exportLogCSV = () => {
-    const headers = ['Date', 'Action', 'Category', 'Song Title', 'Field Changed', 'Old Value', 'New Value', 'Changed By'];
-    const rows = displayLog.map(entry => [
-      new Date(entry.created_at).toLocaleString(),
-      entry.action,
-      formatTableName(entry.table_name),
-      `"${(entry.song_title || '').replace(/"/g, '""')}"`,
-      entry.field_changed || '',
-      `"${(entry.old_value || '').replace(/"/g, '""')}"`,
-      `"${(entry.new_value || '').replace(/"/g, '""')}"`,
-      entry.changed_by || ''
-    ]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadCSV(csv, 'change-log.csv');
-  };
-
-  const downloadCSV = (csv, filename) => {
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString();
-  };
-
-  const formatTableName = (tableName) => {
-    const mapping = {
-      'songs': 'Songs',
-      'song_versions': 'Versions',
-      'song_version_attributes': 'Version Attrs',
-      'song_notes': 'Notes',
-      'song_aliases': 'Aliases',
-      'song_sections': 'Sections',
-      'song_songbook_entries': 'Songbook',
-      'song_media': 'Media',
-      'song_flags': 'Flags',
-      'song_groups': 'Groups',
-      'song_group_members': 'Group Members',
-      'songbooks': 'Songbooks',
-      'potential_duplicates': 'Duplicates'
+  const save = async (asNew) => {
+    if (!title.trim()) { notify.error('Give the report a name before saving.'); return; }
+    setSaving(true);
+    const body = {
+      title: title.trim(),
+      description: description.trim() || null,
+      dataset_key: datasetKey,
+      definition: buildDefinition(),
+      display: mode === 'summary' && !groupBy2 ? display : 'table',
+      updated_at: new Date().toISOString()
     };
-    return mapping[tableName] || tableName || '-';
+    try {
+      if (reportId && !asNew) {
+        await writeJson(`saved_reports?id=eq.${reportId}`, 'PATCH', body);
+        notify.success(`Saved "${body.title}"`);
+      } else {
+        const last = await getJson('saved_reports?select=hub_order&order=hub_order.desc&limit=1');
+        const rows = await writeJson('saved_reports', 'POST', { ...body, owner_id: user.id, hub_order: (last[0]?.hub_order || 0) + 1 });
+        setReportId(rows[0].id);
+        router.replace(`/reports?id=${rows[0].id}`, undefined, { shallow: true });
+        notify.success(`Saved "${body.title}" to Tajar Tracks`);
+      }
+    } catch (error) {
+      notify.error(`Couldn't save: ${error.message}`);
+    }
+    setSaving(false);
   };
 
-  if (!authChecked) {
+  const updateFilter = (index, changes) => {
+    setFilters(filters.map((f, i) => (i === index ? { ...f, ...changes } : f)));
+  };
+
+  const toggleField = (key) => {
+    setSelectedFields(selectedFields.includes(key) ? selectedFields.filter(k => k !== key) : [...selectedFields, key]);
+  };
+
+  // ---------- Styles ----------
+  const s = {
+    container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
+    wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' },
+    title: { fontSize: '2.25rem', lineHeight: 1.2, fontWeight: 'bold', margin: 0, fontFamily: "'Gloria Hallelujah', cursive" },
+    back: { color: PERSONAL_TEXT, textDecoration: 'none', fontSize: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' },
+    layout: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: '1rem', alignItems: 'start' },
+    card: { background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '1.25rem', marginBottom: '1rem' },
+    cardTitle: { fontWeight: 'bold', fontSize: '1rem', margin: '0 0 0.75rem' },
+    label: { display: 'block', fontSize: '0.8rem', color: GREY_TEXT, marginBottom: '0.3rem' },
+    input: { width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem' },
+    select: { background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem', maxWidth: '100%' },
+    hint: { color: GREY_TEXT, fontSize: '0.8rem', margin: '0.3rem 0 0' },
+    choice: (on) => ({ textAlign: 'left', width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.375rem', border: `1px solid ${on ? PERSONAL_TEXT : '#334155'}`, background: on ? `${PERSONAL_FILL}33` : 'transparent', color: '#fff', cursor: 'pointer', marginBottom: '0.5rem' }),
+    segment: { display: 'inline-flex', border: '1px solid #334155', borderRadius: '0.375rem', overflow: 'hidden', marginBottom: '0.75rem' },
+    segmentBtn: (on) => ({ padding: '0.45rem 0.9rem', border: 'none', background: on ? PERSONAL_FILL : 'transparent', color: on ? '#fff' : GREY_TEXT, fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }),
+    primary: { background: PERSONAL_FILL, color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.55rem 1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
+    secondary: { background: 'transparent', color: '#fff', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.55rem 1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
+    link: { background: 'none', border: 'none', color: PERSONAL_TEXT, cursor: 'pointer', padding: 0, fontSize: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }
+  };
+
+  if (loading) {
+    return <div style={s.container}><div style={s.wrapper}><p style={{ color: GREY_TEXT }}>Loading the report builder…</p></div></div>;
+  }
+
+  if (datasets.length === 0) {
     return (
-      <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        Loading...
-      </div>
+      <div style={s.container}><div style={s.wrapper}>
+        <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+        <h1 style={s.title}>Report builder</h1>
+        <p style={{ color: GREY_TEXT }}>There's nothing available for you to report on yet.</p>
+      </div></div>
     );
   }
 
-  if (!hasAnyRole(userRoleKeys)) {
+  const canBar = mode === 'summary' && groupBy1 && !groupBy2;
+  const sortChoices = mode === 'summary'
+    ? [...[groupBy1, groupBy2].filter(Boolean), 'count']
+    : selectedFields;
+
+  const valueInput = (filter, index) => {
+    const field = fieldByKey(filter.field);
+    if (!field || NO_VALUE_OPS.includes(filter.op)) return null;
+    const listOptions = field.options_list ? options[field.options_list] : null;
+    if (listOptions) {
+      return (
+        <select value={filter.value} onChange={(e) => updateFilter(index, { value: e.target.value })} style={s.select} aria-label="Value">
+          <option value="">Choose…</option>
+          {listOptions.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    }
+    if (field.value_type === 'boolean') {
+      return (
+        <select value={filter.value} onChange={(e) => updateFilter(index, { value: e.target.value })} style={s.select} aria-label="Value">
+          <option value="">Choose…</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+      );
+    }
+    const type = field.value_type === 'date' || field.value_type === 'timestamp' ? 'date'
+      : field.value_type === 'number' ? 'number' : 'text';
     return (
-      <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Access Denied</h1>
-          <p style={{ opacity: 0.7, marginBottom: '1.5rem' }}>You need admin privileges to access this page.</p>
-          <a href="/" style={{ color: '#22c55e' }}>← Back to Singalong</a>
-        </div>
-      </div>
+      <input type={type} value={filter.value} onChange={(e) => updateFilter(index, { value: e.target.value })}
+        style={{ ...s.select, minWidth: '10rem' }} aria-label="Value" placeholder={type === 'text' ? 'Type a value' : undefined} />
     );
-  }
+  };
 
   return (
-    <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text, padding: '2rem' }}>
-      <div style={{ maxWidth: '80rem', margin: '0 auto' }}>
+    <div style={s.container}>
+      <div style={s.wrapper}>
+        <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+        <h1 style={{ ...s.title, marginBottom: '1.25rem' }}>{reportId ? 'Edit report' : 'New report'}</h1>
 
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={s.layout}>
+          {/* ---------- Settings ---------- */}
           <div>
-            <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>📊 Insights</h1>
-            <p style={{ color: theme.textSecondary }}>{allSongs.length} songs • {changeLog.length} changes showing</p>
-          </div>
-        </div>
-
-        {/* Global Search & Limit Filter Bar */}
-        <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1rem', border: `1px solid ${theme.border}`, display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: 2, minWidth: '200px' }}>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Search Songs</label>
-            <input type="text" placeholder="Title search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, width: '100%' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Rows to Load</label>
-            <select value={rowLimit} onChange={(e) => setRowLimit(e.target.value)} style={inputStyle}>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="500">500</option>
-              <option value="2000">All</option>
-            </select>
-          </div>
-          <button onClick={activeTab === 'songs' ? exportSongsCSV : exportLogCSV} style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer', height: '38px' }}>
-            Export CSV
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-          <button onClick={() => setActiveTab('songs')} style={{ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: '600', background: activeTab === 'songs' ? theme.primary : theme.bgSecondary, color: activeTab === 'songs' ? 'white' : theme.text }}>Song Report</button>
-          <button onClick={() => setActiveTab('changelog')} style={{ padding: '0.75rem 1.5rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: '600', background: activeTab === 'changelog' ? theme.primary : theme.bgSecondary, color: activeTab === 'changelog' ? 'white' : theme.text }}>Change Log</button>
-        </div>
-
-        {/* Change Log Advanced Filters (Only visible on Change Log tab) */}
-        {activeTab === 'changelog' && (
-          <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}` }}>
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Start Date</label>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>End Date</label>
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inputStyle} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.25rem' }}>Changed By</label>
-                <input type="text" placeholder="Admin name..." value={userFilter} onChange={(e) => setUserFilter(e.target.value)} style={inputStyle} />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
-                <button onClick={() => setShowFieldFilters(!showFieldFilters)} style={{ ...inputStyle, cursor: 'pointer', background: showFieldFilters ? theme.primary : theme.bg, color: showFieldFilters ? 'white' : theme.text }}>
-                  {showFieldFilters ? '▼ Field Filters' : '▶ Field Filters'}
+            <div style={s.card}>
+              <h2 style={s.cardTitle}>1. What to report on</h2>
+              {datasets.map(d => (
+                <button key={d.key} type="button" style={s.choice(d.key === datasetKey)} aria-pressed={d.key === datasetKey}
+                  onClick={() => { if (d.key !== datasetKey) chooseDataset(d.key); }}>
+                  <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    {d.key === datasetKey && <i className="ti ti-check" aria-hidden="true"></i>}{d.title}
+                  </div>
+                  <div style={{ color: GREY_TEXT, fontSize: '0.8rem', marginTop: '0.2rem' }}>{d.description}</div>
                 </button>
-                <button onClick={() => { setStartDate(''); setEndDate(''); setUserFilter(''); setShowSinceLastView(false); setActionFilter(['add', 'edit', 'delete']); setTableFilter([]); }} style={{ ...inputStyle, cursor: 'pointer' }}>Reset All</button>
+              ))}
+            </div>
+
+            <div style={s.card}>
+              <h2 style={s.cardTitle}>2. What to show</h2>
+              <div style={s.segment} role="group" aria-label="Report type">
+                <button type="button" style={s.segmentBtn(mode === 'summary')} aria-pressed={mode === 'summary'} onClick={() => setMode('summary')}>Counts</button>
+                {dataset?.row_level_allowed && (
+                  <button type="button" style={s.segmentBtn(mode === 'rows')} aria-pressed={mode === 'rows'} onClick={() => setMode('rows')}>List</button>
+                )}
+              </div>
+
+              {mode === 'summary' ? (
+                <div>
+                  <label style={s.label} htmlFor="group1">Count by</label>
+                  <select id="group1" value={groupBy1} onChange={(e) => setGroupBy1(e.target.value)} style={s.select}>
+                    {groupable.map(f => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
+                  </select>
+                  <label style={{ ...s.label, marginTop: '0.75rem' }} htmlFor="group2">Then by (optional)</label>
+                  <select id="group2" value={groupBy2} onChange={(e) => setGroupBy2(e.target.value)} style={s.select}>
+                    <option value="">Nothing else</option>
+                    {groupable.filter(f => f.field_key !== groupBy1).map(f => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
+                  </select>
+                  {canBar && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <span style={s.label}>Show as</span>
+                      <div style={s.segment} role="group" aria-label="Show as">
+                        <button type="button" style={s.segmentBtn(display === 'bar')} aria-pressed={display === 'bar'} onClick={() => setDisplay('bar')}>Bars</button>
+                        <button type="button" style={s.segmentBtn(display === 'table')} aria-pressed={display === 'table'} onClick={() => setDisplay('table')}>Table</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+                  <legend style={s.label}>Columns to show</legend>
+                  {showable.map(f => (
+                    <label key={f.field_key} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={selectedFields.includes(f.field_key)} onChange={() => toggleField(f.field_key)} style={{ marginTop: '0.2rem' }} />
+                      <span>{f.label}{f.description && <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}> — {f.description}</span>}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+            </div>
+
+            <div style={s.card}>
+              <button type="button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}
+                style={{ ...s.cardTitle, background: 'none', border: 'none', color: '#fff', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
+                <i className={`ti ${showFilters ? 'ti-chevron-down' : 'ti-chevron-right'}`} aria-hidden="true"></i>
+                3. Narrow it down {filters.length > 0 && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.85rem' }}>({filters.length} filter{filters.length === 1 ? '' : 's'})</span>}
+              </button>
+              {showFilters && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  {filters.length > 0 && <p style={s.hint}>Results must match every filter.</p>}
+                  {filters.map((filter, index) => {
+                    const field = fieldByKey(filter.field);
+                    return (
+                      <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid #334155' }}>
+                        <select value={filter.field} aria-label="Field" style={s.select}
+                          onChange={(e) => { const next = fieldByKey(e.target.value); updateFilter(index, { field: e.target.value, op: opsFor(next)[0]?.op || 'eq', value: '' }); }}>
+                          {filterable.map(f => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
+                        </select>
+                        <select value={filter.op} aria-label="Condition" style={s.select} onChange={(e) => updateFilter(index, { op: e.target.value })}>
+                          {opsFor(field).map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
+                        </select>
+                        {valueInput(filter, index)}
+                        <button type="button" style={{ ...s.link, color: DANGER_TEXT }} onClick={() => setFilters(filters.filter((_, i) => i !== index))} aria-label="Remove this filter">
+                          <i className="ti ti-x" aria-hidden="true"></i> Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {filterable.length > 0 && (
+                    <button type="button" style={{ ...s.link, marginTop: '0.6rem' }}
+                      onClick={() => { const first = filterable[0]; setFilters([...filters, { field: first.field_key, op: opsFor(first)[0].op, value: '' }]); }}>
+                      <i className="ti ti-plus" aria-hidden="true"></i> Add a filter
+                    </button>
+                  )}
+
+                  {dataset?.date_column && (
+                    <div style={{ marginTop: '1rem' }}>
+                      <label style={s.label} htmlFor="dateMode">When</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                        <select id="dateMode" value={dateMode === 'last' ? `last-${lastDays}` : dateMode} style={s.select}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v.startsWith('last-')) { setDateMode('last'); setLastDays(v.slice(5)); } else setDateMode(v);
+                          }}>
+                          <option value="any">Any time</option>
+                          <option value="last-7">Last 7 days</option>
+                          <option value="last-30">Last 30 days</option>
+                          <option value="last-90">Last 90 days</option>
+                          <option value="last-365">Last year</option>
+                          <option value="custom">Between dates…</option>
+                        </select>
+                        {dateMode === 'custom' && (
+                          <>
+                            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={s.select} aria-label="From" />
+                            <span style={{ color: GREY_TEXT }}>to</span>
+                            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={s.select} aria-label="To" />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={s.card}>
+              <h2 style={s.cardTitle}>4. Order</h2>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <select value={sortField} onChange={(e) => setSortField(e.target.value)} style={s.select} aria-label="Sort by">
+                  <option value="">{mode === 'summary' ? 'Largest count first' : 'Default order'}</option>
+                  {sortChoices.map(k => <option key={k} value={k}>{k === 'count' ? 'Count' : (fieldByKey(k)?.label || k)}</option>)}
+                </select>
+                {sortField && (
+                  <select value={sortDir} onChange={(e) => setSortDir(e.target.value)} style={s.select} aria-label="Direction">
+                    <option value="asc">A to Z / smallest first / oldest first</option>
+                    <option value="desc">Z to A / largest first / newest first</option>
+                  </select>
+                )}
               </div>
             </div>
-            
-            {showFieldFilters && (
-              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {/* Action Type Filter */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', color: theme.textSecondary, marginBottom: '0.5rem' }}>Action Types</label>
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {['add', 'edit', 'delete'].map(action => (
-                      <button
-                        key={action}
-                        onClick={() => setActionFilter(prev => prev.includes(action) ? prev.filter(a => a !== action) : [...prev, action])}
-                        style={{
-                          padding: '0.25rem 0.75rem',
-                          borderRadius: '1rem',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '0.75rem',
-                          fontWeight: '600',
-                          background: actionFilter.includes(action) 
-                            ? (action === 'add' ? '#166534' : action === 'edit' ? '#1e40af' : '#991b1b')
-                            : theme.bg,
-                          color: actionFilter.includes(action) ? 'white' : theme.textSecondary
-                        }}
-                      >
-                        {action.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                {/* Table/Category Filter */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <label style={{ fontSize: '0.75rem', color: theme.textSecondary }}>Categories (empty = all)</label>
-                    <button onClick={() => setTableFilter([])} style={{ fontSize: '0.7rem', color: theme.textSecondary, background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {ALL_TABLES.map(table => (
-                      <button
-                        key={table.value}
-                        onClick={() => setTableFilter(prev => prev.includes(table.value) ? prev.filter(t => t !== table.value) : [...prev, table.value])}
-                        style={{
-                          padding: '0.25rem 0.75rem',
-                          borderRadius: '1rem',
-                          border: `1px solid ${tableFilter.includes(table.value) ? theme.primary : theme.border}`,
-                          cursor: 'pointer',
-                          fontSize: '0.75rem',
-                          background: tableFilter.includes(table.value) ? theme.primary : theme.bg,
-                          color: tableFilter.includes(table.value) ? 'white' : theme.text
-                        }}
-                      >
-                        {table.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
-        )}
 
-        {/* Viewer Tracking Section */}
-        <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem', border: `1px solid ${theme.border}`, display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-           <input type="text" value={viewerName} onChange={(e) => setViewerName(e.target.value)} placeholder="Your name..." style={inputStyle} />
-           {viewerName && <button onClick={recordView} style={{ background: theme.primary, color: 'white', padding: '0.5rem 1rem', borderRadius: '0.25rem', border: 'none', cursor: 'pointer' }}>Mark as Viewed</button>}
-           {lastViewDate && <span style={{ color: theme.textSecondary, fontSize: '0.875rem' }}>Last viewed: {formatDate(lastViewDate)}</span>}
-           {lastViewDate && activeTab === 'changelog' && (
-              <label style={{ color: theme.text, fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={showSinceLastView} onChange={(e) => setShowSinceLastView(e.target.checked)} />
-                Only show changes since my last view
-              </label>
-           )}
-        </div>
-
-        {/* Tab Content Rendering */}
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '3rem', color: theme.textSecondary }}>Loading data...</div>
-        ) : (
-          activeTab === 'songs' ? (
-            /* Songs Table Code - Using filteredSongs */
-            <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: theme.bg }}>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Title</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Section</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Page</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Old Page</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSongs.slice(0, rowLimit).map(song => {
-                      const pageInfo = getSongPage(song.id);
-                      return (
-                        <tr key={song.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                          <td style={{ padding: '0.75rem' }}>{song.title}</td>
-                          <td style={{ padding: '0.75rem' }}>{pageInfo.section}</td>
-                          <td style={{ padding: '0.75rem' }}>{pageInfo.page}</td>
-                          <td style={{ padding: '0.75rem' }}>{pageInfo.old_page || '-'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          {/* ---------- Results and saving ---------- */}
+          <div>
+            <div style={s.card}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+                <button type="button" style={s.primary} onClick={() => run()} disabled={running}>
+                  <i className="ti ti-player-play" aria-hidden="true"></i> {running ? 'Running…' : 'Run report'}
+                </button>
+                {dataset?.exportable && (
+                  <button type="button" style={s.secondary} onClick={download}>
+                    <i className="ti ti-download" aria-hidden="true"></i> Download CSV
+                  </button>
+                )}
+              </div>
+              {runError ? (
+                <p style={{ color: DANGER_TEXT, margin: 0 }}><i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {runError}</p>
+              ) : result ? (
+                <ReportResult result={result} fields={fields} display={canBar ? display : 'table'} />
+              ) : (
+                <p style={{ color: GREY_TEXT, margin: 0 }}>Choose your settings, then run the report to see results.</p>
+              )}
             </div>
-          ) : (
-            /* Change Log Table Code - Using displayLog */
-            <div style={{ background: theme.bgSecondary, borderRadius: '0.5rem', border: `1px solid ${theme.border}`, overflow: 'auto' }}>
-               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
-                  <thead>
-                    <tr style={{ background: theme.bg }}>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Date</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Action</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Category</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Song</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Field</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>Old Value</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>New Value</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: `1px solid ${theme.border}` }}>By</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayLog.length === 0 ? (
-                      <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: theme.textSecondary }}>No changes found matching these filters</td></tr>
-                    ) : (
-                      displayLog.map(entry => (
-                        <tr key={entry.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                          <td style={{ padding: '0.75rem', whiteSpace: 'nowrap' }}>{formatDate(entry.created_at)}</td>
-                          <td style={{ padding: '0.75rem' }}>
-                            <span style={{ padding: '0.25rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', background: entry.action === 'add' ? '#166534' : entry.action === 'edit' ? '#1e40af' : '#991b1b', color: 'white' }}>{entry.action.toUpperCase()}</span>
-                          </td>
-                          <td style={{ padding: '0.75rem', fontSize: '0.8rem', color: theme.textSecondary }}>{formatTableName(entry.table_name)}</td>
-                          <td style={{ padding: '0.75rem' }}>{entry.song_title}</td>
-                          <td style={{ padding: '0.75rem' }}>{entry.field_changed || '-'}</td>
-                          <td style={{ padding: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.old_value}>{entry.old_value || '-'}</td>
-                          <td style={{ padding: '0.75rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={entry.new_value}>{entry.new_value || '-'}</td>
-                          <td style={{ padding: '0.75rem' }}>{entry.changed_by}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-            </div>
-          )
-        )}
 
-        <div style={{ position: 'fixed', bottom: '1rem', left: '0', right: '0', textAlign: 'center', background: theme.bg, paddingTop: '0.5rem' }}>
-          <a href="https://docs.google.com/forms/d/e/1FAIpQLScwkZP7oISooLkhx-gksF5jjmjgMi85Z4WsKEC5eWU_Cdm9sg/viewform?usp=header" target="_blank" rel="noopener noreferrer" style={{ color: '#9ca3af', fontSize: '0.875rem', textDecoration: 'none' }}>📝 Share Feedback</a>
+            <div style={s.card}>
+              <h2 style={s.cardTitle}>Save to Tajar Tracks</h2>
+              <label style={s.label} htmlFor="title">Name (required)</label>
+              <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} style={s.input} placeholder="For example: Songs I haven't sung in a while" />
+              <label style={{ ...s.label, marginTop: '0.75rem' }} htmlFor="description">Description (optional)</label>
+              <input id="description" value={description} onChange={(e) => setDescription(e.target.value)} style={s.input} placeholder="A short note about what this shows" />
+              <p style={s.hint}>Saved reports show on your Tajar Tracks page. They save your settings, not the results, so they're always up to date.</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <button type="button" style={s.primary} onClick={() => save(false)} disabled={saving}>
+                  <i className="ti ti-device-floppy" aria-hidden="true"></i> {reportId ? 'Save changes' : 'Save'}
+                </button>
+                {reportId && (
+                  <button type="button" style={s.secondary} onClick={() => save(true)} disabled={saving}>
+                    <i className="ti ti-copy" aria-hidden="true"></i> Save as a new report
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

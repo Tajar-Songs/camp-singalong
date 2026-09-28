@@ -171,6 +171,7 @@ export default function App({ Component, pageProps }) {
   const userNavItems = [
     { href: '/', label: 'Sing Together', show: true },
     { href: '/songs', label: 'Songs', show: true },
+    { href: '/insights', label: 'Tajar Tracks', show: !!user },
     { href: '/docs', label: 'Docs', show: true },
     { href: '/ideas', label: 'Feedback', show: true },
     { href: '/suggest', label: 'Suggest a Song', show: !!user },
@@ -187,7 +188,6 @@ export default function App({ Component, pageProps }) {
     { href: '/suggestions', label: 'Song Suggestions', canChange: can('songs.review_suggestions') },
     { href: '/ideas', label: 'Feedback' },
     { href: '/tags', label: 'Tags', canChange: can('tags.manage') },
-    { href: '/reports', label: 'Reports' },
     { href: '/users', label: 'Users' },
     { href: '/settings', label: 'Settings', canChange: can('settings.song') || can('settings.health') || can('permissions.manage') },
   ].filter(item => !(userProfile?.hide_view_only && item.canChange === false));
