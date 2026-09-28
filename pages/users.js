@@ -34,6 +34,8 @@ export default function UserManagement() {
   const [roleFilters, setRoleFilters] = useState([]); // [] = no filter (show all); 'none' = users with zero roles
   const [roleFilterMode, setRoleFilterMode] = useState('any');
   const [busyKey, setBusyKey] = useState(null);       // `${userId}|${roleId}` while a change is in flight
+  const [historyOpenFor, setHistoryOpenFor] = useState(null); // user id whose role history is showing
+  const [roleHistory, setRoleHistory] = useState(null);       // audit rows for that user; null while loading
   // Personal preference (Profile): hide roles this person can't grant.
   const hideViewOnly = !!userProfile?.hide_view_only;
 
@@ -110,6 +112,25 @@ export default function UserManagement() {
     if (!res.ok) throw new Error(`${path.split('?')[0]}: ${res.status}`);
     const data = await res.json();
     return Array.isArray(data) ? data : [];
+  };
+
+  // Role history for one person, from the audit trail. The database only
+  // returns records this viewer is allowed to see.
+  const loadRoleHistory = async (userId) => {
+    setRoleHistory(null);
+    try {
+      const rows = await getJson(`audit_log_view?select=id,created_at,action,changed_by,old_row,new_row&category=eq.roles_permissions&table_name=eq.user_roles&subject_user_id=eq.${userId}&order=created_at.desc&limit=50`);
+      setRoleHistory(rows);
+    } catch (error) {
+      setRoleHistory([]);
+      notify.error(`Couldn't load role history: ${error.message}`);
+    }
+  };
+
+  const toggleRoleHistory = (userId) => {
+    if (historyOpenFor === userId) { setHistoryOpenFor(null); return; }
+    setHistoryOpenFor(userId);
+    loadRoleHistory(userId);
   };
 
   const loadUsers = async () => {
@@ -230,16 +251,8 @@ export default function UserManagement() {
       } else {
         await writeRows('user_roles', 'POST', { user_id: targetUserId, role_id: role.id, scope_type: 'platform', granted_by: user.id });
       }
-      // Record the change. The role change itself already happened, so a
-      // failure here is reported separately rather than as if the change failed.
-      try {
-        await writeRows('role_change_log', 'POST', {
-          user_id: targetUserId, role_id: role.id, action: currentlyHeld ? 'revoked' : 'granted',
-          scope_type: 'platform', changed_by: user.id
-        });
-      } catch (logError) {
-        notify.error(`The change was made, but couldn't be recorded in the role change log: ${logError.message}`);
-      }
+      // The database records role changes in the audit trail automatically.
+      if (historyOpenFor === targetUserId) loadRoleHistory(targetUserId);
       notify.success(`${currentlyHeld ? 'Removed' : 'Gave'} ${role.label} ${currentlyHeld ? 'from' : 'to'} ${targetName}`);
       await loadUsers();
       if (targetUserId === user.id) await loadUserProfile(user.id);
@@ -544,6 +557,31 @@ export default function UserManagement() {
                     <div className="text-xs text-[#838C95] mt-1">
                       Joined {new Date(u.created_at).toLocaleDateString()}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleRoleHistory(u.id)}
+                      aria-expanded={historyOpenFor === u.id}
+                      className="text-xs text-[#838C95] hover:text-white mt-2"
+                    >
+                      <i className={`ti ${historyOpenFor === u.id ? 'ti-chevron-down' : 'ti-history'}`} aria-hidden="true"></i> Role history
+                    </button>
+                    {historyOpenFor === u.id && (
+                      <ul className="text-xs text-[#838C95] mt-2 space-y-1">
+                        {roleHistory === null ? (
+                          <li>Loading…</li>
+                        ) : roleHistory.length === 0 ? (
+                          <li>No role changes you can see.</li>
+                        ) : roleHistory.map(h => {
+                          const row = h.new_row || h.old_row || {};
+                          const label = allRoles.find(r => r.id === row.role_id)?.label || 'a role';
+                          return (
+                            <li key={h.id}>
+                              {h.action === 'DELETE' ? 'Removed' : 'Given'} {label}{h.changed_by ? ` by ${h.changed_by}` : ''} · {new Date(h.created_at).toLocaleString()}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {allRoles.map(r => {
