@@ -1,57 +1,125 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { notify } from '../lib/notify';
 import { fetchMyPermissions } from '../lib/permissions';
 import {
-  SUPABASE_URL, authHeaders, getJson, writeJson, runReport, ReportResult, downloadCsv, slugify,
+  SUPABASE_URL, authHeaders, getJson, writeJson, runReport, ReportResult, downloadCsv, slugify, errorDetail,
   PERSONAL_TEXT, PERSONAL_FILL, GREY_TEXT, DANGER_TEXT
 } from '../lib/reports';
 
 // Report builder for Tajar Tracks. Everyone can use it; what each person can
-// report on depends on their permissions, and every report runs through the
+// report on depends on their permissions. Every report runs through the
 // database function run_report(), which enforces the field registry.
+//
+// Filters follow the style guide: choose from values that exist (never type
+// them in), buttons for a handful of options, a browsable list with chips
+// for many, "any / all" on multi-select lists, separate Include and Exclude
+// for large sets, and an explicit Run step rather than applying live.
 
-const NO_VALUE_OPS = ['is_null', 'not_null'];
+const SMALL_SET = 8;          // up to this many options: buttons; more: browsable list
+const DATE_PRESETS = [
+  { key: 'any', label: 'Any time' },
+  { key: '7', label: 'Last 7 days' },
+  { key: '30', label: 'Last 30 days' },
+  { key: '90', label: 'Last 90 days' },
+  { key: '365', label: 'Last year' },
+  { key: 'custom', label: 'Between dates' }
+];
 
-// Which filters make sense for each kind of field, in plain words.
-const opsFor = (field) => {
-  if (!field) return [];
-  switch (field.value_type) {
-    case 'list':
-      return [
-        { op: 'contains', label: 'includes' },
-        { op: 'not_contains', label: "doesn't include" },
-        { op: 'not_null', label: 'has any' },
-        { op: 'is_null', label: 'is empty' }
-      ];
-    case 'date':
-    case 'timestamp':
-      return [
-        { op: 'gte', label: 'is on or after' },
-        { op: 'lte', label: 'is on or before' }
-      ];
-    case 'number':
-      return [
-        { op: 'eq', label: 'is' },
-        { op: 'gte', label: 'is at least' },
-        { op: 'lte', label: 'is at most' }
-      ];
-    case 'boolean':
-      return [{ op: 'eq', label: 'is' }];
-    default: {
-      const ops = [
-        { op: 'eq', label: 'is' },
-        { op: 'neq', label: 'is not' },
-        { op: 'like', label: 'contains' },
-        { op: 'not_null', label: 'is not empty' },
-        { op: 'is_null', label: 'is empty' }
-      ];
-      if (field.options_list) ops.splice(2, 0, { op: 'at_least', label: 'is at least' });
-      return ops;
+const emptyChoice = () => ({ include: [], exclude: [], mode: 'any' });
+
+// Turn a saved definition's filters into choices per field. Anything the
+// builder can't show as a choice is kept as-is so it isn't lost on save.
+const choicesFromFilters = (filters = []) => {
+  const choices = {};
+  const kept = [];
+  const get = (k) => (choices[k] = choices[k] || emptyChoice());
+  const asArray = (v) => (Array.isArray(v) ? v : v === undefined || v === null || v === '' ? [] : [v]);
+  filters.forEach(f => {
+    const values = asArray(f.value);
+    switch (f.op) {
+      case 'eq': case 'in': case 'contains': case 'contains_any':
+        get(f.field).include.push(...values); break;
+      case 'contains_all':
+        get(f.field).include.push(...values); get(f.field).mode = 'all'; break;
+      case 'at_least':
+        get(f.field).include = values.slice(0, 1); get(f.field).mode = 'at_least'; break;
+      case 'neq': case 'not_in': case 'not_contains': case 'not_contains_any':
+        get(f.field).exclude.push(...values); break;
+      default:
+        kept.push(f);
     }
-  }
+  });
+  return { choices, kept };
 };
+
+// A browsable list: every option is visible as soon as the field is
+// focused, narrowing as you type. Picked options stay in place, marked with
+// a check, and show as chips in a fixed-height row below.
+function BrowsableList({ id, label, options, selected, onToggle, accent }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const close = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  const shown = options.filter(o => o.value.toLowerCase().includes(text.trim().toLowerCase()));
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', marginBottom: '0.5rem' }}>
+      <label htmlFor={id} style={{ display: 'block', fontSize: '0.8rem', color: GREY_TEXT, marginBottom: '0.25rem' }}>{label}</label>
+      <input
+        id={id}
+        value={text}
+        onChange={(e) => { setText(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}
+        placeholder={`Browse ${options.length} options, or type to narrow`}
+        autoComplete="off"
+        aria-expanded={open}
+        aria-controls={`${id}-list`}
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem' }}
+      />
+      {open && (
+        <ul id={`${id}-list`} role="listbox" aria-multiselectable="true"
+          style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '100%', marginTop: '0.25rem', maxHeight: '15rem', overflowY: 'auto', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.375rem', listStyle: 'none', padding: '0.25rem', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+          {shown.length === 0 && <li style={{ padding: '0.5rem', color: GREY_TEXT, fontSize: '0.85rem' }}>Nothing matches "{text}"</li>}
+          {shown.map(o => {
+            const on = selected.includes(o.value);
+            return (
+              <li key={o.value} role="option" aria-selected={on}>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onToggle(o.value)}
+                  style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.5rem', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', background: on ? `${accent}33` : 'transparent', color: '#fff', fontSize: '0.875rem' }}>
+                  <i className={`ti ${on ? 'ti-square-check' : 'ti-square'}`} style={{ color: on ? accent : GREY_TEXT }} aria-hidden="true"></i>
+                  <span style={{ flex: 1 }}>{o.value}</span>
+                  {o.n !== null && o.n !== undefined && <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>{o.n}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {/* Fixed-height row, so picking more never pushes the page down. */}
+      <div style={{ height: '2.1rem', marginTop: '0.35rem', display: 'flex', gap: '0.35rem', overflowX: 'auto', whiteSpace: 'nowrap', alignItems: 'center' }} aria-live="polite">
+        {selected.length === 0 ? (
+          <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}>Nothing picked</span>
+        ) : selected.map(v => (
+          <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', border: `1px solid ${accent}66`, background: `${accent}22`, fontSize: '0.8rem' }}>
+            {v}
+            <button type="button" onClick={() => onToggle(v)} aria-label={`Remove ${v}`} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'inline-flex' }}>
+              <i className="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function ReportBuilder() {
   const router = useRouter();
@@ -59,26 +127,26 @@ export default function ReportBuilder() {
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState([]);
   const [allFields, setAllFields] = useState([]);
-  const [options, setOptions] = useState({});      // list_key -> [labels]
+  const [valuesByField, setValuesByField] = useState({});   // `${dataset}|${field}` -> { list } or { error }
 
   // The report being built
   const [reportId, setReportId] = useState(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [datasetKey, setDatasetKey] = useState('');
-  const [mode, setMode] = useState('summary');     // 'summary' | 'rows'
+  const [mode, setMode] = useState('count');                // 'count' | 'list'
   const [groupBy1, setGroupBy1] = useState('');
   const [groupBy2, setGroupBy2] = useState('');
-  const [selectedFields, setSelectedFields] = useState([]);
-  const [filters, setFilters] = useState([]);      // [{ field, op, value }]
+  const [display, setDisplay] = useState('bar');
+  const [columns, setColumns] = useState([]);
+  const [choices, setChoices] = useState({});                // field -> { include, exclude, mode }
+  const [keptFilters, setKeptFilters] = useState([]);        // filters with no chooser, kept as-is
+  const [matchAny, setMatchAny] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [dateMode, setDateMode] = useState('any'); // 'any' | 'last' | 'custom'
-  const [lastDays, setLastDays] = useState('30');
+  const [datePreset, setDatePreset] = useState('any');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [sortField, setSortField] = useState('');
-  const [sortDir, setSortDir] = useState('desc');
-  const [display, setDisplay] = useState('table');
+  const [sortChoice, setSortChoice] = useState('');          // '' = default, else 'field:dir'
 
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState('');
@@ -86,13 +154,24 @@ export default function ReportBuilder() {
   const [saving, setSaving] = useState(false);
 
   const dataset = datasets.find(d => d.key === datasetKey);
+  const noun = dataset?.row_noun || 'rows';
   const fields = allFields.filter(f => f.dataset_key === datasetKey && f.reportable);
   const fieldByKey = (key) => fields.find(f => f.field_key === key);
+  const labelOf = (key) => (key === 'count' ? 'Count' : fieldByKey(key)?.label || key);
   const groupable = fields.filter(f => f.groupable);
   const showable = fields.filter(f => !f.aggregation_required);
-  const filterable = fields.filter(f => f.filterable);
+  const choosable = fields.filter(f => f.filterable && f.field_key !== dataset?.date_column);
 
   useEffect(() => { if (router.isReady) start(); }, [router.isReady]);
+
+  // Load the options for each filter the first time the filters are opened.
+  useEffect(() => {
+    if (!showFilters || !datasetKey) return;
+    choosable.forEach(f => {
+      const key = `${datasetKey}|${f.field_key}`;
+      if (!valuesByField[key]) loadValues(datasetKey, f.field_key);
+    });
+  }, [showFilters, datasetKey, allFields]);
 
   const start = async () => {
     try {
@@ -107,29 +186,22 @@ export default function ReportBuilder() {
         getJson('report_fields?select=*&order=display_order.asc'),
         fetchMyPermissions(authHeaders(false))
       ]);
-      const usable = allDatasets.filter(d => d.audience === 'self' || permissions.includes(d.required_permission));
-      setDatasets(usable);
+      const canUse = (d) => d.audience === 'self' || permissions.includes(d.required_permission);
       setAllFields(fieldRows);
 
-      const listKeys = [...new Set(fieldRows.map(f => f.options_list).filter(Boolean))];
-      if (listKeys.length > 0) {
-        const optionRows = await getJson(`option_lists?select=list_key,label,display_order&list_key=in.(${listKeys.join(',')})&order=display_order.asc`);
-        const byList = {};
-        optionRows.forEach(o => { (byList[o.list_key] = byList[o.list_key] || []).push(o.label); });
-        setOptions(byList);
-      }
-
       const id = router.query.id;
-      if (id) {
-        const saved = await getJson(`saved_reports?id=eq.${id}&select=*`);
-        if (saved[0]) {
-          loadReport(saved[0], fieldRows);
-          run(saved[0].dataset_key, saved[0].definition);
-        } else {
-          notify.error("That report wasn't found. It may have been deleted, or it belongs to someone else.");
-        }
-      } else if (usable.length > 0) {
-        chooseDataset(usable[0].key, fieldRows, usable);
+      const saved = id ? (await getJson(`saved_reports?id=eq.${id}&select=*`))[0] : null;
+      // Retired sources stay available only for a report that already uses one.
+      const usable = allDatasets.filter(d => canUse(d) && (d.is_active || d.key === saved?.dataset_key));
+      setDatasets(usable);
+
+      if (saved) {
+        loadReport(saved);
+        run(saved.dataset_key, saved.definition);
+      } else {
+        if (id) notify.error("That report wasn't found. It may have been deleted, or it belongs to someone else.");
+        const first = usable.find(d => d.is_active);
+        if (first) chooseDataset(first.key, fieldRows);
       }
     } catch (error) {
       console.error('Error loading the report builder:', error);
@@ -138,63 +210,98 @@ export default function ReportBuilder() {
     setLoading(false);
   };
 
+  const loadValues = async (dsKey, fieldKey) => {
+    const key = `${dsKey}|${fieldKey}`;
+    setValuesByField(prev => ({ ...prev, [key]: { loading: true } }));
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/report_field_values`, {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ p_dataset: dsKey, p_field: fieldKey })
+      });
+      if (!res.ok) throw new Error(await errorDetail(res));
+      const list = await res.json();
+      setValuesByField(prev => ({ ...prev, [key]: { list: Array.isArray(list) ? list : [] } }));
+    } catch (error) {
+      setValuesByField(prev => ({ ...prev, [key]: { error: error.message } }));
+    }
+  };
+
   // Put a saved report's settings into the form.
-  const loadReport = (report, fieldRows) => {
+  const loadReport = (report) => {
     const def = report.definition || {};
     setReportId(report.id);
     setTitle(report.title || '');
     setDescription(report.description || '');
     setDatasetKey(report.dataset_key);
     const grouped = Array.isArray(def.group_by) && def.group_by.length > 0;
-    setMode(grouped ? 'summary' : 'rows');
+    setMode(grouped ? 'count' : 'list');
     setGroupBy1(grouped ? def.group_by[0] : '');
     setGroupBy2(grouped ? (def.group_by[1] || '') : '');
-    setSelectedFields(grouped ? [] : (def.fields || []));
-    const loadedFilters = (def.filters || []).map(f => ({ field: f.field, op: f.op, value: f.value ?? '' }));
-    setFilters(loadedFilters);
-    setShowFilters(loadedFilters.length > 0 || !!def.last_days || !!def.date_from || !!def.date_to);
-    if (def.last_days) { setDateMode('last'); setLastDays(String(def.last_days)); }
-    else if (def.date_from || def.date_to) { setDateMode('custom'); setDateFrom(def.date_from || ''); setDateTo(def.date_to || ''); }
-    else setDateMode('any');
+    setColumns(grouped ? [] : (def.fields || []));
+    setDisplay(report.display || (grouped ? 'bar' : 'table'));
+    const { choices: loaded, kept } = choicesFromFilters(def.filters);
+    setChoices(loaded);
+    setKeptFilters(kept);
+    setMatchAny(def.filters_match === 'any');
+    if (def.last_days) setDatePreset(String(def.last_days));
+    else if (def.date_from || def.date_to) { setDatePreset('custom'); setDateFrom(def.date_from || ''); setDateTo(def.date_to || ''); }
+    else setDatePreset('any');
+    setShowFilters((def.filters || []).length > 0 || !!def.last_days || !!def.date_from || !!def.date_to);
     const sort = (def.order_by || [])[0];
-    setSortField(sort?.field || '');
-    setSortDir(sort?.dir || 'desc');
-    setDisplay(report.display || 'table');
+    setSortChoice(sort ? `${sort.field}:${sort.dir || 'asc'}` : '');
   };
 
-  const chooseDataset = (key, fieldRows = allFields, list = datasets) => {
-    const d = list.find(x => x.key === key);
+  const chooseDataset = (key, fieldRows = allFields) => {
     const dsFields = fieldRows.filter(f => f.dataset_key === key && f.reportable);
-    setDatasetKey(key);
     const firstGroup = dsFields.find(f => f.groupable)?.field_key || '';
-    setMode(firstGroup ? 'summary' : 'rows');
+    setDatasetKey(key);
+    setMode(firstGroup ? 'count' : 'list');
     setGroupBy1(firstGroup);
     setGroupBy2('');
-    setSelectedFields(dsFields.filter(f => !f.aggregation_required).slice(0, 4).map(f => f.field_key));
-    setFilters([]);
-    setDateMode('any');
-    setSortField('');
     setDisplay(firstGroup ? 'bar' : 'table');
+    setColumns(dsFields.filter(f => !f.aggregation_required).slice(0, 4).map(f => f.field_key));
+    setChoices({});
+    setKeptFilters([]);
+    setMatchAny(false);
+    setDatePreset('any');
+    setSortChoice('');
     setResult(null);
     setRunError('');
-    if (d && !d.row_level_allowed) setMode('summary');
   };
+
+  const activeChoiceCount = Object.values(choices).filter(c => c.include.length > 0 || c.exclude.length > 0).length + keptFilters.length;
 
   const buildDefinition = () => {
     const def = {};
-    if (mode === 'summary') def.group_by = [groupBy1, groupBy2].filter(Boolean);
-    else def.fields = selectedFields;
-    def.filters = filters
-      .filter(f => f.field && f.op && (NO_VALUE_OPS.includes(f.op) || String(f.value).trim() !== ''))
-      .map(f => (NO_VALUE_OPS.includes(f.op) ? { field: f.field, op: f.op } : { field: f.field, op: f.op, value: f.value }));
+    if (mode === 'count') def.group_by = [groupBy1, groupBy2].filter(Boolean);
+    else def.fields = columns;
+
+    const filters = [...keptFilters];
+    Object.entries(choices).forEach(([key, c]) => {
+      const field = fieldByKey(key);
+      if (!field) return;
+      if (c.include.length > 0) {
+        if (c.mode === 'at_least') filters.push({ field: key, op: 'at_least', value: c.include[0] });
+        else if (field.value_type === 'list') filters.push({ field: key, op: c.mode === 'all' ? 'contains_all' : 'contains_any', value: c.include });
+        else filters.push({ field: key, op: 'in', value: c.include });
+      }
+      if (c.exclude.length > 0) {
+        filters.push({ field: key, op: field.value_type === 'list' ? 'not_contains_any' : 'not_in', value: c.exclude });
+      }
+    });
+    def.filters = filters;
+    if (filters.length > 1 && matchAny) def.filters_match = 'any';
+
     if (dataset?.date_column) {
-      if (dateMode === 'last' && Number(lastDays) > 0) def.last_days = Number(lastDays);
-      if (dateMode === 'custom') {
+      if (['7', '30', '90', '365'].includes(datePreset)) def.last_days = Number(datePreset);
+      if (datePreset === 'custom') {
         if (dateFrom) def.date_from = dateFrom;
         if (dateTo) def.date_to = dateTo;
       }
     }
-    if (sortField) def.order_by = [{ field: sortField, dir: sortDir }];
+    if (sortChoice) {
+      const [field, dir] = sortChoice.split(':');
+      def.order_by = [{ field, dir }];
+    }
     return def;
   };
 
@@ -220,14 +327,14 @@ export default function ReportBuilder() {
   };
 
   const save = async (asNew) => {
-    if (!title.trim()) { notify.error('Give the report a name before saving.'); return; }
+    if (!title.trim()) { notify.error('Give the report a name before saving - it\'s how you\'ll find it in Tajar Tracks.'); return; }
     setSaving(true);
     const body = {
       title: title.trim(),
       description: description.trim() || null,
       dataset_key: datasetKey,
       definition: buildDefinition(),
-      display: mode === 'summary' && !groupBy2 ? display : 'table',
+      display: mode === 'count' && !groupBy2 ? display : 'table',
       updated_at: new Date().toISOString()
     };
     try {
@@ -247,13 +354,15 @@ export default function ReportBuilder() {
     setSaving(false);
   };
 
-  const updateFilter = (index, changes) => {
-    setFilters(filters.map((f, i) => (i === index ? { ...f, ...changes } : f)));
+  const updateChoice = (key, changes) => {
+    setChoices(prev => ({ ...prev, [key]: { ...(prev[key] || emptyChoice()), ...changes } }));
   };
-
-  const toggleField = (key) => {
-    setSelectedFields(selectedFields.includes(key) ? selectedFields.filter(k => k !== key) : [...selectedFields, key]);
+  const toggleIn = (key, part, value, single = false) => {
+    const current = choices[key]?.[part] || [];
+    const next = current.includes(value) ? current.filter(v => v !== value) : single ? [value] : [...current, value];
+    updateChoice(key, { [part]: next });
   };
+  const clearChoice = (key) => setChoices(prev => { const next = { ...prev }; delete next[key]; return next; });
 
   // ---------- Styles ----------
   const s = {
@@ -261,19 +370,22 @@ export default function ReportBuilder() {
     wrapper: { maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' },
     title: { fontSize: '2.25rem', lineHeight: 1.2, fontWeight: 'bold', margin: 0, fontFamily: "'Gloria Hallelujah', cursive" },
     back: { color: PERSONAL_TEXT, textDecoration: 'none', fontSize: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' },
-    layout: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: '1rem', alignItems: 'start' },
+    layout: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: '1rem', alignItems: 'start' },
     card: { background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '1.25rem', marginBottom: '1rem' },
-    cardTitle: { fontWeight: 'bold', fontSize: '1rem', margin: '0 0 0.75rem' },
-    label: { display: 'block', fontSize: '0.8rem', color: GREY_TEXT, marginBottom: '0.3rem' },
+    question: { fontWeight: 'bold', fontSize: '1.05rem', margin: '0 0 0.25rem' },
+    help: { color: GREY_TEXT, fontSize: '0.85rem', margin: '0 0 0.75rem' },
+    label: { display: 'block', fontSize: '0.85rem', fontWeight: 'bold', margin: '0.75rem 0 0.35rem' },
     input: { width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem' },
     select: { background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem', maxWidth: '100%' },
-    hint: { color: GREY_TEXT, fontSize: '0.8rem', margin: '0.3rem 0 0' },
-    choice: (on) => ({ textAlign: 'left', width: '100%', padding: '0.6rem 0.75rem', borderRadius: '0.375rem', border: `1px solid ${on ? PERSONAL_TEXT : '#334155'}`, background: on ? `${PERSONAL_FILL}33` : 'transparent', color: '#fff', cursor: 'pointer', marginBottom: '0.5rem' }),
-    segment: { display: 'inline-flex', border: '1px solid #334155', borderRadius: '0.375rem', overflow: 'hidden', marginBottom: '0.75rem' },
+    source: (on) => ({ textAlign: 'left', width: '100%', padding: '0.75rem', borderRadius: '0.375rem', border: `1px solid ${on ? PERSONAL_TEXT : '#334155'}`, background: on ? `${PERSONAL_FILL}33` : 'transparent', color: '#fff', cursor: 'pointer', marginBottom: '0.5rem' }),
+    segment: { display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #334155', borderRadius: '0.375rem', overflow: 'hidden' },
     segmentBtn: (on) => ({ padding: '0.45rem 0.9rem', border: 'none', background: on ? PERSONAL_FILL : 'transparent', color: on ? '#fff' : GREY_TEXT, fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }),
+    pill: (on) => ({ padding: '0.4rem 0.75rem', borderRadius: '0.375rem', border: `1px solid ${on ? PERSONAL_TEXT : '#334155'}`, background: on ? `${PERSONAL_FILL}40` : 'transparent', color: on ? '#fff' : '#cbd5e1', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }),
+    pills: { display: 'flex', flexWrap: 'wrap', gap: '0.4rem' },
     primary: { background: PERSONAL_FILL, color: '#fff', border: 'none', borderRadius: '0.375rem', padding: '0.55rem 1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
     secondary: { background: 'transparent', color: '#fff', border: '1px solid #334155', borderRadius: '0.375rem', padding: '0.55rem 1.1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
-    link: { background: 'none', border: 'none', color: PERSONAL_TEXT, cursor: 'pointer', padding: 0, fontSize: '0.875rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }
+    link: { background: 'none', border: 'none', color: PERSONAL_TEXT, cursor: 'pointer', padding: 0, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' },
+    filterBlock: { padding: '0.75rem 0', borderTop: '1px solid #334155' }
   };
 
   if (loading) {
@@ -290,37 +402,117 @@ export default function ReportBuilder() {
     );
   }
 
-  const canBar = mode === 'summary' && groupBy1 && !groupBy2;
-  const sortChoices = mode === 'summary'
-    ? [...[groupBy1, groupBy2].filter(Boolean), 'count']
-    : selectedFields;
+  const oneGroup = mode === 'count' && groupBy1 && !groupBy2;
+  const listGroups = groupable.filter(f => f.value_type === 'list').map(f => f.field_key);
 
-  const valueInput = (filter, index) => {
-    const field = fieldByKey(filter.field);
-    if (!field || NO_VALUE_OPS.includes(filter.op)) return null;
-    const listOptions = field.options_list ? options[field.options_list] : null;
-    if (listOptions) {
-      return (
-        <select value={filter.value} onChange={(e) => updateFilter(index, { value: e.target.value })} style={s.select} aria-label="Value">
-          <option value="">Choose…</option>
-          {listOptions.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
+  // Sort choices, in words that say what they mean.
+  const sortOptions = [];
+  if (mode === 'count') {
+    sortOptions.push({ value: '', label: `Most ${noun} first` });
+    sortOptions.push({ value: 'count:asc', label: `Fewest ${noun} first` });
+    [groupBy1, groupBy2].filter(Boolean).forEach(k => {
+      sortOptions.push({ value: `${k}:asc`, label: `${labelOf(k)}, A to Z` });
+      sortOptions.push({ value: `${k}:desc`, label: `${labelOf(k)}, Z to A` });
+    });
+  } else {
+    sortOptions.push({ value: '', label: dataset?.date_column ? 'Newest first' : 'Default order' });
+    columns.forEach(k => {
+      const f = fieldByKey(k);
+      if (!f) return;
+      if (f.value_type === 'date' || f.value_type === 'timestamp') {
+        sortOptions.push({ value: `${k}:desc`, label: `${f.label}, newest first` });
+        sortOptions.push({ value: `${k}:asc`, label: `${f.label}, oldest first` });
+      } else if (f.value_type === 'number') {
+        sortOptions.push({ value: `${k}:desc`, label: `${f.label}, largest first` });
+        sortOptions.push({ value: `${k}:asc`, label: `${f.label}, smallest first` });
+      } else {
+        sortOptions.push({ value: `${k}:asc`, label: `${f.label}, A to Z` });
+        sortOptions.push({ value: `${k}:desc`, label: `${f.label}, Z to A` });
+      }
+    });
+  }
+
+  const filterControl = (field) => {
+    const state = valuesByField[`${datasetKey}|${field.field_key}`];
+    const c = choices[field.field_key] || emptyChoice();
+    const hasAny = c.include.length > 0 || c.exclude.length > 0;
+    const ordered = !!field.options_list;
+    const isList = field.value_type === 'list';
+
+    let body;
+    if (!state || state.loading) {
+      body = <p style={{ ...s.help, margin: 0 }}>Loading options…</p>;
+    } else if (state.error) {
+      body = <p style={{ color: DANGER_TEXT, fontSize: '0.85rem', margin: 0 }}>Couldn't load options: {state.error}</p>;
+    } else if (state.list.length === 0) {
+      body = <p style={{ ...s.help, margin: 0 }}>Nothing to choose from yet.</p>;
+    } else if (state.list.length <= SMALL_SET) {
+      const single = c.mode === 'at_least';
+      body = (
+        <div>
+          {(ordered || (isList && c.include.length > 1)) && (
+            <div style={{ ...s.segment, marginBottom: '0.5rem' }} role="group" aria-label={`How to match ${field.label}`}>
+              {isList ? (
+                <>
+                  <button type="button" style={s.segmentBtn(c.mode !== 'all')} aria-pressed={c.mode !== 'all'} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Any of these</button>
+                  <button type="button" style={s.segmentBtn(c.mode === 'all')} aria-pressed={c.mode === 'all'} onClick={() => updateChoice(field.field_key, { mode: 'all' })}>All of these</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" style={s.segmentBtn(!single)} aria-pressed={!single} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Is one of</button>
+                  <button type="button" style={s.segmentBtn(single)} aria-pressed={single}
+                    onClick={() => updateChoice(field.field_key, { mode: 'at_least', include: c.include.slice(0, 1) })}>Is at least</button>
+                </>
+              )}
+            </div>
+          )}
+          {single && <p style={{ ...s.help, margin: '0 0 0.5rem' }}>Pick one level. Everything at that level or above counts, in the order of the list below.</p>}
+          <div style={s.pills}>
+            {state.list.map(o => {
+              const on = c.include.includes(o.value);
+              return (
+                <button key={o.value} type="button" style={s.pill(on)} aria-pressed={on} onClick={() => toggleIn(field.field_key, 'include', o.value, single)}>
+                  <i className={`ti ${on ? 'ti-check' : 'ti-plus'}`} aria-hidden="true"></i>{o.value}
+                  {o.n !== null && o.n !== undefined && <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>{o.n}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    } else {
+      const opts = state.list;
+      body = (
+        <div>
+          {isList && c.include.length > 1 && (
+            <div style={{ ...s.segment, marginBottom: '0.5rem' }} role="group" aria-label={`How to match ${field.label}`}>
+              <button type="button" style={s.segmentBtn(c.mode !== 'all')} aria-pressed={c.mode !== 'all'} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Any of these</button>
+              <button type="button" style={s.segmentBtn(c.mode === 'all')} aria-pressed={c.mode === 'all'} onClick={() => updateChoice(field.field_key, { mode: 'all' })}>All of these</button>
+            </div>
+          )}
+          <BrowsableList id={`inc-${field.field_key}`} label="Include" options={opts} selected={c.include} accent={PERSONAL_TEXT}
+            onToggle={(v) => toggleIn(field.field_key, 'include', v)} />
+          <BrowsableList id={`exc-${field.field_key}`} label="Exclude" options={opts} selected={c.exclude} accent={DANGER_TEXT}
+            onToggle={(v) => toggleIn(field.field_key, 'exclude', v)} />
+        </div>
       );
     }
-    if (field.value_type === 'boolean') {
-      return (
-        <select value={filter.value} onChange={(e) => updateFilter(index, { value: e.target.value })} style={s.select} aria-label="Value">
-          <option value="">Choose…</option>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </select>
-      );
-    }
-    const type = field.value_type === 'date' || field.value_type === 'timestamp' ? 'date'
-      : field.value_type === 'number' ? 'number' : 'text';
+
     return (
-      <input type={type} value={filter.value} onChange={(e) => updateFilter(index, { value: e.target.value })}
-        style={{ ...s.select, minWidth: '10rem' }} aria-label="Value" placeholder={type === 'text' ? 'Type a value' : undefined} />
+      <div key={field.field_key} style={s.filterBlock}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.4rem' }}>
+          <div>
+            <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{field.label}</span>
+            {field.description && <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}> — {field.description}</span>}
+          </div>
+          {hasAny && (
+            <button type="button" style={{ ...s.link, color: GREY_TEXT }} onClick={() => clearChoice(field.field_key)}>
+              <i className="ti ti-x" aria-hidden="true"></i> Clear
+            </button>
+          )}
+        </div>
+        {body}
+      </div>
     );
   };
 
@@ -334,119 +526,144 @@ export default function ReportBuilder() {
           {/* ---------- Settings ---------- */}
           <div>
             <div style={s.card}>
-              <h2 style={s.cardTitle}>1. What to report on</h2>
-              {datasets.map(d => (
-                <button key={d.key} type="button" style={s.choice(d.key === datasetKey)} aria-pressed={d.key === datasetKey}
-                  onClick={() => { if (d.key !== datasetKey) chooseDataset(d.key); }}>
-                  <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    {d.key === datasetKey && <i className="ti ti-check" aria-hidden="true"></i>}{d.title}
-                  </div>
-                  <div style={{ color: GREY_TEXT, fontSize: '0.8rem', marginTop: '0.2rem' }}>{d.description}</div>
-                </button>
-              ))}
+              <h2 style={s.question}>What do you want to look at?</h2>
+              <p style={s.help}>Each choice is a different set of information. You'll only see the ones you have access to.</p>
+              {datasets.filter(d => d.is_active || d.key === datasetKey).map(d => {
+                const on = d.key === datasetKey;
+                return (
+                  <button key={d.key} type="button" style={s.source(on)} aria-pressed={on}
+                    onClick={() => { if (!on) chooseDataset(d.key); }}>
+                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <i className={`ti ${on ? 'ti-circle-check' : 'ti-circle'}`} aria-hidden="true"></i>{d.title}
+                      {!d.is_active && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}>(older source, no longer offered for new reports)</span>}
+                    </div>
+                    <div style={{ color: GREY_TEXT, fontSize: '0.85rem', marginTop: '0.25rem' }}>{d.description}</div>
+                    {d.examples?.length > 0 && (
+                      <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem', color: '#cbd5e1', fontSize: '0.8rem' }}>
+                        {d.examples.map(x => <li key={x}>{x}</li>)}
+                      </ul>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             <div style={s.card}>
-              <h2 style={s.cardTitle}>2. What to show</h2>
-              <div style={s.segment} role="group" aria-label="Report type">
-                <button type="button" style={s.segmentBtn(mode === 'summary')} aria-pressed={mode === 'summary'} onClick={() => setMode('summary')}>Counts</button>
+              <h2 style={s.question}>Show me…</h2>
+              <p style={s.help}>A count adds things up, like how many {noun} have each status. A list shows the {noun} themselves.</p>
+              <div style={s.segment} role="group" aria-label="Count or list">
+                <button type="button" style={s.segmentBtn(mode === 'count')} aria-pressed={mode === 'count'} onClick={() => { setMode('count'); setSortChoice(''); }}>A count of {noun}</button>
                 {dataset?.row_level_allowed && (
-                  <button type="button" style={s.segmentBtn(mode === 'rows')} aria-pressed={mode === 'rows'} onClick={() => setMode('rows')}>List</button>
+                  <button type="button" style={s.segmentBtn(mode === 'list')} aria-pressed={mode === 'list'} onClick={() => { setMode('list'); setSortChoice(''); }}>A list of {noun}</button>
                 )}
               </div>
 
-              {mode === 'summary' ? (
+              {mode === 'count' ? (
                 <div>
-                  <label style={s.label} htmlFor="group1">Count by</label>
-                  <select id="group1" value={groupBy1} onChange={(e) => setGroupBy1(e.target.value)} style={s.select}>
-                    {groupable.map(f => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
-                  </select>
-                  <label style={{ ...s.label, marginTop: '0.75rem' }} htmlFor="group2">Then by (optional)</label>
-                  <select id="group2" value={groupBy2} onChange={(e) => setGroupBy2(e.target.value)} style={s.select}>
-                    <option value="">Nothing else</option>
-                    {groupable.filter(f => f.field_key !== groupBy1).map(f => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
-                  </select>
-                  {canBar && (
-                    <div style={{ marginTop: '0.75rem' }}>
-                      <span style={s.label}>Show as</span>
-                      <div style={s.segment} role="group" aria-label="Show as">
+                  <span style={s.label}>Counted by</span>
+                  <div style={s.pills}>
+                    {groupable.map(f => (
+                      <button key={f.field_key} type="button" style={s.pill(groupBy1 === f.field_key)} aria-pressed={groupBy1 === f.field_key}
+                        onClick={() => { setGroupBy1(f.field_key); if (groupBy2 === f.field_key || (listGroups.includes(f.field_key) && listGroups.includes(groupBy2))) setGroupBy2(''); setSortChoice(''); }}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={s.label}>And then by <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(optional)</span></span>
+                  <div style={s.pills}>
+                    <button type="button" style={s.pill(!groupBy2)} aria-pressed={!groupBy2} onClick={() => { setGroupBy2(''); setSortChoice(''); }}>Nothing else</button>
+                    {groupable.filter(f => f.field_key !== groupBy1 && !(listGroups.includes(f.field_key) && listGroups.includes(groupBy1))).map(f => (
+                      <button key={f.field_key} type="button" style={s.pill(groupBy2 === f.field_key)} aria-pressed={groupBy2 === f.field_key}
+                        onClick={() => { setGroupBy2(f.field_key); setSortChoice(''); }}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  {oneGroup && (
+                    <>
+                      <span style={s.label}>Show it as</span>
+                      <div style={s.segment} role="group" aria-label="Show it as">
                         <button type="button" style={s.segmentBtn(display === 'bar')} aria-pressed={display === 'bar'} onClick={() => setDisplay('bar')}>Bars</button>
                         <button type="button" style={s.segmentBtn(display === 'table')} aria-pressed={display === 'table'} onClick={() => setDisplay('table')}>Table</button>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
               ) : (
-                <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
-                  <legend style={s.label}>Columns to show</legend>
-                  {showable.map(f => (
-                    <label key={f.field_key} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={selectedFields.includes(f.field_key)} onChange={() => toggleField(f.field_key)} style={{ marginTop: '0.2rem' }} />
-                      <span>{f.label}{f.description && <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}> — {f.description}</span>}</span>
-                    </label>
-                  ))}
-                </fieldset>
+                <div>
+                  <span style={s.label}>Columns to include <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(in the order you pick them)</span></span>
+                  <div style={s.pills}>
+                    {showable.map(f => {
+                      const at = columns.indexOf(f.field_key);
+                      const on = at >= 0;
+                      return (
+                        <button key={f.field_key} type="button" style={s.pill(on)} aria-pressed={on} title={f.description || undefined}
+                          onClick={() => { setColumns(on ? columns.filter(k => k !== f.field_key) : [...columns, f.field_key]); setSortChoice(''); }}>
+                          {on ? <span style={{ fontWeight: 'bold' }}>{at + 1}.</span> : <i className="ti ti-plus" aria-hidden="true"></i>}{f.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
 
             <div style={s.card}>
               <button type="button" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}
-                style={{ ...s.cardTitle, background: 'none', border: 'none', color: '#fff', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
+                style={{ ...s.question, background: 'none', border: 'none', color: '#fff', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', textAlign: 'left' }}>
                 <i className={`ti ${showFilters ? 'ti-chevron-down' : 'ti-chevron-right'}`} aria-hidden="true"></i>
-                3. Narrow it down {filters.length > 0 && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.85rem' }}>({filters.length} filter{filters.length === 1 ? '' : 's'})</span>}
+                Only include {noun} that…
+                {(activeChoiceCount > 0 || datePreset !== 'any') && (
+                  <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.85rem' }}>
+                    ({[activeChoiceCount > 0 && `${activeChoiceCount} filter${activeChoiceCount === 1 ? '' : 's'}`, datePreset !== 'any' && 'date range'].filter(Boolean).join(', ')})
+                  </span>
+                )}
               </button>
+              {!showFilters && <p style={{ ...s.help, margin: '0.35rem 0 0' }}>Optional. Open this to narrow the report down.</p>}
+
               {showFilters && (
                 <div style={{ marginTop: '0.75rem' }}>
-                  {filters.length > 0 && <p style={s.hint}>Results must match every filter.</p>}
-                  {filters.map((filter, index) => {
-                    const field = fieldByKey(filter.field);
-                    return (
-                      <div key={index} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid #334155' }}>
-                        <select value={filter.field} aria-label="Field" style={s.select}
-                          onChange={(e) => { const next = fieldByKey(e.target.value); updateFilter(index, { field: e.target.value, op: opsFor(next)[0]?.op || 'eq', value: '' }); }}>
-                          {filterable.map(f => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
-                        </select>
-                        <select value={filter.op} aria-label="Condition" style={s.select} onChange={(e) => updateFilter(index, { op: e.target.value })}>
-                          {opsFor(field).map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
-                        </select>
-                        {valueInput(filter, index)}
-                        <button type="button" style={{ ...s.link, color: DANGER_TEXT }} onClick={() => setFilters(filters.filter((_, i) => i !== index))} aria-label="Remove this filter">
-                          <i className="ti ti-x" aria-hidden="true"></i> Remove
-                        </button>
+                  {dataset?.date_column && (
+                    <div style={{ paddingBottom: '0.75rem' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{labelOf(dataset.date_column)}</span>
+                      <div style={{ ...s.pills, marginTop: '0.4rem' }}>
+                        {DATE_PRESETS.map(p => (
+                          <button key={p.key} type="button" style={s.pill(datePreset === p.key)} aria-pressed={datePreset === p.key} onClick={() => setDatePreset(p.key)}>{p.label}</button>
+                        ))}
                       </div>
-                    );
-                  })}
-                  {filterable.length > 0 && (
-                    <button type="button" style={{ ...s.link, marginTop: '0.6rem' }}
-                      onClick={() => { const first = filterable[0]; setFilters([...filters, { field: first.field_key, op: opsFor(first)[0].op, value: '' }]); }}>
-                      <i className="ti ti-plus" aria-hidden="true"></i> Add a filter
-                    </button>
+                      {datePreset === 'custom' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
+                          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={s.select} aria-label="From" />
+                          <span style={{ color: GREY_TEXT }}>to</span>
+                          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={s.select} aria-label="To" />
+                        </div>
+                      )}
+                    </div>
                   )}
 
-                  {dataset?.date_column && (
-                    <div style={{ marginTop: '1rem' }}>
-                      <label style={s.label} htmlFor="dateMode">When</label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                        <select id="dateMode" value={dateMode === 'last' ? `last-${lastDays}` : dateMode} style={s.select}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v.startsWith('last-')) { setDateMode('last'); setLastDays(v.slice(5)); } else setDateMode(v);
-                          }}>
-                          <option value="any">Any time</option>
-                          <option value="last-7">Last 7 days</option>
-                          <option value="last-30">Last 30 days</option>
-                          <option value="last-90">Last 90 days</option>
-                          <option value="last-365">Last year</option>
-                          <option value="custom">Between dates…</option>
-                        </select>
-                        {dateMode === 'custom' && (
-                          <>
-                            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={s.select} aria-label="From" />
-                            <span style={{ color: GREY_TEXT }}>to</span>
-                            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={s.select} aria-label="To" />
-                          </>
-                        )}
+                  {activeChoiceCount > 1 && (
+                    <div style={{ padding: '0.75rem 0', borderTop: '1px solid #334155' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem', marginRight: '0.5rem' }}>{noun.charAt(0).toUpperCase() + noun.slice(1)} must match</span>
+                      <div style={s.segment} role="group" aria-label="Match all or any filters">
+                        <button type="button" style={s.segmentBtn(!matchAny)} aria-pressed={!matchAny} onClick={() => setMatchAny(false)}>All of the filters</button>
+                        <button type="button" style={s.segmentBtn(matchAny)} aria-pressed={matchAny} onClick={() => setMatchAny(true)}>Any of the filters</button>
                       </div>
+                    </div>
+                  )}
+
+                  {choosable.map(filterControl)}
+
+                  {keptFilters.length > 0 && (
+                    <div style={s.filterBlock}>
+                      <p style={{ ...s.help, margin: '0 0 0.4rem' }}>Also applied (from this report's original settings):</p>
+                      {keptFilters.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
+                          <span>{labelOf(f.field)} {f.op === 'not_null' ? 'is not empty' : f.op === 'is_null' ? 'is empty' : f.op}</span>
+                          <button type="button" style={{ ...s.link, color: GREY_TEXT }} onClick={() => setKeptFilters(keptFilters.filter((_, j) => j !== i))}>
+                            <i className="ti ti-x" aria-hidden="true"></i> Remove
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -454,19 +671,10 @@ export default function ReportBuilder() {
             </div>
 
             <div style={s.card}>
-              <h2 style={s.cardTitle}>4. Order</h2>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <select value={sortField} onChange={(e) => setSortField(e.target.value)} style={s.select} aria-label="Sort by">
-                  <option value="">{mode === 'summary' ? 'Largest count first' : 'Default order'}</option>
-                  {sortChoices.map(k => <option key={k} value={k}>{k === 'count' ? 'Count' : (fieldByKey(k)?.label || k)}</option>)}
-                </select>
-                {sortField && (
-                  <select value={sortDir} onChange={(e) => setSortDir(e.target.value)} style={s.select} aria-label="Direction">
-                    <option value="asc">A to Z / smallest first / oldest first</option>
-                    <option value="desc">Z to A / largest first / newest first</option>
-                  </select>
-                )}
-              </div>
+              <h2 style={s.question}>In what order?</h2>
+              <select value={sortChoice} onChange={(e) => setSortChoice(e.target.value)} style={s.select} aria-label="Order">
+                {sortOptions.map(o => <option key={o.value || 'default'} value={o.value}>{o.label}</option>)}
+              </select>
             </div>
           </div>
 
@@ -475,7 +683,7 @@ export default function ReportBuilder() {
             <div style={s.card}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
                 <button type="button" style={s.primary} onClick={() => run()} disabled={running}>
-                  <i className="ti ti-player-play" aria-hidden="true"></i> {running ? 'Running…' : 'Run report'}
+                  <i className="ti ti-player-play" aria-hidden="true"></i> {running ? 'Running…' : result ? 'Run again with these settings' : 'Run report'}
                 </button>
                 {dataset?.exportable && (
                   <button type="button" style={s.secondary} onClick={download}>
@@ -486,20 +694,20 @@ export default function ReportBuilder() {
               {runError ? (
                 <p style={{ color: DANGER_TEXT, margin: 0 }}><i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {runError}</p>
               ) : result ? (
-                <ReportResult result={result} fields={fields} display={canBar ? display : 'table'} />
+                <ReportResult result={result} fields={fields} display={oneGroup ? display : 'table'} />
               ) : (
-                <p style={{ color: GREY_TEXT, margin: 0 }}>Choose your settings, then run the report to see results.</p>
+                <p style={{ color: GREY_TEXT, margin: 0 }}>Pick your settings, then run the report to see the results here.</p>
               )}
             </div>
 
             <div style={s.card}>
-              <h2 style={s.cardTitle}>Save to Tajar Tracks</h2>
-              <label style={s.label} htmlFor="title">Name (required)</label>
-              <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} style={s.input} placeholder="For example: Songs I haven't sung in a while" />
-              <label style={{ ...s.label, marginTop: '0.75rem' }} htmlFor="description">Description (optional)</label>
+              <h2 style={s.question}>Save to Tajar Tracks</h2>
+              <p style={s.help}>Saving keeps your settings, not today's results, so the report is always up to date when you open it.</p>
+              <label style={s.label} htmlFor="title">Name <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(required)</span></label>
+              <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} style={s.input} placeholder="For example: Songs I love but don't know well yet" />
+              <label style={s.label} htmlFor="description">Description <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(optional)</span></label>
               <input id="description" value={description} onChange={(e) => setDescription(e.target.value)} style={s.input} placeholder="A short note about what this shows" />
-              <p style={s.hint}>Saved reports show on your Tajar Tracks page. They save your settings, not the results, so they're always up to date.</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.9rem' }}>
                 <button type="button" style={s.primary} onClick={() => save(false)} disabled={saving}>
                   <i className="ti ti-device-floppy" aria-hidden="true"></i> {reportId ? 'Save changes' : 'Save'}
                 </button>
