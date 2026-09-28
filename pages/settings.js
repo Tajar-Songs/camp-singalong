@@ -85,6 +85,7 @@ export default function Settings() {
   const [grantRules, setGrantRules] = useState([]);       // role_grant_permissions
   const [prerequisites, setPrerequisites] = useState([]); // role_prerequisites
   const [changeLog, setChangeLog] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);  // settings & role history starts collapsed
   const [profileNames, setProfileNames] = useState({});   // user id -> display name, for the change log
   const [loading, setLoading] = useState(true);
   // Personal preference (Profile): hide sections this person can't change.
@@ -983,7 +984,16 @@ export default function Settings() {
 
                   {role?.key === 'governance_admin' && user && (
                     <div>
-                      <h2 style={subheadStyle}>Settings &amp; role history</h2>
+                      <button
+                        type="button"
+                        onClick={() => setShowHistory(!showHistory)}
+                        aria-expanded={showHistory}
+                        style={{ ...subheadStyle, background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                      >
+                        <i className={`ti ${showHistory ? 'ti-chevron-down' : 'ti-history'}`} aria-hidden="true"></i>
+                        {showHistory ? 'Hide' : 'Show'} settings &amp; role history
+                      </button>
+                      {showHistory && (
                       <div style={cardStyle}>
                         {changeLog.length === 0 ? (
                           <p style={{ color: GREY_TEXT, fontSize: '0.8rem', margin: 0 }}>
@@ -1002,6 +1012,7 @@ export default function Settings() {
                           </ul>
                         )}
                       </div>
+                      )}
                     </div>
                   )}
                 </div>
