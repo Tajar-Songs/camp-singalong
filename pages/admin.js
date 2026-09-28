@@ -479,7 +479,7 @@ export default function Admin() {
         adminFetch(`${SUPABASE_URL}/rest/v1/song_media?select=*&order=display_order.asc`, { headers }),
         adminFetch(`${SUPABASE_URL}/rest/v1/song_flags?select=*`, { headers }),
         adminFetch(`${SUPABASE_URL}/rest/v1/potential_duplicates?select=*`, { headers }),
-        adminFetch(`${SUPABASE_URL}/rest/v1/change_log?select=*&order=created_at.desc&limit=${logLimit}`, { headers }),
+        adminFetch(`${SUPABASE_URL}/rest/v1/audit_log_view?select=id,created_at,action:admin_action,table_name,song_title,field_changed,old_value,new_value,changed_by&category=eq.content_stewardship&order=created_at.desc&limit=${logLimit}`, { headers }),
         adminFetch(`${SUPABASE_URL}/rest/v1/docs?select=*&order=title.asc`, { headers }),
         adminFetch(`${SUPABASE_URL}/rest/v1/option_lists?select=*&order=display_order.asc`, { headers }),
         adminFetch(`${SUPABASE_URL}/rest/v1/tags?select=*&order=name.asc`, { headers }),
@@ -565,28 +565,10 @@ export default function Admin() {
   // Get current user's display name for logging
   const currentUserName = userProfile?.display_name || user?.email || 'unknown';
 
-  const logChange = async (action, tableName, recordId, recordTitle, fieldChanged = null, oldValue = null, newValue = null) => {
-    try {
-      const headers = { ...getAuthHeaders(), 'Prefer': 'return=minimal' };
-      // For song-related tables, recordId is the song_id
-      // For non-song tables (songbooks, song_groups), recordId may be null
-      const songId = recordId && typeof recordId === 'number' ? recordId : null;
-      await adminFetch(`${SUPABASE_URL}/rest/v1/change_log`, {
-        method: 'POST', headers,
-        body: JSON.stringify({ 
-          action, 
-          table_name: tableName, 
-          song_id: songId, 
-          song_title: recordTitle, 
-          field_changed: fieldChanged, 
-          old_value: oldValue ? String(oldValue).substring(0, 500) : null, 
-          new_value: newValue ? String(newValue).substring(0, 500) : null, 
-          changed_by: currentUserName,
-          changed_by_id: user?.id || null
-        })
-      });
-    } catch (error) { console.error('Logging Error:', error); }
-  };
+  // Changes are now recorded automatically by the database (audit_log), so
+  // the page no longer writes its own log. The existing logChange(...) calls
+  // are left in place and do nothing; they can be removed in a later cleanup.
+  const logChange = async () => {};
 
   const getDefaultVersion = (songId) => songVersions.find(v => v.song_id === songId && v.is_default_singalong) || songVersions.find(v => v.song_id === songId);
   
