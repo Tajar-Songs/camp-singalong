@@ -185,15 +185,11 @@ export default function Settings() {
 
   const loadChangeLog = async () => {
     try {
-      const rows = await getJson('governance_change_log?select=*&order=created_at.desc&limit=25');
+      // Settings and role changes from the audit trail. The view already
+      // includes display names (changed_by, subject_name), and the database
+      // only returns records this person is allowed to see.
+      const rows = await getJson('audit_log_view?select=id,created_at,action,table_name,changed_by,subject_name,old_row,new_row&category=in.(settings_governance,roles_permissions)&order=created_at.desc&limit=25');
       setChangeLog(rows);
-      const ids = [...new Set(rows.map(r => r.changed_by).filter(Boolean))];
-      if (ids.length > 0) {
-        const profiles = await getJson(`user_profiles?id=in.(${ids.join(',')})&select=id,display_name`);
-        const names = {};
-        profiles.forEach(pr => { names[pr.id] = pr.display_name || 'Unnamed user'; });
-        setProfileNames(names);
-      }
     } catch (error) { console.error('Error loading change log:', error); }
   };
 
@@ -450,6 +446,16 @@ export default function Settings() {
         const oldV = entry.old_row?.value; const newV = entry.new_row?.value;
         return `Changed "${row.label || row.key}"${JSON.stringify(oldV) !== JSON.stringify(newV) ? ` from ${JSON.stringify(oldV)} to ${JSON.stringify(newV)}` : ''}`;
       }
+      case 'user_roles':
+        return added ? `Gave ${roleLabel(row.role_id)} to ${entry.subject_name || 'a user'}`
+          : removed ? `Removed ${roleLabel(row.role_id)} from ${entry.subject_name || 'a user'}`
+          : `Changed a role for ${entry.subject_name || 'a user'}`;
+      case 'option_lists':
+        return `${added ? 'Added' : removed ? 'Removed' : 'Changed'} option "${row.label || row.value_key}" in ${row.list_key}`;
+      case 'permissions':
+        return `${added ? 'Added' : removed ? 'Removed' : 'Changed'} the permission "${row.label || row.key}"`;
+      case 'roles':
+        return `${added ? 'Added' : removed ? 'Removed' : 'Changed'} the role ${row.label || row.key}`;
       default:
         return `${entry.action} on ${entry.table_name}`;
     }
@@ -977,11 +983,11 @@ export default function Settings() {
 
                   {role?.key === 'governance_admin' && user && (
                     <div>
-                      <h2 style={subheadStyle}>Recent permission changes</h2>
+                      <h2 style={subheadStyle}>Settings &amp; role history</h2>
                       <div style={cardStyle}>
                         {changeLog.length === 0 ? (
                           <p style={{ color: GREY_TEXT, fontSize: '0.8rem', margin: 0 }}>
-                            No changes recorded yet. (Visible to anyone holding an admin role.)
+                            No changes recorded yet. (Visible to people with permission to view settings and role history.)
                           </p>
                         ) : (
                           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
@@ -989,7 +995,7 @@ export default function Settings() {
                               <li key={entry.id} style={{ padding: '0.4rem 0', borderBottom: '1px solid #1e293b', fontSize: '0.85rem' }}>
                                 {describeLogEntry(entry)}
                                 <span style={{ display: 'block', color: GREY_TEXT, fontSize: '0.75rem' }}>
-                                  {entry.changed_by ? (profileNames[entry.changed_by] || 'Unknown user') : 'Directly in the database'} · {new Date(entry.created_at).toLocaleString()}
+                                  {entry.changed_by || 'Directly in the database'} · {new Date(entry.created_at).toLocaleString()}
                                 </span>
                               </li>
                             ))}
