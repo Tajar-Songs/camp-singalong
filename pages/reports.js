@@ -29,6 +29,10 @@ const DATE_PRESETS = [
 
 const emptyChoice = () => ({ include: [], exclude: [], mode: 'any' });
 
+// Stands in for "Not set" (empty) among a field's choices.
+const NOT_SET = '__not_set__';
+const realValues = (values) => values.filter(v => v !== NOT_SET);
+
 // Turn a saved definition's filters into choices per field. Anything the
 // builder can't show as a choice is kept as-is so it isn't lost on save.
 const choicesFromFilters = (filters = []) => {
@@ -38,18 +42,24 @@ const choicesFromFilters = (filters = []) => {
   const asArray = (v) => (Array.isArray(v) ? v : v === undefined || v === null || v === '' ? [] : [v]);
   filters.forEach(f => {
     const values = asArray(f.value);
+    const c = () => get(f.field);
     switch (f.op) {
       case 'eq': case 'in': case 'contains': case 'contains_any':
-        get(f.field).include.push(...values); break;
+        c().include.push(...values); break;
       case 'contains_all':
-        get(f.field).include.push(...values); get(f.field).mode = 'all'; break;
+        c().include.push(...values); c().mode = 'all'; break;
       case 'at_least':
-        get(f.field).include = values.slice(0, 1); get(f.field).mode = 'at_least'; break;
+        c().include = values.slice(0, 1); c().mode = 'at_least'; break;
       case 'neq': case 'not_in': case 'not_contains': case 'not_contains_any':
-        get(f.field).exclude.push(...values); break;
+        c().exclude.push(...values); break;
+      case 'is_null':
+        c().include.push(NOT_SET); break;
+      case 'not_null':
+        c().exclude.push(NOT_SET); break;
       default:
         kept.push(f);
     }
+    if (f.include_empty && choices[f.field]) choices[f.field].include.push(NOT_SET);
   });
   return { choices, kept };
 };
@@ -68,7 +78,8 @@ function BrowsableList({ id, label, options, selected, onToggle, accent }) {
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
-  const shown = options.filter(o => o.value.toLowerCase().includes(text.trim().toLowerCase()));
+  const labelFor = (v) => options.find(o => o.value === v)?.label || v;
+  const shown = options.filter(o => (o.label || o.value).toLowerCase().includes(text.trim().toLowerCase()));
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', marginBottom: '0.5rem' }}>
@@ -96,7 +107,7 @@ function BrowsableList({ id, label, options, selected, onToggle, accent }) {
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onToggle(o.value)}
                   style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.5rem', border: 'none', borderRadius: '0.25rem', cursor: 'pointer', background: on ? `${accent}33` : 'transparent', color: '#fff', fontSize: '0.875rem' }}>
                   <i className={`ti ${on ? 'ti-square-check' : 'ti-square'}`} style={{ color: on ? accent : GREY_TEXT }} aria-hidden="true"></i>
-                  <span style={{ flex: 1 }}>{o.value}</span>
+                  <span style={{ flex: 1 }}>{o.value === NOT_SET ? <em>{o.label}</em> : (o.label || o.value)}</span>
                   {o.n !== null && o.n !== undefined && <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>{o.n}</span>}
                 </button>
               </li>
@@ -110,8 +121,8 @@ function BrowsableList({ id, label, options, selected, onToggle, accent }) {
           <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}>Nothing picked</span>
         ) : selected.map(v => (
           <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', border: `1px solid ${accent}66`, background: `${accent}22`, fontSize: '0.8rem' }}>
-            {v}
-            <button type="button" onClick={() => onToggle(v)} aria-label={`Remove ${v}`} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'inline-flex' }}>
+            {labelFor(v)}
+            <button type="button" onClick={() => onToggle(v)} aria-label={`Remove ${labelFor(v)}`} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0, display: 'inline-flex' }}>
               <i className="ti ti-x" aria-hidden="true"></i>
             </button>
           </span>
@@ -269,6 +280,7 @@ export default function ReportBuilder() {
   };
 
   const activeChoiceCount = Object.values(choices).filter(c => c.include.length > 0 || c.exclude.length > 0).length + keptFilters.length;
+  const includeFieldCount = Object.values(choices).filter(c => c.include.length > 0).length + keptFilters.length;
 
   const buildDefinition = () => {
     const def = {};
@@ -279,17 +291,26 @@ export default function ReportBuilder() {
     Object.entries(choices).forEach(([key, c]) => {
       const field = fieldByKey(key);
       if (!field) return;
-      if (c.include.length > 0) {
-        if (c.mode === 'at_least') filters.push({ field: key, op: 'at_least', value: c.include[0] });
-        else if (field.value_type === 'list') filters.push({ field: key, op: c.mode === 'all' ? 'contains_all' : 'contains_any', value: c.include });
-        else filters.push({ field: key, op: 'in', value: c.include });
+      const include = realValues(c.include);
+      const includeNotSet = c.include.includes(NOT_SET);
+      if (include.length > 0) {
+        const f = c.mode === 'at_least' ? { field: key, op: 'at_least', value: include[0] }
+          : field.value_type === 'list' ? { field: key, op: c.mode === 'all' ? 'contains_all' : 'contains_any', value: include }
+          : { field: key, op: 'in', value: include };
+        if (includeNotSet) f.include_empty = true;
+        filters.push(f);
+      } else if (includeNotSet) {
+        filters.push({ field: key, op: 'is_null' });
       }
-      if (c.exclude.length > 0) {
-        filters.push({ field: key, op: field.value_type === 'list' ? 'not_contains_any' : 'not_in', value: c.exclude });
+      // Exclusions always apply, even when the other filters match "any".
+      const exclude = realValues(c.exclude);
+      if (exclude.length > 0) {
+        filters.push({ field: key, op: field.value_type === 'list' ? 'not_contains_any' : 'not_in', value: exclude, always: true });
       }
+      if (c.exclude.includes(NOT_SET)) filters.push({ field: key, op: 'not_null', always: true });
     });
     def.filters = filters;
-    if (filters.length > 1 && matchAny) def.filters_match = 'any';
+    if (filters.filter(f => !f.always).length > 1 && matchAny) def.filters_match = 'any';
 
     if (dataset?.date_column) {
       if (['7', '30', '90', '365'].includes(datePreset)) def.last_days = Number(datePreset);
@@ -432,70 +453,115 @@ export default function ReportBuilder() {
     });
   }
 
+
+  // A collapsible list of what each field means, so descriptions aren't only on hover.
+  const fieldGuide = (list) => {
+    const described = list.filter(f => f.description);
+    if (described.length === 0) return null;
+    return (
+      <details style={{ marginTop: '0.6rem' }}>
+        <summary style={{ color: PERSONAL_TEXT, cursor: 'pointer', fontSize: '0.85rem' }}>What do these mean?</summary>
+        <dl style={{ margin: '0.5rem 0 0', fontSize: '0.85rem' }}>
+          {described.map(f => (
+            <div key={f.field_key} style={{ marginBottom: '0.35rem' }}>
+              <dt style={{ display: 'inline', fontWeight: 'bold' }}>{f.label}: </dt>
+              <dd style={{ display: 'inline', margin: 0, color: '#cbd5e1' }}>{f.description}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+    );
+  };
+
   const filterControl = (field) => {
     const state = valuesByField[`${datasetKey}|${field.field_key}`];
     const c = choices[field.field_key] || emptyChoice();
     const hasAny = c.include.length > 0 || c.exclude.length > 0;
-    const ordered = !!field.options_list;
     const isList = field.value_type === 'list';
+    const single = c.mode === 'at_least';
+    const includeCount = realValues(c.include).length;
+
+    const matchToggle = () => {
+      if (field.is_ordered) {
+        return (
+          <div style={{ ...s.segment, marginBottom: '0.5rem' }} role="group" aria-label={`How to match ${field.label}`}>
+            <button type="button" style={s.segmentBtn(!single)} aria-pressed={!single} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Is one of</button>
+            <button type="button" style={s.segmentBtn(single)} aria-pressed={single}
+              onClick={() => updateChoice(field.field_key, { mode: 'at_least', include: [...realValues(c.include).slice(0, 1), ...c.include.filter(v => v === NOT_SET)] })}>Is at least</button>
+          </div>
+        );
+      }
+      if (isList && includeCount > 1) {
+        return (
+          <div style={{ ...s.segment, marginBottom: '0.5rem' }} role="group" aria-label={`How to match ${field.label}`}>
+            <button type="button" style={s.segmentBtn(c.mode !== 'all')} aria-pressed={c.mode !== 'all'} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Has any of these</button>
+            <button type="button" style={s.segmentBtn(c.mode === 'all')} aria-pressed={c.mode === 'all'} onClick={() => updateChoice(field.field_key, { mode: 'all' })}>Has all of these</button>
+          </div>
+        );
+      }
+      return null;
+    };
 
     let body;
     if (!state || state.loading) {
       body = <p style={{ ...s.help, margin: 0 }}>Loading options…</p>;
     } else if (state.error) {
       body = <p style={{ color: DANGER_TEXT, fontSize: '0.85rem', margin: 0 }}>Couldn't load options: {state.error}</p>;
-    } else if (state.list.length === 0) {
-      body = <p style={{ ...s.help, margin: 0 }}>Nothing to choose from yet.</p>;
-    } else if (state.list.length <= SMALL_SET) {
-      const single = c.mode === 'at_least';
-      body = (
-        <div>
-          {(ordered || (isList && c.include.length > 1)) && (
-            <div style={{ ...s.segment, marginBottom: '0.5rem' }} role="group" aria-label={`How to match ${field.label}`}>
-              {isList ? (
-                <>
-                  <button type="button" style={s.segmentBtn(c.mode !== 'all')} aria-pressed={c.mode !== 'all'} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Any of these</button>
-                  <button type="button" style={s.segmentBtn(c.mode === 'all')} aria-pressed={c.mode === 'all'} onClick={() => updateChoice(field.field_key, { mode: 'all' })}>All of these</button>
-                </>
-              ) : (
-                <>
-                  <button type="button" style={s.segmentBtn(!single)} aria-pressed={!single} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Is one of</button>
-                  <button type="button" style={s.segmentBtn(single)} aria-pressed={single}
-                    onClick={() => updateChoice(field.field_key, { mode: 'at_least', include: c.include.slice(0, 1) })}>Is at least</button>
-                </>
-              )}
-            </div>
-          )}
-          {single && <p style={{ ...s.help, margin: '0 0 0.5rem' }}>Pick one level. Everything at that level or above counts, in the order of the list below.</p>}
+    } else {
+      // Options that exist, plus "Not set" where it applies. Yes/no fields read as Yes and No.
+      const opts = state.list.map(o => ({
+        value: o.value,
+        label: field.value_type === 'boolean' ? (o.value === 'true' ? 'Yes' : o.value === 'false' ? 'No' : o.value) : o.value,
+        n: o.n
+      }));
+      if (field.not_set_label) opts.push({ value: NOT_SET, label: field.not_set_label, n: null });
+
+      if (opts.length === 0) {
+        body = <p style={{ ...s.help, margin: 0 }}>Nothing to choose from yet.</p>;
+      } else if (opts.length <= SMALL_SET) {
+        const pillRow = (part, accent) => (
           <div style={s.pills}>
-            {state.list.map(o => {
-              const on = c.include.includes(o.value);
+            {opts.map(o => {
+              const on = c[part].includes(o.value);
+              const oneOnly = part === 'include' && single && o.value !== NOT_SET;
               return (
-                <button key={o.value} type="button" style={s.pill(on)} aria-pressed={on} onClick={() => toggleIn(field.field_key, 'include', o.value, single)}>
-                  <i className={`ti ${on ? 'ti-check' : 'ti-plus'}`} aria-hidden="true"></i>{o.value}
+                <button key={o.value} type="button" style={part === 'exclude' && on ? { ...s.pill(true), borderColor: DANGER_TEXT, background: `${DANGER_TEXT}33` } : s.pill(on)}
+                  aria-pressed={on}
+                  onClick={() => {
+                    if (oneOnly) {
+                      const rest = c.include.filter(v => v === NOT_SET);
+                      updateChoice(field.field_key, { include: on ? rest : [o.value, ...rest] });
+                    } else toggleIn(field.field_key, part, o.value);
+                  }}>
+                  <i className={`ti ${on ? (part === 'exclude' ? 'ti-ban' : 'ti-check') : 'ti-plus'}`} aria-hidden="true"></i>
+                  {o.value === NOT_SET ? <em>{o.label}</em> : o.label}
                   {o.n !== null && o.n !== undefined && <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>{o.n}</span>}
                 </button>
               );
             })}
           </div>
-        </div>
-      );
-    } else {
-      const opts = state.list;
-      body = (
-        <div>
-          {isList && c.include.length > 1 && (
-            <div style={{ ...s.segment, marginBottom: '0.5rem' }} role="group" aria-label={`How to match ${field.label}`}>
-              <button type="button" style={s.segmentBtn(c.mode !== 'all')} aria-pressed={c.mode !== 'all'} onClick={() => updateChoice(field.field_key, { mode: 'any' })}>Any of these</button>
-              <button type="button" style={s.segmentBtn(c.mode === 'all')} aria-pressed={c.mode === 'all'} onClick={() => updateChoice(field.field_key, { mode: 'all' })}>All of these</button>
-            </div>
-          )}
-          <BrowsableList id={`inc-${field.field_key}`} label="Include" options={opts} selected={c.include} accent={PERSONAL_TEXT}
-            onToggle={(v) => toggleIn(field.field_key, 'include', v)} />
-          <BrowsableList id={`exc-${field.field_key}`} label="Exclude" options={opts} selected={c.exclude} accent={DANGER_TEXT}
-            onToggle={(v) => toggleIn(field.field_key, 'exclude', v)} />
-        </div>
-      );
+        );
+        body = (
+          <div>
+            {matchToggle()}
+            {single && <p style={{ ...s.help, margin: '0 0 0.5rem' }}>Pick one level. That level and every level listed before it count.</p>}
+            <span style={{ ...s.label, margin: '0 0 0.3rem', fontWeight: 'normal', color: GREY_TEXT }}>Include</span>
+            {pillRow('include', PERSONAL_TEXT)}
+            <span style={{ ...s.label, margin: '0.6rem 0 0.3rem', fontWeight: 'normal', color: GREY_TEXT }}>Exclude</span>
+            {pillRow('exclude', DANGER_TEXT)}
+          </div>
+        );
+      } else {
+        body = (
+          <div>
+            {matchToggle()}
+            <BrowsableList id={`inc-${field.field_key}`} label="Include" options={opts} selected={c.include} accent={PERSONAL_TEXT}
+              onToggle={(v) => toggleIn(field.field_key, 'include', v, single && v !== NOT_SET)} />
+            <BrowsableList id={`exc-${field.field_key}`} label="Exclude" options={opts} selected={c.exclude} accent={DANGER_TEXT}
+              onToggle={(v) => toggleIn(field.field_key, 'exclude', v)} />
+          </div>
+        );
+      }
     }
 
     return (
@@ -569,6 +635,7 @@ export default function ReportBuilder() {
                       </button>
                     ))}
                   </div>
+                  {fieldGuide(groupable)}
                   <span style={s.label}>And then by <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(optional)</span></span>
                   <div style={s.pills}>
                     <button type="button" style={s.pill(!groupBy2)} aria-pressed={!groupBy2} onClick={() => { setGroupBy2(''); setSortChoice(''); }}>Nothing else</button>
@@ -604,6 +671,7 @@ export default function ReportBuilder() {
                       );
                     })}
                   </div>
+                  {fieldGuide(showable)}
                 </div>
               )}
             </div>
@@ -641,13 +709,14 @@ export default function ReportBuilder() {
                     </div>
                   )}
 
-                  {activeChoiceCount > 1 && (
+                  {includeFieldCount > 1 && (
                     <div style={{ padding: '0.75rem 0', borderTop: '1px solid #334155' }}>
                       <span style={{ fontWeight: 'bold', fontSize: '0.9rem', marginRight: '0.5rem' }}>{noun.charAt(0).toUpperCase() + noun.slice(1)} must match</span>
-                      <div style={s.segment} role="group" aria-label="Match all or any filters">
-                        <button type="button" style={s.segmentBtn(!matchAny)} aria-pressed={!matchAny} onClick={() => setMatchAny(false)}>All of the filters</button>
-                        <button type="button" style={s.segmentBtn(matchAny)} aria-pressed={matchAny} onClick={() => setMatchAny(true)}>Any of the filters</button>
+                      <div style={s.segment} role="group" aria-label="Match all or any of the Include choices">
+                        <button type="button" style={s.segmentBtn(!matchAny)} aria-pressed={!matchAny} onClick={() => setMatchAny(false)}>All of the Include choices</button>
+                        <button type="button" style={s.segmentBtn(matchAny)} aria-pressed={matchAny} onClick={() => setMatchAny(true)}>Any of them</button>
                       </div>
+                      <p style={{ ...s.help, margin: '0.4rem 0 0' }}>Exclude choices always apply.</p>
                     </div>
                   )}
 
