@@ -204,8 +204,11 @@ export default function TajarTracks() {
                     )}
                   </div>
                   <div style={s.actions}>
-                    <Link href={`/reports?id=${report.id}`} style={{ ...s.action, color: PERSONAL_TEXT, borderColor: `${PERSONAL_TEXT}66` }}>
-                      <i className="ti ti-pencil" aria-hidden="true"></i> Open &amp; edit
+                    <Link href={`/reports?id=${report.id}&view=full`} style={{ ...s.action, color: PERSONAL_TEXT, borderColor: `${PERSONAL_TEXT}66` }}>
+                      <i className="ti ti-arrows-maximize" aria-hidden="true"></i> Open
+                    </Link>
+                    <Link href={`/reports?id=${report.id}`} style={s.action}>
+                      <i className="ti ti-pencil" aria-hidden="true"></i> Edit
                     </Link>
                     <button type="button" style={s.action} disabled={busy} onClick={() => duplicate(report)}>
                       <i className="ti ti-copy" aria-hidden="true"></i> Duplicate
