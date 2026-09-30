@@ -163,6 +163,7 @@ export default function ReportBuilder() {
   const [runError, setRunError] = useState('');
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);   // results in their own screen
 
   const dataset = datasets.find(d => d.key === datasetKey);
   const noun = dataset?.row_noun || 'rows';
@@ -208,6 +209,7 @@ export default function ReportBuilder() {
 
       if (saved) {
         loadReport(saved);
+        if (router.query.view === 'full') setFullScreen(true);
         run(saved.dataset_key, saved.definition);
       } else {
         if (id) notify.error("That report wasn't found. It may have been deleted, or it belongs to someone else.");
@@ -582,6 +584,47 @@ export default function ReportBuilder() {
     );
   };
 
+  // Results in their own screen: the whole width, every row, with the
+  // settings tucked away until "Change settings".
+  if (fullScreen) {
+    return (
+      <div style={s.container}>
+        <div style={s.wrapper}>
+          <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
+            <div>
+              <h1 style={s.title}>{title || 'Report'}</h1>
+              {description && <p style={{ ...s.help, margin: '0.25rem 0 0' }}>{description}</p>}
+              <p style={{ ...s.help, margin: '0.25rem 0 0' }}>From: {dataset?.title}{result ? ` · ${result.row_count} row${result.row_count === 1 ? '' : 's'}` : ''}</p>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <button type="button" style={s.secondary} onClick={() => setFullScreen(false)}>
+                <i className="ti ti-adjustments" aria-hidden="true"></i> Change settings
+              </button>
+              <button type="button" style={s.secondary} onClick={() => run()} disabled={running}>
+                <i className="ti ti-refresh" aria-hidden="true"></i> {running ? 'Running…' : 'Refresh'}
+              </button>
+              {dataset?.exportable && (
+                <button type="button" style={s.primary} onClick={download}>
+                  <i className="ti ti-download" aria-hidden="true"></i> Download CSV
+                </button>
+              )}
+            </div>
+          </div>
+          <div style={s.card}>
+            {runError ? (
+              <p style={{ color: DANGER_TEXT, margin: 0 }}><i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {runError}</p>
+            ) : result ? (
+              <ReportResult result={result} fields={fields} display={oneGroup ? display : 'table'} />
+            ) : (
+              <p style={{ color: GREY_TEXT, margin: 0 }}>{running ? 'Running…' : 'Run the report to see results.'}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={s.container}>
       <div style={s.wrapper}>
@@ -759,6 +802,9 @@ export default function ReportBuilder() {
                     <i className="ti ti-download" aria-hidden="true"></i> Download CSV
                   </button>
                 )}
+                <button type="button" style={s.secondary} onClick={() => { if (!result && !running) run(); setFullScreen(true); }}>
+                  <i className="ti ti-arrows-maximize" aria-hidden="true"></i> Open full screen
+                </button>
               </div>
               {runError ? (
                 <p style={{ color: DANGER_TEXT, margin: 0 }}><i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {runError}</p>
