@@ -83,7 +83,7 @@ export default function TajarTracks() {
 
   const runOne = async (report) => {
     try {
-      const result = await runReport(report.dataset_key, { ...report.definition, limit: 200 });
+      const result = await runReport(report.dataset_key, { ...report.definition, limit: report.definition?.builder === 'pivot' ? 5000 : 200 });
       setResults(prev => ({ ...prev, [report.id]: { result } }));
     } catch (error) {
       setResults(prev => ({ ...prev, [report.id]: { error: error.message } }));
@@ -200,7 +200,7 @@ export default function TajarTracks() {
                         <i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {state.error}
                       </p>
                     ) : (
-                      <ReportResult result={state.result} fields={fields} display={report.display} maxRows={10} />
+                      <ReportResult result={state.result} fields={fields} display={report.display} definition={report.definition} maxRows={10} />
                     )}
                   </div>
                   <div style={s.actions}>
