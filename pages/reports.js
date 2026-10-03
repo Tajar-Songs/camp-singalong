@@ -16,6 +16,13 @@ import {
 // them in), buttons for a handful of options, a browsable list with chips
 // for many, "any / all" on multi-select lists, separate Include and Exclude
 // for large sets, and an explicit Run step rather than applying live.
+//
+// There are two ways to build the same kind of report:
+//   Guided - answer a few questions in order.
+//   Pivot  - place fields into Filters, Rows, Columns and Values, by dragging
+//            or by tapping a field and choosing where it goes.
+// Both produce a definition for run_report(); a pivot report also remembers
+// its layout (definition.builder = 'pivot', definition.pivot).
 
 const SMALL_SET = 8;          // up to this many options: buttons; more: browsable list
 const DATE_PRESETS = [
@@ -164,6 +171,18 @@ export default function ReportBuilder() {
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);   // results in their own screen
+  const [ranDef, setRanDef] = useState(null);            // the settings the current results came from
+
+  // Pivot builder
+  const [builder, setBuilder] = useState('guided');      // 'guided' | 'pivot'
+  const [pRows, setPRows] = useState([]);
+  const [pCols, setPCols] = useState([]);
+  const [pCount, setPCount] = useState(true);            // "Count" is in Values
+  const [pFilters, setPFilters] = useState([]);
+  const [pDesc, setPDesc] = useState([]);                // fields sorted in reverse
+  const [menuFor, setMenuFor] = useState('');            // field whose "where should this go" menu is open
+  const [overZone, setOverZone] = useState('');
+  const dragRef = useRef(null);
 
   const dataset = datasets.find(d => d.key === datasetKey);
   const noun = dataset?.row_noun || 'rows';
@@ -177,13 +196,16 @@ export default function ReportBuilder() {
   useEffect(() => { if (router.isReady) start(); }, [router.isReady]);
 
   // Load the options for each filter the first time the filters are opened.
+  // (The pivot builder loads them for each field as it is put in Filters.)
   useEffect(() => {
-    if (!showFilters || !datasetKey) return;
-    choosable.forEach(f => {
+    if (!datasetKey) return;
+    if (builder === 'guided' && !showFilters) return;
+    const wanted = builder === 'pivot' ? choosable.filter(f => pFilters.includes(f.field_key)) : choosable;
+    wanted.forEach(f => {
       const key = `${datasetKey}|${f.field_key}`;
       if (!valuesByField[key]) loadValues(datasetKey, f.field_key);
     });
-  }, [showFilters, datasetKey, allFields]);
+  }, [showFilters, datasetKey, allFields, builder, pFilters]);
 
   const start = async () => {
     try {
@@ -261,6 +283,18 @@ export default function ReportBuilder() {
     setShowFilters((def.filters || []).length > 0 || !!def.last_days || !!def.date_from || !!def.date_to);
     const sort = (def.order_by || [])[0];
     setSortChoice(sort ? `${sort.field}:${sort.dir || 'asc'}` : '');
+
+    if (def.builder === 'pivot' && def.pivot) {
+      setBuilder('pivot');
+      setPRows(def.pivot.rows || []);
+      setPCols(def.pivot.columns || []);
+      setPCount((def.pivot.values || []).includes('count'));
+      setPFilters(def.pivot.filters || []);
+      setPDesc(def.pivot.desc || []);
+      setSortChoice('');
+    } else {
+      setBuilder('guided');
+    }
   };
 
   const chooseDataset = (key, fieldRows = allFields) => {
@@ -279,6 +313,121 @@ export default function ReportBuilder() {
     setSortChoice('');
     setResult(null);
     setRunError('');
+    setPRows(firstGroup ? [firstGroup] : dsFields.filter(f => !f.aggregation_required).slice(0, 4).map(f => f.field_key));
+    setPCols([]);
+    setPCount(!!firstGroup);
+    setPFilters([]);
+    setPDesc([]);
+    setMenuFor('');
+  };
+
+  // ---------- Pivot builder ----------
+  const isList = (key) => fieldByKey(key)?.value_type === 'list';
+  const canFilter = (f) => f.filterable || f.field_key === dataset?.date_column;
+
+  // Why a field can't go somewhere, in words - or '' when it can.
+  const placeProblem = (key, zone) => {
+    const f = fieldByKey(key);
+    if (!f) return 'That field isn\'t part of this source.';
+    if (zone === 'filters') {
+      return canFilter(f) ? '' : `"${f.label}" can't be filtered on - there are too many different values to choose from.`;
+    }
+    const counting = pCount || zone === 'columns';
+    if (zone === 'columns' && !f.groupable) return `"${f.label}" can't go across the top - it's different for nearly every one of the ${noun}.`;
+    if (zone === 'rows' && counting && !f.groupable) return `"${f.label}" can't be counted by. Take Count out of Values to show it in a list instead.`;
+    if (counting && f.value_type === 'list' && [...pRows, ...pCols].some(k => k !== key && isList(k))) {
+      return `Only one field that can hold several values at once (like "${f.label}") can be used in a count at a time.`;
+    }
+    return '';
+  };
+
+  const without = (list, key) => list.filter(k => k !== key);
+  const insertAt = (list, key, before) => {
+    const rest = without(list, key);
+    const at = before ? rest.indexOf(before) : -1;
+    return at >= 0 ? [...rest.slice(0, at), key, ...rest.slice(at)] : [...rest, key];
+  };
+
+  // Put a field in a box. A field is in Rows or Columns, not both; Filters is separate.
+  const place = (key, zone, before) => {
+    setMenuFor('');
+    if (key === 'count') {
+      if (zone === 'values') setPCount(true);
+      else notify.info('Count goes in Values - it\'s what fills in the cells.');
+      return;
+    }
+    if (zone === 'values') { notify.info('Count is the only thing that can go in Values for now. Put fields in Rows or Columns to count by them.'); return; }
+    const problem = placeProblem(key, zone);
+    if (problem) { notify.error(problem); return; }
+    if (zone === 'filters') setPFilters(insertAt(pFilters, key, before));
+    if (zone === 'rows') { setPCols(without(pCols, key)); setPRows(insertAt(pRows, key, before)); }
+    if (zone === 'columns') { setPRows(without(pRows, key)); setPCols(insertAt(pCols, key, before)); setPCount(true); }
+  };
+
+  const takeOut = (key, zone) => {
+    if (zone === 'values') setPCount(false);
+    if (zone === 'rows') { setPRows(without(pRows, key)); setPDesc(without(pDesc, key)); }
+    if (zone === 'columns') { setPCols(without(pCols, key)); setPDesc(without(pDesc, key)); }
+    if (zone === 'filters') {
+      setPFilters(without(pFilters, key));
+      if (key === dataset?.date_column) setDatePreset('any');
+      else clearChoice(key);
+    }
+  };
+
+  const nudge = (key, zone, by) => {
+    const list = zone === 'rows' ? pRows : zone === 'columns' ? pCols : pFilters;
+    const at = list.indexOf(key);
+    const to = at + by;
+    if (at < 0 || to < 0 || to >= list.length) return;
+    const next = [...list];
+    [next[at], next[to]] = [next[to], next[at]];
+    if (zone === 'rows') setPRows(next); else if (zone === 'columns') setPCols(next); else setPFilters(next);
+  };
+
+  // What stops the pivot layout from running, in words - or ''.
+  const pivotProblem = () => {
+    const used = [...pRows, ...pCols];
+    if (used.length === 0) return 'Put at least one field in Rows to see something.';
+    if (!pCount && !dataset?.row_level_allowed) return `This source can only show counts. Add Count to Values.`;
+    if (pCount) {
+      const stuck = used.map(fieldByKey).find(f => f && !f.groupable);
+      if (stuck) return `"${stuck.label}" can't be counted by. Take it out, or take Count out of Values to show a list instead.`;
+      if (used.filter(isList).length > 1) return 'Only one field that can hold several values at once (like tags) can be used in a count at a time.';
+    }
+    return '';
+  };
+
+  // Carry the settings across when switching between the two builders.
+  const switchBuilder = (next) => {
+    if (next === builder) return;
+    if (next === 'pivot') {
+      const active = Object.entries(choices).filter(([, c]) => c.include.length > 0 || c.exclude.length > 0).map(([k]) => k);
+      if (dataset?.date_column && datePreset !== 'any') active.unshift(dataset.date_column);
+      setPFilters(active);
+      setPRows(mode === 'count' ? [groupBy1, groupBy2].filter(Boolean) : columns);
+      setPCols([]);
+      setPCount(mode === 'count');
+      const [sortField, sortDir] = sortChoice.split(':');
+      setPDesc(sortField && sortField !== 'count' && sortDir === 'desc' ? [sortField] : []);
+    } else {
+      const used = [...pRows, ...pCols];
+      if (pCount) {
+        setMode('count');
+        setGroupBy1(used[0] || groupable[0]?.field_key || '');
+        setGroupBy2(used[1] || '');
+        setDisplay('table');
+        if (used.length > 2) notify.info(`The guided builder counts by up to two things, so it kept "${labelOf(used[0])}" and "${labelOf(used[1])}".`);
+      } else {
+        setMode('list');
+        setColumns(used);
+      }
+      const first = used[0];
+      setSortChoice(first ? `${first}:${pDesc.includes(first) ? 'desc' : 'asc'}` : '');
+      setShowFilters(pFilters.length > 0);
+    }
+    setMenuFor('');
+    setBuilder(next);
   };
 
   const activeChoiceCount = Object.values(choices).filter(c => c.include.length > 0 || c.exclude.length > 0).length + keptFilters.length;
@@ -286,7 +435,15 @@ export default function ReportBuilder() {
 
   const buildDefinition = () => {
     const def = {};
-    if (mode === 'count') def.group_by = [groupBy1, groupBy2].filter(Boolean);
+    const pivoting = builder === 'pivot';
+    if (pivoting) {
+      const used = [...pRows, ...pCols];
+      if (pCount) def.group_by = used; else def.fields = used;
+      def.builder = 'pivot';
+      def.pivot = { rows: pRows, columns: pCols, values: pCount ? ['count'] : [], filters: pFilters, desc: pDesc.filter(k => used.includes(k)) };
+      def.limit = 5000;
+    }
+    else if (mode === 'count') def.group_by = [groupBy1, groupBy2].filter(Boolean);
     else def.fields = columns;
 
     const filters = [...keptFilters];
@@ -321,18 +478,28 @@ export default function ReportBuilder() {
         if (dateTo) def.date_to = dateTo;
       }
     }
-    if (sortChoice) {
+    if (pivoting) {
+      // Organized by the Rows fields in order, then the Columns fields.
+      def.order_by = [...pRows, ...pCols].map(k => ({ field: k, dir: pDesc.includes(k) ? 'desc' : 'asc' }));
+    } else if (sortChoice) {
       const [field, dir] = sortChoice.split(':');
       def.order_by = [{ field, dir }];
     }
     return def;
   };
 
-  const run = async (key = datasetKey, definition = buildDefinition()) => {
+  const run = async (key = datasetKey, definition) => {
+    if (!definition) {
+      const problem = builder === 'pivot' ? pivotProblem() : '';
+      if (problem) { setResult(null); setRunError(problem); return; }
+      definition = buildDefinition();
+    }
     setRunning(true);
     setRunError('');
     try {
-      setResult(await runReport(key, definition));
+      const data = await runReport(key, definition);
+      setRanDef(definition);
+      setResult(data);
     } catch (error) {
       setResult(null);
       setRunError(error.message);
@@ -341,6 +508,8 @@ export default function ReportBuilder() {
   };
 
   const download = async () => {
+    const problem = builder === 'pivot' ? pivotProblem() : '';
+    if (problem) { notify.error(problem); return; }
     try {
       const data = await runReport(datasetKey, { ...buildDefinition(), export: true, limit: 5000 });
       downloadCsv(`${slugify(title || dataset?.title)}.csv`, data.columns, data.rows, fields);
@@ -351,13 +520,15 @@ export default function ReportBuilder() {
 
   const save = async (asNew) => {
     if (!title.trim()) { notify.error('Give the report a name before saving - it\'s how you\'ll find it in Tajar Tracks.'); return; }
+    const problem = builder === 'pivot' ? pivotProblem() : '';
+    if (problem) { notify.error(`This can't be saved yet. ${problem}`); return; }
     setSaving(true);
     const body = {
       title: title.trim(),
       description: description.trim() || null,
       dataset_key: datasetKey,
       definition: buildDefinition(),
-      display: mode === 'count' && !groupBy2 ? display : 'table',
+      display: builder === 'guided' && mode === 'count' && !groupBy2 ? display : 'table',
       updated_at: new Date().toISOString()
     };
     try {
@@ -584,6 +755,235 @@ export default function ReportBuilder() {
     );
   };
 
+
+  // The date range, the all/any choice and any carried-over filters are the
+  // same in both builders.
+  const dateControl = () => (
+    <div style={{ paddingBottom: '0.75rem' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{labelOf(dataset.date_column)}</span>
+                      <div style={{ ...s.pills, marginTop: '0.4rem' }}>
+                        {DATE_PRESETS.map(p => (
+                          <button key={p.key} type="button" style={s.pill(datePreset === p.key)} aria-pressed={datePreset === p.key} onClick={() => setDatePreset(p.key)}>{p.label}</button>
+                        ))}
+                      </div>
+                      {datePreset === 'custom' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
+                          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={s.select} aria-label="From" />
+                          <span style={{ color: GREY_TEXT }}>to</span>
+                          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={s.select} aria-label="To" />
+                        </div>
+                      )}
+                    </div>
+  );
+
+  const matchControl = () => includeFieldCount > 1 && (
+    <div style={{ padding: '0.75rem 0', borderTop: '1px solid #334155' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem', marginRight: '0.5rem' }}>{noun.charAt(0).toUpperCase() + noun.slice(1)} must match</span>
+                      <div style={s.segment} role="group" aria-label="Match all or any of the Include choices">
+                        <button type="button" style={s.segmentBtn(!matchAny)} aria-pressed={!matchAny} onClick={() => setMatchAny(false)}>All of the Include choices</button>
+                        <button type="button" style={s.segmentBtn(matchAny)} aria-pressed={matchAny} onClick={() => setMatchAny(true)}>Any of them</button>
+                      </div>
+                      <p style={{ ...s.help, margin: '0.4rem 0 0' }}>Exclude choices always apply.</p>
+                    </div>
+  );
+
+  const keptControl = () => keptFilters.length > 0 && (
+    <div style={s.filterBlock}>
+                      <p style={{ ...s.help, margin: '0 0 0.4rem' }}>Also applied (from this report's original settings):</p>
+                      {keptFilters.map((f, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
+                          <span>{labelOf(f.field)} {f.op === 'not_null' ? 'is not empty' : f.op === 'is_null' ? 'is empty' : f.op}</span>
+                          <button type="button" style={{ ...s.link, color: GREY_TEXT }} onClick={() => setKeptFilters(keptFilters.filter((_, j) => j !== i))}>
+                            <i className="ti ti-x" aria-hidden="true"></i> Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+  );
+
+  // ---------- Pivot builder: the fields list and the four boxes ----------
+  const zoneInfo = {
+    filters: { title: 'Filters', icon: 'ti-filter', help: `Only include ${noun} that match. Your choices appear below.`, empty: 'No filters, so everything is included.' },
+    columns: { title: 'Columns', icon: 'ti-columns', help: 'Spread the counts across the top.', empty: 'Nothing across the top.' },
+    rows: { title: 'Rows', icon: 'ti-list', help: 'Organize by these, in order: first by the top one, then by the next.', empty: 'Put a field here to start.' },
+    values: { title: 'Values', icon: 'ti-hash', help: `What fills the cells. Leave this empty for a plain list of ${noun}.`, empty: `Empty, so you'll get a list of ${noun}.` }
+  };
+  const zoneItems = (zone) => zone === 'filters' ? pFilters : zone === 'rows' ? pRows : zone === 'columns' ? pCols : (pCount ? ['count'] : []);
+  const zonesOf = (key) => ['filters', 'rows', 'columns'].filter(z => zoneItems(z).includes(key));
+  const chipLabel = (key) => (key === 'count' ? `Count of ${noun}` : labelOf(key));
+
+  const orderWords = (key, reversed) => {
+    const type = fieldByKey(key)?.value_type;
+    if (type === 'date' || type === 'timestamp') return reversed ? 'Newest first' : 'Oldest first';
+    if (type === 'number') return reversed ? 'Largest first' : 'Smallest first';
+    return reversed ? 'Z to A' : 'A to Z';
+  };
+
+  const startDrag = (e, key) => {
+    dragRef.current = key;
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', key); } catch (err) { /* some browsers refuse; the ref is enough */ }
+  };
+  const dropOn = (e, zone, before) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const key = dragRef.current;
+    dragRef.current = null;
+    setOverZone('');
+    if (!key || key === before) return;
+    place(key, zone, before);
+  };
+
+  const iconBtn = { background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '0.2rem', display: 'inline-flex', fontSize: '1rem' };
+
+  const zoneBox = (zone) => {
+    const info = zoneInfo[zone];
+    const items = zoneItems(zone);
+    const over = overZone === zone;
+    return (
+      <section key={zone} aria-label={info.title}
+        onDragOver={(e) => { e.preventDefault(); if (!over) setOverZone(zone); }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOverZone(''); }}
+        onDrop={(e) => dropOn(e, zone)}
+        style={{ border: `1px dashed ${over ? PERSONAL_TEXT : '#475569'}`, background: over ? `${PERSONAL_FILL}22` : '#0f172a', borderRadius: '0.5rem', padding: '0.75rem', minHeight: '7.5rem' }}>
+        <h3 style={{ margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <i className={`ti ${info.icon}`} aria-hidden="true"></i>{info.title}
+        </h3>
+        <p style={{ ...s.help, fontSize: '0.8rem', margin: '0.15rem 0 0.5rem' }}>{info.help}</p>
+        {items.length === 0 ? (
+          <p style={{ color: GREY_TEXT, fontSize: '0.8rem', margin: 0, fontStyle: 'italic' }}>{info.empty}</p>
+        ) : (
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {items.map((key, i) => (
+              <li key={key} draggable onDragStart={(e) => startDrag(e, key)}
+                onDragOver={(e) => e.preventDefault()} onDrop={(e) => dropOn(e, zone, key)}
+                style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem', padding: '0.3rem 0.4rem', marginBottom: '0.3rem', borderRadius: '0.375rem', border: `1px solid ${PERSONAL_TEXT}66`, background: `${PERSONAL_FILL}33`, fontSize: '0.85rem', cursor: 'grab' }}>
+                <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT }} aria-hidden="true"></i>
+                <span style={{ flex: 1, minWidth: '6rem' }}>
+                  {zone !== 'values' && zone !== 'filters' && items.length > 1 && <span style={{ color: GREY_TEXT }}>{i + 1}. </span>}
+                  {chipLabel(key)}
+                </span>
+                {(zone === 'rows' || zone === 'columns') && (
+                  <button type="button" onClick={() => setPDesc(pDesc.includes(key) ? without(pDesc, key) : [...pDesc, key])}
+                    aria-label={`${chipLabel(key)} is in order ${orderWords(key, pDesc.includes(key))}. Switch to ${orderWords(key, !pDesc.includes(key))}`}
+                    style={{ ...iconBtn, fontSize: '0.75rem', color: PERSONAL_TEXT, gap: '0.2rem', alignItems: 'center' }}>
+                    <i className={`ti ${pDesc.includes(key) ? 'ti-sort-descending' : 'ti-sort-ascending'}`} aria-hidden="true"></i>{orderWords(key, pDesc.includes(key))}
+                  </button>
+                )}
+                {zone !== 'values' && items.length > 1 && (
+                  <>
+                    <button type="button" style={{ ...iconBtn, opacity: i === 0 ? 0.35 : 1 }} disabled={i === 0} onClick={() => nudge(key, zone, -1)} aria-label={`Move ${chipLabel(key)} earlier in ${info.title}`}>
+                      <i className="ti ti-arrow-up" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" style={{ ...iconBtn, opacity: i === items.length - 1 ? 0.35 : 1 }} disabled={i === items.length - 1} onClick={() => nudge(key, zone, 1)} aria-label={`Move ${chipLabel(key)} later in ${info.title}`}>
+                      <i className="ti ti-arrow-down" aria-hidden="true"></i>
+                    </button>
+                  </>
+                )}
+                <button type="button" style={iconBtn} onClick={() => takeOut(key, zone)} aria-label={`Take ${chipLabel(key)} out of ${info.title}`}>
+                  <i className="ti ti-x" aria-hidden="true"></i>
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    );
+  };
+
+  const pivotPanel = () => {
+    const problem = pivotProblem();
+    const menuField = menuFor ? fieldByKey(menuFor) : null;
+    return (
+      <>
+        <div style={s.card}>
+          <h2 style={s.question}>Fields</h2>
+          <p style={s.help}>Drag a field into one of the boxes below, or tap it and choose where it goes. A field can be a filter and also be in Rows or Columns.</p>
+          <div style={s.pills}>
+            {fields.map(f => {
+              const used = zonesOf(f.field_key);
+              const open = menuFor === f.field_key;
+              return (
+                <button key={f.field_key} type="button" draggable onDragStart={(e) => startDrag(e, f.field_key)}
+                  onClick={() => setMenuFor(open ? '' : f.field_key)} aria-expanded={open} aria-controls="field-placer"
+                  style={{ ...s.pill(used.length > 0), cursor: 'grab', outline: open ? `2px solid ${PERSONAL_TEXT}` : undefined }}>
+                  <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT }} aria-hidden="true"></i>
+                  {f.label}
+                  {used.length > 0 && <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>in {used.map(z => zoneInfo[z].title).join(', ')}</span>}
+                </button>
+              );
+            })}
+            <button type="button" draggable onDragStart={(e) => startDrag(e, 'count')} onClick={() => { setMenuFor(''); setPCount(!pCount); }}
+              aria-pressed={pCount} style={{ ...s.pill(pCount), cursor: 'grab' }}>
+              <i className="ti ti-hash" aria-hidden="true"></i>
+              Count of {noun}
+              <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>{pCount ? 'in Values' : 'tap to add to Values'}</span>
+            </button>
+          </div>
+
+          {menuField && (
+            <div id="field-placer" style={{ marginTop: '0.75rem', padding: '0.75rem', border: `1px solid ${PERSONAL_TEXT}`, borderRadius: '0.375rem', background: '#0f172a' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'baseline' }}>
+                <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Where should "{menuField.label}" go?</span>
+                <button type="button" style={{ ...s.link, color: GREY_TEXT }} onClick={() => setMenuFor('')}><i className="ti ti-x" aria-hidden="true"></i> Close</button>
+              </div>
+              {menuField.description && <p style={{ ...s.help, margin: '0.2rem 0 0' }}>{menuField.description}</p>}
+              <div style={{ ...s.pills, marginTop: '0.5rem' }}>
+                {['filters', 'rows', 'columns'].map(zone => {
+                  const inZone = zoneItems(zone).includes(menuField.field_key);
+                  const blocked = inZone ? '' : placeProblem(menuField.field_key, zone);
+                  return (
+                    <button key={zone} type="button" disabled={!!blocked}
+                      style={{ ...(inZone ? s.secondary : s.primary), padding: '0.4rem 0.8rem', fontSize: '0.85rem', opacity: blocked ? 0.45 : 1, cursor: blocked ? 'not-allowed' : 'pointer' }}
+                      onClick={() => (inZone ? takeOut(menuField.field_key, zone) : place(menuField.field_key, zone))}>
+                      <i className={`ti ${inZone ? 'ti-x' : zoneInfo[zone].icon}`} aria-hidden="true"></i>
+                      {inZone ? `Take out of ${zoneInfo[zone].title}` : `Add to ${zoneInfo[zone].title}`}
+                    </button>
+                  );
+                })}
+              </div>
+              {['filters', 'rows', 'columns'].map(zone => {
+                const blocked = zoneItems(zone).includes(menuField.field_key) ? '' : placeProblem(menuField.field_key, zone);
+                return blocked ? <p key={zone} style={{ ...s.help, fontSize: '0.8rem', margin: '0.4rem 0 0' }}><strong>{zoneInfo[zone].title}:</strong> {blocked}</p> : null;
+              })}
+            </div>
+          )}
+          {fieldGuide(fields)}
+        </div>
+
+        <div style={s.card}>
+          <h2 style={s.question}>Lay out the report</h2>
+          <p style={s.help}>With Count in Values you get a table of counts. Without it you get a list, organized by the fields in Rows.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: '0.6rem' }}>
+            {zoneBox('filters')}
+            {zoneBox('columns')}
+            {zoneBox('rows')}
+            {zoneBox('values')}
+          </div>
+          {problem && (
+            <p role="status" style={{ color: '#fff', fontSize: '0.85rem', margin: '0.75rem 0 0', display: 'flex', gap: '0.4rem' }}>
+              <i className="ti ti-alert-triangle" style={{ color: DANGER_TEXT }} aria-hidden="true"></i>{problem}
+            </p>
+          )}
+        </div>
+
+        {(pFilters.length > 0 || keptFilters.length > 0) && (
+          <div style={s.card}>
+            <h2 style={s.question}>Filter choices</h2>
+            <p style={s.help}>Pick what to include or exclude for each field in Filters. A filter with nothing picked doesn't change anything.</p>
+            {matchControl()}
+            {pFilters.map(key => {
+              if (key === dataset?.date_column) return <div key={key} style={s.filterBlock}>{dateControl()}</div>;
+              const f = fieldByKey(key);
+              return f ? filterControl(f) : null;
+            })}
+            {keptControl()}
+          </div>
+        )}
+      </>
+    );
+  };
+
   // Results in their own screen: the whole width, every row, with the
   // settings tucked away until "Change settings".
   if (fullScreen) {
@@ -595,7 +995,7 @@ export default function ReportBuilder() {
             <div>
               <h1 style={s.title}>{title || 'Report'}</h1>
               {description && <p style={{ ...s.help, margin: '0.25rem 0 0' }}>{description}</p>}
-              <p style={{ ...s.help, margin: '0.25rem 0 0' }}>From: {dataset?.title}{result ? ` · ${result.row_count} row${result.row_count === 1 ? '' : 's'}` : ''}</p>
+              <p style={{ ...s.help, margin: '0.25rem 0 0' }}>From: {dataset?.title}{result && ranDef?.builder !== 'pivot' ? ` · ${result.row_count} row${result.row_count === 1 ? '' : 's'}` : ''}</p>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button type="button" style={s.secondary} onClick={() => setFullScreen(false)}>
@@ -615,7 +1015,7 @@ export default function ReportBuilder() {
             {runError ? (
               <p style={{ color: DANGER_TEXT, margin: 0 }}><i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {runError}</p>
             ) : result ? (
-              <ReportResult result={result} fields={fields} display={oneGroup ? display : 'table'} />
+              <ReportResult result={result} fields={fields} display={oneGroup ? display : 'table'} definition={ranDef} />
             ) : (
               <p style={{ color: GREY_TEXT, margin: 0 }}>{running ? 'Running…' : 'Run the report to see results.'}</p>
             )}
@@ -629,7 +1029,18 @@ export default function ReportBuilder() {
     <div style={s.container}>
       <div style={s.wrapper}>
         <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
-        <h1 style={{ ...s.title, marginBottom: '1.25rem' }}>{reportId ? 'Edit report' : 'New report'}</h1>
+        <h1 style={{ ...s.title, marginBottom: '0.75rem' }}>{reportId ? 'Edit report' : 'New report'}</h1>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={s.segment} role="group" aria-label="How to build the report">
+            <button type="button" style={s.segmentBtn(builder === 'guided')} aria-pressed={builder === 'guided'} onClick={() => switchBuilder('guided')}>Guided</button>
+            <button type="button" style={s.segmentBtn(builder === 'pivot')} aria-pressed={builder === 'pivot'} onClick={() => switchBuilder('pivot')}>Pivot</button>
+          </div>
+          <span style={{ color: GREY_TEXT, fontSize: '0.85rem' }}>
+            {builder === 'guided'
+              ? 'Answer a few questions in order. Switch to Pivot to arrange fields yourself, like a pivot table.'
+              : 'Arrange fields yourself, like a pivot table. Switch to Guided to answer a few questions instead.'}
+          </span>
+        </div>
 
         <div style={s.layout}>
           {/* ---------- Settings ---------- */}
@@ -657,6 +1068,7 @@ export default function ReportBuilder() {
               })}
             </div>
 
+            {builder === 'pivot' ? pivotPanel() : (<>
             <div style={s.card}>
               <h2 style={s.question}>Show me…</h2>
               <p style={s.help}>A count adds things up, like how many {noun} have each status. A list shows the {noun} themselves.</p>
@@ -734,50 +1146,13 @@ export default function ReportBuilder() {
 
               {showFilters && (
                 <div style={{ marginTop: '0.75rem' }}>
-                  {dataset?.date_column && (
-                    <div style={{ paddingBottom: '0.75rem' }}>
-                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{labelOf(dataset.date_column)}</span>
-                      <div style={{ ...s.pills, marginTop: '0.4rem' }}>
-                        {DATE_PRESETS.map(p => (
-                          <button key={p.key} type="button" style={s.pill(datePreset === p.key)} aria-pressed={datePreset === p.key} onClick={() => setDatePreset(p.key)}>{p.label}</button>
-                        ))}
-                      </div>
-                      {datePreset === 'custom' && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-                          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={s.select} aria-label="From" />
-                          <span style={{ color: GREY_TEXT }}>to</span>
-                          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={s.select} aria-label="To" />
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {dataset?.date_column && dateControl()}
 
-                  {includeFieldCount > 1 && (
-                    <div style={{ padding: '0.75rem 0', borderTop: '1px solid #334155' }}>
-                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem', marginRight: '0.5rem' }}>{noun.charAt(0).toUpperCase() + noun.slice(1)} must match</span>
-                      <div style={s.segment} role="group" aria-label="Match all or any of the Include choices">
-                        <button type="button" style={s.segmentBtn(!matchAny)} aria-pressed={!matchAny} onClick={() => setMatchAny(false)}>All of the Include choices</button>
-                        <button type="button" style={s.segmentBtn(matchAny)} aria-pressed={matchAny} onClick={() => setMatchAny(true)}>Any of them</button>
-                      </div>
-                      <p style={{ ...s.help, margin: '0.4rem 0 0' }}>Exclude choices always apply.</p>
-                    </div>
-                  )}
+                  {matchControl()}
 
                   {choosable.map(filterControl)}
 
-                  {keptFilters.length > 0 && (
-                    <div style={s.filterBlock}>
-                      <p style={{ ...s.help, margin: '0 0 0.4rem' }}>Also applied (from this report's original settings):</p>
-                      {keptFilters.map((f, i) => (
-                        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.85rem' }}>
-                          <span>{labelOf(f.field)} {f.op === 'not_null' ? 'is not empty' : f.op === 'is_null' ? 'is empty' : f.op}</span>
-                          <button type="button" style={{ ...s.link, color: GREY_TEXT }} onClick={() => setKeptFilters(keptFilters.filter((_, j) => j !== i))}>
-                            <i className="ti ti-x" aria-hidden="true"></i> Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {keptControl()}
                 </div>
               )}
             </div>
@@ -788,6 +1163,7 @@ export default function ReportBuilder() {
                 {sortOptions.map(o => <option key={o.value || 'default'} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+            </>)}
           </div>
 
           {/* ---------- Results and saving ---------- */}
@@ -809,9 +1185,9 @@ export default function ReportBuilder() {
               {runError ? (
                 <p style={{ color: DANGER_TEXT, margin: 0 }}><i className="ti ti-alert-triangle" aria-hidden="true"></i> Couldn't run this report: {runError}</p>
               ) : result ? (
-                <ReportResult result={result} fields={fields} display={oneGroup ? display : 'table'} />
+                <ReportResult result={result} fields={fields} display={oneGroup ? display : 'table'} definition={ranDef} />
               ) : (
-                <p style={{ color: GREY_TEXT, margin: 0 }}>Pick your settings, then run the report to see the results here.</p>
+                <p style={{ color: GREY_TEXT, margin: 0 }}>{builder === 'pivot' ? 'Lay out the report, then run it to see the results here.' : 'Pick your settings, then run the report to see the results here.'}</p>
               )}
             </div>
 
