@@ -22,6 +22,10 @@ import {
 // A report always runs against the viewer's own access, so a role report
 // shows each person their own data - never the author's.
 //
+// A third tab lists dashboards: named pages of reports (pages/dashboard.js).
+// Personal ones are ordered with hub_order; role ones are arranged per person
+// in dashboard_view_preferences, like role reports.
+//
 // Reports can also be sent to one person, who gets their own copy (theirs to
 // change). Depending on their profile settings a sent report either waits
 // for them to accept it or goes straight in, and may be labeled "New".
@@ -29,7 +33,11 @@ export default function TajarTracks() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('mine');                 // 'mine' | 'roles'
+  const [tab, setTab] = useState('mine');                 // 'mine' | 'roles' | 'dashboards'
+  const [dashboards, setDashboards] = useState([]);
+  const [dashPrefs, setDashPrefs] = useState({});         // dashboard id -> { sort_order, is_hidden }
+  const [itemCounts, setItemCounts] = useState({});       // dashboard id -> number of reports
+  const [showHiddenDash, setShowHiddenDash] = useState(false);
   const [reports, setReports] = useState([]);             // my own
   const [roleReports, setRoleReports] = useState([]);     // my roles'
   const [prefs, setPrefs] = useState({});                 // report id -> { sort_order, is_hidden }
@@ -72,6 +80,7 @@ export default function TajarTracks() {
       const held = roles.filter(r => grants.some(g => g.role_id === r.id)).map(r => ({ key: r.key, label: r.label }));
       setMyRoles(held);
       if (router.query.tab === 'roles' && held.length > 0) setTab('roles');
+      if (router.query.tab === 'dashboards') setTab('dashboards');
 
       const canUse = makeCanUse(datasetRows, perms);
       await addStarterReportsOnce(me.id, datasetRows, perms);
@@ -80,6 +89,7 @@ export default function TajarTracks() {
       await loadMine(me.id, canUse);
       await loadPending(me.id);
       if (held.length > 0) await loadRoleReports(canUse);
+      await loadDashboards(me.id);
     } catch (error) {
       console.error('Error loading Tajar Tracks:', error);
       notify.error(`Couldn't load Tajar Tracks: ${error.message}`);
@@ -257,6 +267,98 @@ export default function TajarTracks() {
     setBusy(false);
   };
 
+  // ---------- Dashboards ----------
+  const loadDashboards = async (userId = user?.id) => {
+    const [rows, prefRows, itemRows] = await Promise.all([
+      getJson(`report_dashboards?select=*&or=(and(owner_id.eq.${userId},role_key.is.null),role_key.not.is.null)&order=hub_order.asc,created_at.asc`),
+      getJson('dashboard_view_preferences?select=dashboard_id,sort_order,is_hidden'),
+      getJson('report_dashboard_items?select=dashboard_id')
+    ]);
+    const prefMap = {};
+    prefRows.forEach(p => { prefMap[p.dashboard_id] = p; });
+    const counts = {};
+    itemRows.forEach(it => { counts[it.dashboard_id] = (counts[it.dashboard_id] || 0) + 1; });
+    setDashPrefs(prefMap);
+    setItemCounts(counts);
+    setDashboards(rows);
+    loadNames(rows.map(d => d.owner_id));
+  };
+
+  const myDashboards = dashboards.filter(d => !d.role_key);
+  const roleDashboardsAll = [...dashboards.filter(d => d.role_key)].sort((a, b) => {
+    const pa = dashPrefs[a.id]?.sort_order;
+    const pb = dashPrefs[b.id]?.sort_order;
+    if (pa != null && pb != null && pa !== pb) return pa - pb;
+    if (pa != null && pb == null) return -1;
+    if (pa == null && pb != null) return 1;
+    return new Date(a.created_at) - new Date(b.created_at);
+  });
+  const hiddenDashCount = roleDashboardsAll.filter(d => dashPrefs[d.id]?.is_hidden).length;
+  const roleDashboards = roleDashboardsAll.filter(d => showHiddenDash || !dashPrefs[d.id]?.is_hidden);
+
+  const moveMyDashboard = async (index, direction) => {
+    const other = index + direction;
+    if (other < 0 || other >= myDashboards.length) return;
+    const next = [...myDashboards];
+    [next[index], next[other]] = [next[other], next[index]];
+    setBusy(true);
+    try {
+      await Promise.all(next.map((d, i) => writeJson(`report_dashboards?id=eq.${d.id}`, 'PATCH', { hub_order: i + 1 })));
+      setDashboards([...next.map((d, i) => ({ ...d, hub_order: i + 1 })), ...dashboards.filter(d => d.role_key)]);
+    } catch (error) {
+      notify.error(`Couldn't move it: ${error.message}`);
+    }
+    setBusy(false);
+  };
+
+  const saveDashPrefs = async (rows) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/dashboard_view_preferences?on_conflict=user_id,dashboard_id`, {
+      method: 'POST',
+      headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify(rows.map(r => ({ user_id: user.id, updated_at: new Date().toISOString(), ...r })))
+    });
+    if (!res.ok) throw new Error(await errorDetail(res));
+    const saved = await res.json().catch(() => []);
+    if (!Array.isArray(saved) || saved.length === 0) throw new Error('nothing was saved - try reloading, or logging out and back in');
+    setDashPrefs(prev => {
+      const next = { ...prev };
+      saved.forEach(p => { next[p.dashboard_id] = p; });
+      return next;
+    });
+  };
+
+  const moveRoleDashboard = async (d, direction) => {
+    const i = roleDashboards.indexOf(d);
+    const neighbor = roleDashboards[i + direction];
+    if (!neighbor) return;
+    const all = [...roleDashboardsAll];
+    const a = all.indexOf(d);
+    const b = all.indexOf(neighbor);
+    [all[a], all[b]] = [all[b], all[a]];
+    setBusy(true);
+    try {
+      await saveDashPrefs(all.map((x, index) => ({ dashboard_id: x.id, sort_order: index + 1, is_hidden: !!dashPrefs[x.id]?.is_hidden })));
+    } catch (error) {
+      notify.error(`Couldn't move it: ${error.message}`);
+    }
+    setBusy(false);
+  };
+
+  const setDashHidden = async (d, hidden) => {
+    setBusy(true);
+    try {
+      await saveDashPrefs([{ dashboard_id: d.id, sort_order: dashPrefs[d.id]?.sort_order ?? null, is_hidden: hidden }]);
+      notify.success(hidden ? `Hid "${d.title}". Only you see this change.` : `"${d.title}" is showing again`);
+    } catch (error) {
+      notify.error(`Couldn't change "${d.title}": ${error.message}`);
+    }
+    setBusy(false);
+  };
+
+  const canEditDashboard = (d) => (!d.role_key
+    ? d.owner_id === user?.id
+    : myRoles.some(r => r.key === d.role_key) && (d.owner_id === user?.id || permissions.includes('reporting.manage.content')));
+
   // ---------- Role reports ----------
   const roleLabel = (key) => myRoles.find(r => r.key === key)?.label || key;
   const canEdit = (report) => myRoles.some(r => r.key === report.role_key)
@@ -388,7 +490,7 @@ export default function TajarTracks() {
 
   const switchTab = (next) => {
     setTab(next);
-    router.replace(next === 'roles' ? '/insights?tab=roles' : '/insights', undefined, { shallow: true });
+    router.replace(next === 'mine' ? '/insights' : `/insights?tab=${next}`, undefined, { shallow: true });
   };
 
   return (
@@ -400,24 +502,29 @@ export default function TajarTracks() {
             <p style={s.subtitle}>
               {tab === 'mine'
                 ? 'Your songs, stats and reports. Only you can see your own data here.'
-                : 'Reports shared with everyone who has the same role as you. Each one shows you your own data, and how you arrange them only changes your view.'}
+                : tab === 'roles'
+                  ? 'Reports shared with everyone who has the same role as you. Each one shows you your own data, and how you arrange them only changes your view.'
+                  : 'Pages that gather several reports in one place. Yours are only for you; role dashboards are shared with everyone in that role.'}
             </p>
           </div>
-          <Link href={tab === 'roles' ? '/reports?for=role' : '/reports'} style={s.newBtn}>
-            <i className="ti ti-plus" aria-hidden="true"></i> {tab === 'roles' ? 'New role report' : 'New report'}
+          <Link href={tab === 'roles' ? '/reports?for=role' : tab === 'dashboards' ? '/dashboard?new=1' : '/reports'} style={s.newBtn}>
+            <i className="ti ti-plus" aria-hidden="true"></i> {tab === 'roles' ? 'New role report' : tab === 'dashboards' ? 'New dashboard' : 'New report'}
           </Link>
         </div>
 
-        {myRoles.length > 0 && (
-          <div style={s.tabs} role="tablist" aria-label="Which reports">
-            <button type="button" role="tab" aria-selected={tab === 'mine'} style={s.tab(tab === 'mine')} onClick={() => switchTab('mine')}>
-              <i className="ti ti-user" aria-hidden="true"></i> My reports
-            </button>
+        <div style={s.tabs} role="tablist" aria-label="Which reports">
+          <button type="button" role="tab" aria-selected={tab === 'mine'} style={s.tab(tab === 'mine')} onClick={() => switchTab('mine')}>
+            <i className="ti ti-user" aria-hidden="true"></i> My reports
+          </button>
+          {myRoles.length > 0 && (
             <button type="button" role="tab" aria-selected={tab === 'roles'} style={s.tab(tab === 'roles')} onClick={() => switchTab('roles')}>
               <i className="ti ti-users" aria-hidden="true"></i> Role reports
             </button>
-          </div>
-        )}
+          )}
+          <button type="button" role="tab" aria-selected={tab === 'dashboards'} style={s.tab(tab === 'dashboards')} onClick={() => switchTab('dashboards')}>
+            <i className="ti ti-layout-dashboard" aria-hidden="true"></i> Dashboards
+          </button>
+        </div>
 
         {tab === 'mine' && pending.length > 0 && (
           <section aria-label="Reports sent to you" style={{ ...s.card, marginBottom: '1.25rem', borderColor: PERSONAL_TEXT }}>
@@ -589,6 +696,101 @@ export default function TajarTracks() {
                   );
                 })}
               </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'dashboards' && (
+          <div>
+            <h2 style={{ ...s.cardTitle, margin: '0 0 0.75rem' }}>My dashboards</h2>
+            {myDashboards.length === 0 ? (
+              <div style={{ ...s.card, alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <p style={{ margin: '0 0 0.75rem' }}>You don't have any dashboards yet. A dashboard gathers several reports on one page, in the order you choose.</p>
+                <Link href="/dashboard?new=1" style={s.newBtn}><i className="ti ti-plus" aria-hidden="true"></i> Make a dashboard</Link>
+              </div>
+            ) : (
+              <div style={{ ...s.grid, marginBottom: '1.5rem' }}>
+                {myDashboards.map((d, index) => (
+                  <section key={d.id} style={s.card} aria-label={d.title}>
+                    <h3 style={s.cardTitle}>{d.title}</h3>
+                    {d.description && <p style={s.cardDesc}>{d.description}</p>}
+                    <p style={s.meta}>{itemCounts[d.id] || 0} report{(itemCounts[d.id] || 0) === 1 ? '' : 's'}</p>
+                    <div style={s.actions}>
+                      <Link href={`/dashboard?id=${d.id}`} style={{ ...s.action, color: PERSONAL_TEXT, borderColor: `${PERSONAL_TEXT}66` }}>
+                        <i className="ti ti-arrows-maximize" aria-hidden="true"></i> Open
+                      </Link>
+                      <Link href={`/dashboard?id=${d.id}&edit=1`} style={s.action}>
+                        <i className="ti ti-pencil" aria-hidden="true"></i> Edit
+                      </Link>
+                      <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveMyDashboard(index, -1)} aria-label={`Move "${d.title}" earlier`}>
+                        <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
+                      </button>
+                      <button type="button" style={s.action} disabled={busy || index === myDashboards.length - 1} onClick={() => moveMyDashboard(index, 1)} aria-label={`Move "${d.title}" later`}>
+                        <i className="ti ti-arrow-down" aria-hidden="true"></i> Later
+                      </button>
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+
+            {myRoles.length > 0 && (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', margin: '0 0 0.75rem' }}>
+                  <h2 style={{ ...s.cardTitle, margin: 0 }}>Role dashboards</h2>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+                    {hiddenDashCount > 0 && (
+                      <button type="button" style={s.link} onClick={() => setShowHiddenDash(!showHiddenDash)} aria-pressed={showHiddenDash}>
+                        <i className={`ti ${showHiddenDash ? 'ti-eye-off' : 'ti-eye'}`} aria-hidden="true"></i>
+                        {showHiddenDash ? 'Leave out the ones I hid' : `Show the ${hiddenDashCount} I hid`}
+                      </button>
+                    )}
+                    <Link href="/dashboard?new=1&for=role" style={s.link}><i className="ti ti-plus" aria-hidden="true"></i> New role dashboard</Link>
+                  </div>
+                </div>
+                {roleDashboards.length === 0 ? (
+                  <div style={{ ...s.card, alignItems: 'flex-start' }}>
+                    <p style={{ margin: 0 }}>{roleDashboardsAll.length > 0 ? 'You\'ve hidden all of these.' : 'Nobody has made a dashboard for your roles yet.'}</p>
+                  </div>
+                ) : (
+                  <div style={s.grid}>
+                    {roleDashboards.map((d, index) => {
+                      const hidden = !!dashPrefs[d.id]?.is_hidden;
+                      return (
+                        <section key={d.id} style={{ ...s.card, opacity: hidden ? 0.6 : 1 }} aria-label={d.title}>
+                          <span style={s.roleTag}><i className="ti ti-users" aria-hidden="true"></i>{roleLabel(d.role_key)}</span>
+                          <h3 style={s.cardTitle}>{d.title}{hidden && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}> (hidden)</span>}</h3>
+                          <p style={{ ...s.cardDesc, color: '#cbd5e1', margin: '0.35rem 0 0.25rem' }}><strong>What it's for:</strong> {d.description}</p>
+                          <p style={s.meta}>
+                            {itemCounts[d.id] || 0} report{(itemCounts[d.id] || 0) === 1 ? '' : 's'}
+                            {' · '}added by {names[d.owner_id] || 'someone'}{d.owner_id === user.id ? ' (you)' : ''}
+                            {' · '}last changed {when(d.updated_at)}
+                          </p>
+                          <div style={s.actions}>
+                            <Link href={`/dashboard?id=${d.id}`} style={{ ...s.action, color: PERSONAL_TEXT, borderColor: `${PERSONAL_TEXT}66` }}>
+                              <i className="ti ti-arrows-maximize" aria-hidden="true"></i> Open
+                            </Link>
+                            {canEditDashboard(d) && (
+                              <Link href={`/dashboard?id=${d.id}&edit=1`} style={s.action}>
+                                <i className="ti ti-pencil" aria-hidden="true"></i> Edit
+                              </Link>
+                            )}
+                            <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveRoleDashboard(d, -1)} aria-label={`Move "${d.title}" earlier in your view`}>
+                              <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
+                            </button>
+                            <button type="button" style={s.action} disabled={busy || index === roleDashboards.length - 1} onClick={() => moveRoleDashboard(d, 1)} aria-label={`Move "${d.title}" later in your view`}>
+                              <i className="ti ti-arrow-down" aria-hidden="true"></i> Later
+                            </button>
+                            <button type="button" style={s.action} disabled={busy} onClick={() => setDashHidden(d, !hidden)}>
+                              <i className={`ti ${hidden ? 'ti-eye' : 'ti-eye-off'}`} aria-hidden="true"></i> {hidden ? 'Show again' : 'Hide for me'}
+                            </button>
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
