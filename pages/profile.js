@@ -25,6 +25,10 @@ export default function Profile() {
   // "Hide things I can't change" - only shown to people with an admin role.
   const [hideViewOnly, setHideViewOnly] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Reports other people send (Tajar Tracks)
+  const [findable, setFindable] = useState(false);
+  const [sentMode, setSentMode] = useState('ask');
+  const [newLabel, setNewLabel] = useState('until_opened');
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -64,6 +68,9 @@ export default function Profile() {
       if (Array.isArray(data) && data.length > 0) {
         setDisplayName(data[0].display_name || '');
         setHideViewOnly(!!data[0].hide_view_only);
+        setFindable(!!data[0].findable_for_reports);
+        setSentMode(data[0].sent_reports_mode || 'ask');
+        setNewLabel(data[0].sent_reports_new_label || 'until_opened');
       }
       setIsAdmin(hasAnyRole(await fetchUserRoleKeys(userId, getAuthHeaders(false))));
     } catch (error) { console.error('Error loading profile:', error); }
@@ -110,6 +117,28 @@ export default function Profile() {
       : "Areas you can't change will now be shown, marked view only");
     if (!ok) setHideViewOnly(!next);
   };
+
+  // Each choice saves on its own, and goes back if the save fails.
+  const saveChoice = async (column, value, previous, setter, successText) => {
+    setter(value);
+    const ok = await saveFields({ [column]: value }, successText);
+    if (!ok) setter(previous);
+  };
+
+  const choiceRow = (name, options, value, onPick) => (
+    <div role="radiogroup" aria-label={name} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      {options.map(o => (
+        <label key={o.value} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer' }}>
+          <input type="radio" name={name} checked={value === o.value} onChange={() => onPick(o.value)}
+            style={{ marginTop: '0.2rem', width: '1.05rem', height: '1.05rem', accentColor: '#5371AC' }} />
+          <span>
+            <span style={{ fontWeight: 'bold' }}>{o.label}</span>
+            {o.help && <span style={{ display: 'block', color: '#838C95', fontSize: '0.85rem', marginTop: '0.1rem' }}>{o.help}</span>}
+          </span>
+        </label>
+      ))}
+    </div>
+  );
 
   const s = {
     container: { minHeight: '100vh', background: '#0f172a', color: '#fff', paddingTop: '4rem' },
@@ -161,6 +190,48 @@ export default function Profile() {
           <button onClick={saveProfile} disabled={saving} style={s.btn}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
+        </div>
+
+        {/* Reports other people send - personal (blue) */}
+        <div style={s.card}>
+          <h2 style={s.cardTitle}>Reports sent to me</h2>
+          <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '-0.5rem 0 1rem' }}>
+            People can send you a copy of a report from Tajar Tracks. It becomes your own copy, and it shows you your own data, never theirs.
+          </p>
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', marginBottom: '1.25rem' }}>
+            <input
+              type="checkbox"
+              checked={findable}
+              onChange={(e) => saveChoice('findable_for_reports', e.target.checked, findable, setFindable, e.target.checked
+                ? 'People can now find you by your display name to send you reports'
+                : "People can't find you to send you reports any more")}
+              style={{ marginTop: '0.2rem', width: '1.05rem', height: '1.05rem', accentColor: '#5371AC' }}
+            />
+            <span>
+              <span style={{ fontWeight: 'bold' }}>Let people find me to send me reports</span>
+              <span style={{ display: 'block', color: '#838C95', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                Off by default. When it's on, anyone signed in can find you by your display name when they're sending a report. Nothing else about you is shown.
+                {!displayName.trim() && ' You\'ll need a display name first.'}
+              </span>
+            </span>
+          </label>
+
+          <p style={{ fontWeight: 'bold', fontSize: '0.9rem', margin: '0 0 0.5rem' }}>When someone sends me a report</p>
+          {choiceRow('sent-mode', [
+            { value: 'ask', label: 'Let me accept or decline each one', help: 'They wait at the top of My reports until you choose.' },
+            { value: 'auto', label: 'Add them to my reports automatically', help: 'You can always delete one you don\'t want.' }
+          ], sentMode, (v) => saveChoice('sent_reports_mode', v, sentMode, setSentMode, 'Saved how reports sent to you are handled'))}
+
+          <p style={{ fontWeight: 'bold', fontSize: '0.9rem', margin: '1.25rem 0 0.5rem' }}>Label reports sent to me as "New"</p>
+          {choiceRow('new-label', [
+            { value: 'until_opened', label: 'Until I open it' },
+            { value: 'until_dismissed', label: 'Until I mark it as seen' },
+            { value: 'none', label: 'Don\'t label them' }
+          ], newLabel, (v) => saveChoice('sent_reports_new_label', v, newLabel, setNewLabel, 'Saved how new reports are labeled'))}
+          <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '0.5rem 0 0' }}>
+            Either way, you can use "Mark as new" on a report to flag it again for a while.
+          </p>
         </div>
 
         {/* Admin display preference - personal (blue), only for people with an admin role */}
