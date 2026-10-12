@@ -23,6 +23,11 @@ import {
 //            or by tapping a field and choosing where it goes.
 // Both produce a definition for run_report(); a pivot report also remembers
 // its layout (definition.builder = 'pivot', definition.pivot).
+//
+// A report is saved either to the person's own Tajar Tracks or to a role's
+// reports (saved_reports.role_key). A role report is one live report for
+// everyone holding that role; only its author, or a holder of the role who
+// manages reports, can change it. Everyone else can save their own copy.
 
 const SMALL_SET = 8;          // up to this many options: buttons; more: browsable list
 const DATE_PRESETS = [
@@ -173,6 +178,13 @@ export default function ReportBuilder() {
   const [fullScreen, setFullScreen] = useState(false);   // results in their own screen
   const [ranDef, setRanDef] = useState(null);            // the settings the current results came from
 
+  // Where the report lives
+  const [myRoles, setMyRoles] = useState([]);            // [{ id, key, label }] roles I hold
+  const [myPermissions, setMyPermissions] = useState([]);
+  const [roleKey, setRoleKey] = useState('');            // '' = my own Tajar Tracks
+  const [ownerId, setOwnerId] = useState(null);          // author of the loaded report
+  const [noAccess, setNoAccess] = useState(null);        // a saved report using a source I can't see
+
   // Pivot builder
   const [builder, setBuilder] = useState('guided');      // 'guided' | 'pivot'
   const [pRows, setPRows] = useState([]);
@@ -213,18 +225,30 @@ export default function ReportBuilder() {
       if (!token) { router.push('/?login=true'); return; }
       const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: authHeaders(false) });
       if (!res.ok) { router.push('/?login=true'); return; }
-      setUser(await res.json());
+      const me = await res.json();
+      setUser(me);
 
-      const [allDatasets, fieldRows, permissions] = await Promise.all([
+      const [allDatasets, fieldRows, permissions, grants, roles] = await Promise.all([
         getJson('report_datasets?select=*&order=display_order.asc'),
         getJson('report_fields?select=*&order=display_order.asc'),
-        fetchMyPermissions(authHeaders(false))
+        fetchMyPermissions(authHeaders(false)),
+        getJson(`user_roles?user_id=eq.${me.id}&select=role_id`),
+        getJson('roles?select=id,key,label&order=label.asc')
       ]);
       const canUse = (d) => d.audience === 'self' || permissions.includes(d.required_permission);
       setAllFields(fieldRows);
+      setMyPermissions(permissions);
+      const held = roles.filter(r => grants.some(g => g.role_id === r.id));
+      setMyRoles(held);
 
       const id = router.query.id;
       const saved = id ? (await getJson(`saved_reports?id=eq.${id}&select=*`))[0] : null;
+      if (saved && !allDatasets.some(d => d.key === saved.dataset_key && canUse(d))) {
+        setNoAccess({ title: saved.title, source: allDatasets.find(d => d.key === saved.dataset_key)?.title || saved.dataset_key, roleKey: saved.role_key });
+        setLoading(false);
+        return;
+      }
+      if (!saved && router.query.for === 'role' && held.length > 0) setRoleKey(held[0].key);
       // Retired sources stay available only for a report that already uses one.
       const usable = allDatasets.filter(d => canUse(d) && (d.is_active || d.key === saved?.dataset_key));
       setDatasets(usable);
@@ -266,6 +290,9 @@ export default function ReportBuilder() {
     setReportId(report.id);
     setTitle(report.title || '');
     setDescription(report.description || '');
+    setRoleKey(report.role_key || '');
+    savedRoleKey.current = report.role_key || '';
+    setOwnerId(report.owner_id);
     setDatasetKey(report.dataset_key);
     const grouped = Array.isArray(def.group_by) && def.group_by.length > 0;
     setMode(grouped ? 'count' : 'list');
@@ -518,10 +545,45 @@ export default function ReportBuilder() {
     }
   };
 
+  // ---------- Where the report lives, and who can change it ----------
+  const roleOf = (key) => myRoles.find(r => r.key === key);
+  const savedRoleKey = useRef('');                       // where the loaded report lives now
+  // Can I change the report that's open? (A new report is always mine.)
+  const canEditThis = !reportId
+    || (!savedRoleKey.current && ownerId === user?.id)
+    || (!!savedRoleKey.current && !!roleOf(savedRoleKey.current)
+        && (ownerId === user?.id || myPermissions.includes('reporting.manage.content')));
+
+  // If the people in a role can't all see this report's source, say so first.
+  const confirmRoleCanSee = async (key) => {
+    if (!dataset || dataset.audience !== 'permission') return true;
+    const role = roleOf(key);
+    const grants = await getJson(`role_permissions?role_id=eq.${role.id}&permission_key=eq.${encodeURIComponent(dataset.required_permission)}&select=role_id`);
+    if (grants.length > 0) return true;
+    return window.confirm(
+      `Not everyone with the ${role.label} role can see "${dataset.title}", so some of them will see this report without any results. ` +
+      'Save it there anyway?'
+    );
+  };
+
   const save = async (asNew) => {
     if (!title.trim()) { notify.error('Give the report a name before saving - it\'s how you\'ll find it in Tajar Tracks.'); return; }
     const problem = builder === 'pivot' ? pivotProblem() : '';
     if (problem) { notify.error(`This can't be saved yet. ${problem}`); return; }
+    // Someone else's role report can only be saved as your own copy.
+    const target = !canEditThis ? '' : roleKey;
+    if (target && !description.trim()) {
+      notify.error('Say what this report is for before adding it to a role - it\'s how everyone else will know why it\'s there.');
+      return;
+    }
+    const moving = reportId && !asNew && savedRoleKey.current && !target;
+    if (moving && ownerId !== user.id) {
+      notify.error('Only the person who added this report can take it out of the role reports. You can use "Save as a new report" to keep your own copy.');
+      return;
+    }
+    if (moving && !window.confirm(`This takes "${title.trim()}" out of ${roleOf(savedRoleKey.current)?.label || 'the role'} reports, so nobody else will see it any more. It will be in your own reports instead. Go ahead?`)) return;
+    if (target && target !== savedRoleKey.current && !(await confirmRoleCanSee(target))) return;
+
     setSaving(true);
     const body = {
       title: title.trim(),
@@ -529,18 +591,27 @@ export default function ReportBuilder() {
       dataset_key: datasetKey,
       definition: buildDefinition(),
       display: builder === 'guided' && mode === 'count' && !groupBy2 ? display : 'table',
-      updated_at: new Date().toISOString()
+      role_key: target || null
     };
+    const where = target ? `${roleOf(target)?.label || 'role'} reports` : 'your Tajar Tracks';
     try {
-      if (reportId && !asNew) {
+      if (reportId && !asNew && canEditThis) {
         await writeJson(`saved_reports?id=eq.${reportId}`, 'PATCH', body);
-        notify.success(`Saved "${body.title}"`);
+        savedRoleKey.current = target;
+        notify.success(target ? `Saved "${body.title}" - everyone in ${where} sees the change` : `Saved "${body.title}"`);
       } else {
-        const last = await getJson('saved_reports?select=hub_order&order=hub_order.desc&limit=1');
-        const rows = await writeJson('saved_reports', 'POST', { ...body, owner_id: user.id, hub_order: (last[0]?.hub_order || 0) + 1 });
+        let hubOrder = 0;
+        if (!target) {
+          const last = await getJson(`saved_reports?select=hub_order&owner_id=eq.${user.id}&role_key=is.null&order=hub_order.desc&limit=1`);
+          hubOrder = (last[0]?.hub_order || 0) + 1;
+        }
+        const rows = await writeJson('saved_reports', 'POST', { ...body, owner_id: user.id, hub_order: hubOrder });
         setReportId(rows[0].id);
+        setOwnerId(user.id);
+        setRoleKey(target);
+        savedRoleKey.current = target;
         router.replace(`/reports?id=${rows[0].id}`, undefined, { shallow: true });
-        notify.success(`Saved "${body.title}" to Tajar Tracks`);
+        notify.success(`Saved "${body.title}" to ${where}`);
       }
     } catch (error) {
       notify.error(`Couldn't save: ${error.message}`);
@@ -586,10 +657,22 @@ export default function ReportBuilder() {
     return <div style={s.container}><div style={s.wrapper}><p style={{ color: GREY_TEXT }}>Loading the report builder…</p></div></div>;
   }
 
+  if (noAccess) {
+    return (
+      <div style={s.container}><div style={s.wrapper}>
+        <Link href={noAccess.roleKey ? '/insights?tab=roles' : '/insights'} style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+        <h1 style={s.title}>{noAccess.title}</h1>
+        <p style={{ color: '#cbd5e1' }}>
+          <i className="ti ti-lock" aria-hidden="true"></i> This report uses {noAccess.source}, which you don't have access to, so there's nothing to show you here.
+        </p>
+      </div></div>
+    );
+  }
+
   if (datasets.length === 0) {
     return (
       <div style={s.container}><div style={s.wrapper}>
-        <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+        <Link href={backHref} style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
         <h1 style={s.title}>Report builder</h1>
         <p style={{ color: GREY_TEXT }}>There's nothing available for you to report on yet.</p>
       </div></div>
@@ -597,6 +680,7 @@ export default function ReportBuilder() {
   }
 
   const oneGroup = mode === 'count' && groupBy1 && !groupBy2;
+  const backHref = savedRoleKey.current || (!reportId && roleKey) ? '/insights?tab=roles' : '/insights';
   const listGroups = groupable.filter(f => f.value_type === 'list').map(f => f.field_key);
 
   // Sort choices, in words that say what they mean.
@@ -990,11 +1074,12 @@ export default function ReportBuilder() {
     return (
       <div style={s.container}>
         <div style={s.wrapper}>
-          <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+          <Link href={backHref} style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <h1 style={s.title}>{title || 'Report'}</h1>
-              {description && <p style={{ ...s.help, margin: '0.25rem 0 0' }}>{description}</p>}
+              {description && <p style={{ ...s.help, margin: '0.25rem 0 0' }}>{savedRoleKey.current ? <><strong>What it's for:</strong> {description}</> : description}</p>}
+              {savedRoleKey.current && <p style={{ ...s.help, margin: '0.25rem 0 0' }}><i className="ti ti-users" aria-hidden="true"></i> {roleOf(savedRoleKey.current)?.label || 'Role'} reports</p>}
               <p style={{ ...s.help, margin: '0.25rem 0 0' }}>From: {dataset?.title}{result && ranDef?.builder !== 'pivot' ? ` · ${result.row_count} row${result.row_count === 1 ? '' : 's'}` : ''}</p>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -1028,7 +1113,7 @@ export default function ReportBuilder() {
   return (
     <div style={s.container}>
       <div style={s.wrapper}>
-        <Link href="/insights" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
+        <Link href={backHref} style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>
         <h1 style={{ ...s.title, marginBottom: '0.75rem' }}>{reportId ? 'Edit report' : 'New report'}</h1>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
           <div style={s.segment} role="group" aria-label="How to build the report">
@@ -1194,17 +1279,63 @@ export default function ReportBuilder() {
             <div style={s.card}>
               <h2 style={s.question}>Save to Tajar Tracks</h2>
               <p style={s.help}>Saving keeps your settings, not today's results, so the report is always up to date when you open it.</p>
+
+              {!canEditThis ? (
+                <p style={{ ...s.help, color: '#cbd5e1' }}>
+                  <i className="ti ti-users" aria-hidden="true"></i> This is one of the {roleOf(savedRoleKey.current)?.label || 'role'} reports.
+                  Only the person who added it, or someone in that role who manages reports, can change it.
+                  You can change the settings here and save your own copy - it goes to My reports and doesn't affect anyone else.
+                </p>
+              ) : myRoles.length > 0 && (
+                <>
+                  <span style={s.label}>Where should it go?</span>
+                  <div style={s.segment} role="group" aria-label="Where to save">
+                    <button type="button" style={s.segmentBtn(!roleKey)} aria-pressed={!roleKey} onClick={() => setRoleKey('')}>My reports</button>
+                    <button type="button" style={s.segmentBtn(!!roleKey)} aria-pressed={!!roleKey} onClick={() => setRoleKey(roleKey || myRoles[0].key)}>Role reports</button>
+                  </div>
+                  {roleKey && (
+                    <>
+                      {myRoles.length > 1 && (
+                        <div style={{ ...s.pills, marginTop: '0.5rem' }} role="group" aria-label="Which role">
+                          {myRoles.map(r => (
+                            <button key={r.key} type="button" style={s.pill(roleKey === r.key)} aria-pressed={roleKey === r.key} onClick={() => setRoleKey(r.key)}>
+                              {roleKey === r.key && <i className="ti ti-check" aria-hidden="true"></i>}{r.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <p style={{ ...s.help, margin: '0.5rem 0 0' }}>
+                        Everyone with the {roleOf(roleKey)?.label} role will see this report. It shows each of them their own data, never yours.
+                        Anything you change later changes it for all of them.
+                      </p>
+                    </>
+                  )}
+                </>
+              )}
+
               <label style={s.label} htmlFor="title">Name <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(required)</span></label>
               <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} style={s.input} placeholder="For example: Songs I love but don't know well yet" />
-              <label style={s.label} htmlFor="description">Description <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(optional)</span></label>
-              <input id="description" value={description} onChange={(e) => setDescription(e.target.value)} style={s.input} placeholder="A short note about what this shows" />
+              <label style={s.label} htmlFor="description">
+                {roleKey && canEditThis ? 'What it\'s for' : 'Description'}{' '}
+                <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>{roleKey && canEditThis ? '(required for role reports)' : '(optional)'}</span>
+              </label>
+              <input id="description" value={description} onChange={(e) => setDescription(e.target.value)} style={s.input}
+                placeholder={roleKey && canEditThis ? 'Why this report is here and when to use it' : 'A short note about what this shows'} />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.9rem' }}>
-                <button type="button" style={s.primary} onClick={() => save(false)} disabled={saving}>
-                  <i className="ti ti-device-floppy" aria-hidden="true"></i> {reportId ? 'Save changes' : 'Save'}
-                </button>
-                {reportId && (
-                  <button type="button" style={s.secondary} onClick={() => save(true)} disabled={saving}>
-                    <i className="ti ti-copy" aria-hidden="true"></i> Save as a new report
+                {canEditThis ? (
+                  <>
+                    <button type="button" style={s.primary} onClick={() => save(false)} disabled={saving}>
+                      <i className="ti ti-device-floppy" aria-hidden="true"></i> {reportId ? 'Save changes' : 'Save'}
+                    </button>
+                    {reportId && (
+                      <button type="button" style={s.secondary} onClick={() => save(true)} disabled={saving}>
+                        <i className="ti ti-copy" aria-hidden="true"></i> Save as a new report
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <button type="button" style={s.primary} onClick={() => save(true)} disabled={saving}>
+                    <i className="ti ti-copy" aria-hidden="true"></i> Save my own copy
                   </button>
                 )}
               </div>
