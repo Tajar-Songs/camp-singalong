@@ -254,6 +254,12 @@ export default function ReportBuilder() {
       setDatasets(usable);
 
       if (saved) {
+        // A sent report labeled "New" stops being new when it's opened, for
+        // people who chose that on their profile.
+        if (saved.is_new && saved.owner_id === me.id && !saved.role_key) {
+          const pref = (await getJson(`user_profiles?id=eq.${me.id}&select=sent_reports_new_label`))[0]?.sent_reports_new_label;
+          if (pref === 'until_opened') writeJson(`saved_reports?id=eq.${saved.id}`, 'PATCH', { is_new: false }).catch(() => {});
+        }
         loadReport(saved);
         if (router.query.view === 'full') setFullScreen(true);
         run(saved.dataset_key, saved.definition);
