@@ -21,6 +21,10 @@ import {
 //                  changes anything for anyone else.
 // A report always runs against the viewer's own access, so a role report
 // shows each person their own data - never the author's.
+//
+// Reports can also be sent to one person, who gets their own copy (theirs to
+// change). Depending on their profile settings a sent report either waits
+// for them to accept it or goes straight in, and may be labeled "New".
 export default function TajarTracks() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -38,6 +42,9 @@ export default function TajarTracks() {
   const [fieldsByDataset, setFieldsByDataset] = useState({});
   const [results, setResults] = useState({});             // report id -> { result } or { error }
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState([]);             // reports sent to me, waiting for an answer
+  const [newLabel, setNewLabel] = useState('until_opened');
+  const [sending, setSending] = useState(null);           // the report being sent
 
   useEffect(() => { if (router.isReady) start(); }, [router.isReady]);
 
@@ -68,7 +75,10 @@ export default function TajarTracks() {
 
       const canUse = makeCanUse(datasetRows, perms);
       await addStarterReportsOnce(me.id, datasetRows, perms);
+      const profile = (await getJson(`user_profiles?id=eq.${me.id}&select=sent_reports_new_label`))[0];
+      if (profile?.sent_reports_new_label) setNewLabel(profile.sent_reports_new_label);
       await loadMine(me.id, canUse);
+      await loadPending(me.id);
       if (held.length > 0) await loadRoleReports(canUse);
     } catch (error) {
       console.error('Error loading Tajar Tracks:', error);
@@ -118,10 +128,63 @@ export default function TajarTracks() {
     }
   };
 
+  // Display names for the people shown on cards.
+  const loadNames = async (ids) => {
+    const wanted = [...new Set(ids.filter(Boolean))];
+    if (wanted.length === 0) return;
+    const profiles = await getJson(`user_profiles?id=in.(${wanted.join(',')})&select=id,display_name`);
+    setNames(prev => {
+      const next = { ...prev };
+      profiles.forEach(p => { next[p.id] = p.display_name; });
+      return next;
+    });
+  };
+
   const loadMine = async (userId = user?.id, usable = canUse) => {
     const rows = await getJson(`saved_reports?select=*&owner_id=eq.${userId}&role_key=is.null&show_on_hub=eq.true&order=hub_order.asc,created_at.asc`);
     setReports(rows);
+    loadNames(rows.map(r => r.sent_by));
     rows.forEach(r => runOne(r, usable));
+  };
+
+  const loadPending = async (userId = user?.id) => {
+    const rows = await getJson(`report_sends?select=*&recipient_id=eq.${userId}&status=eq.pending&order=created_at.asc`);
+    setPending(rows);
+    loadNames(rows.map(r => r.sender_id));
+  };
+
+  const rpc = async (name, body) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(await errorDetail(res));
+    return res.json().catch(() => null);
+  };
+
+  const respond = async (send, accept) => {
+    setBusy(true);
+    try {
+      await rpc('respond_to_sent_report', { p_send_id: send.id, p_accept: accept });
+      setPending(pending.filter(p => p.id !== send.id));
+      if (accept) {
+        notify.success(`Added "${send.title}" to My reports`);
+        await loadMine();
+      } else {
+        notify.success(`Said no thanks to "${send.title}"`);
+      }
+    } catch (error) {
+      notify.error(`Couldn't answer: ${error.message}`);
+    }
+    setBusy(false);
+  };
+
+  const setNew = async (report, value) => {
+    setBusy(true);
+    try {
+      await writeJson(`saved_reports?id=eq.${report.id}`, 'PATCH', { is_new: value });
+      setReports(reports.map(r => (r.id === report.id ? { ...r, is_new: value } : r)));
+    } catch (error) {
+      notify.error(`Couldn't change "${report.title}": ${error.message}`);
+    }
+    setBusy(false);
   };
 
   const loadRoleReports = async (usable = canUse) => {
@@ -133,13 +196,7 @@ export default function TajarTracks() {
     prefRows.forEach(p => { byId[p.report_id] = p; });
     setPrefs(byId);
     setRoleReports(rows);
-    const people = [...new Set(rows.flatMap(r => [r.owner_id, r.last_edited_by]).filter(Boolean))];
-    if (people.length > 0) {
-      const profiles = await getJson(`user_profiles?id=in.(${people.join(',')})&select=id,display_name`);
-      const map = {};
-      profiles.forEach(p => { map[p.id] = p.display_name; });
-      setNames(map);
-    }
+    loadNames(rows.flatMap(r => [r.owner_id, r.last_edited_by]));
     rows.forEach(r => { if (!byId[r.id]?.is_hidden) runOne(r, usable); });
   };
 
@@ -362,6 +419,40 @@ export default function TajarTracks() {
           </div>
         )}
 
+        {tab === 'mine' && pending.length > 0 && (
+          <section aria-label="Reports sent to you" style={{ ...s.card, marginBottom: '1.25rem', borderColor: PERSONAL_TEXT }}>
+            <h2 style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Sent to you</h2>
+            <p style={{ ...s.meta, margin: '0 0 0.5rem' }}>
+              Adding one gives you your own copy, to change however you like. It shows you your own data, not the sender's.
+            </p>
+            {pending.map(send => (
+              <div key={send.id} style={{ borderTop: '1px solid #334155', padding: '0.75rem 0', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ minWidth: '14rem', flex: 1 }}>
+                  <div style={{ fontWeight: 'bold' }}>{send.title}</div>
+                  <div style={s.meta}>
+                    From {names[send.sender_id] || 'someone'} on {when(send.created_at)}
+                    {' · '}{datasets.find(d => d.key === send.dataset_key)?.title || send.dataset_key}
+                  </div>
+                  {send.note && <p style={{ margin: '0.2rem 0 0', color: '#cbd5e1', fontStyle: 'italic', fontSize: '0.85rem' }}>"{send.note}"</p>}
+                  {!canUse(send.dataset_key) && (
+                    <p style={{ margin: '0.3rem 0 0', color: '#cbd5e1', fontSize: '0.8rem' }}>
+                      <i className="ti ti-lock" aria-hidden="true"></i> This uses information you don't have access to, so it won't show you anything yet.
+                    </p>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button type="button" style={{ ...s.newBtn, border: 'none', cursor: 'pointer', fontSize: '0.85rem' }} disabled={busy} onClick={() => respond(send, true)}>
+                    <i className="ti ti-check" aria-hidden="true"></i> Add to my reports
+                  </button>
+                  <button type="button" style={s.action} disabled={busy} onClick={() => respond(send, false)}>
+                    <i className="ti ti-x" aria-hidden="true"></i> No thanks
+                  </button>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
         {tab === 'mine' && (reports.length === 0 ? (
           <div style={{ ...s.card, alignItems: 'flex-start' }}>
             <p style={{ margin: '0 0 0.75rem' }}>You don't have any reports here yet.</p>
@@ -371,8 +462,19 @@ export default function TajarTracks() {
           <div style={s.grid}>
             {reports.map((report, index) => (
               <section key={report.id} style={s.card} aria-label={report.title}>
+                {report.is_new && (
+                  <span style={{ ...s.roleTag, color: '#fff', borderColor: PERSONAL_TEXT, background: `${PERSONAL_FILL}55` }}>
+                    <i className="ti ti-sparkles" aria-hidden="true"></i> New
+                  </span>
+                )}
                 <h2 style={s.cardTitle}>{report.title}</h2>
                 {report.description ? <p style={s.cardDesc}>{report.description}</p> : <div style={{ height: '0.75rem' }} />}
+                {report.sent_by && (
+                  <div style={{ ...s.meta, margin: '-0.4rem 0 0.75rem' }}>
+                    Sent by {names[report.sent_by] || 'someone'} on {when(report.sent_at)}
+                    {report.sent_note && <p style={{ margin: '0.3rem 0 0', color: '#cbd5e1', fontStyle: 'italic' }}>"{report.sent_note}"</p>}
+                  </div>
+                )}
                 <div style={{ marginBottom: '0.5rem' }}>{resultArea(report)}</div>
                 <div style={s.actions}>
                   <Link href={`/reports?id=${report.id}&view=full`} style={{ ...s.action, color: PERSONAL_TEXT, borderColor: `${PERSONAL_TEXT}66` }}>
@@ -384,6 +486,14 @@ export default function TajarTracks() {
                   <button type="button" style={s.action} disabled={busy} onClick={() => copyToMine(report, `${report.title} (copy)`)}>
                     <i className="ti ti-copy" aria-hidden="true"></i> Duplicate
                   </button>
+                  <button type="button" style={s.action} disabled={busy} onClick={() => setSending(report)}>
+                    <i className="ti ti-send" aria-hidden="true"></i> Send a copy
+                  </button>
+                  {report.sent_by && (
+                    <button type="button" style={s.action} disabled={busy} onClick={() => setNew(report, !report.is_new)}>
+                      <i className={`ti ${report.is_new ? 'ti-mail-opened' : 'ti-mail'}`} aria-hidden="true"></i> {report.is_new ? 'Mark as seen' : 'Mark as new'}
+                    </button>
+                  )}
                   <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => move(index, -1)} aria-label={`Move "${report.title}" earlier`}>
                     <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
                   </button>
@@ -457,6 +567,9 @@ export default function TajarTracks() {
                         <button type="button" style={s.action} disabled={busy} onClick={() => copyToMine(report, `${report.title} (my copy)`)}>
                           <i className="ti ti-copy" aria-hidden="true"></i> Make my own copy
                         </button>
+                        <button type="button" style={s.action} disabled={busy} onClick={() => setSending(report)}>
+                          <i className="ti ti-send" aria-hidden="true"></i> Send a copy
+                        </button>
                         <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveRole(report, -1)} aria-label={`Move "${report.title}" earlier in your view`}>
                           <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
                         </button>
@@ -479,6 +592,127 @@ export default function TajarTracks() {
             )}
           </div>
         )}
+      </div>
+      {sending && <SendDialog report={sending} rpc={rpc} datasets={datasets} onClose={() => setSending(null)} />}
+    </div>
+  );
+}
+
+// Send someone their own copy of a report. Only people who have chosen to be
+// findable show up, by display name.
+function SendDialog({ report, rpc, datasets, onClose }) {
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [person, setPerson] = useState(null);
+  const [canSee, setCanSee] = useState(true);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const source = datasets.find(d => d.key === report.dataset_key)?.title || report.dataset_key;
+
+  useEffect(() => {
+    const close = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, []);
+
+  // Search as they type, once there are at least two letters.
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 2) { setFound([]); return; }
+    let stale = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await rpc('find_people_for_reports', { p_query: text });
+        if (!stale) setFound(Array.isArray(rows) ? rows : []);
+      } catch (error) {
+        if (!stale) notify.error(`Couldn't search: ${error.message}`);
+      }
+      if (!stale) setSearching(false);
+    }, 300);
+    return () => { stale = true; clearTimeout(timer); };
+  }, [query]);
+
+  const choose = async (p) => {
+    setPerson(p);
+    try {
+      setCanSee(!!(await rpc('report_recipient_can_use', { p_recipient: p.id, p_dataset: report.dataset_key })));
+    } catch (error) {
+      setCanSee(true);
+    }
+  };
+
+  const send = async () => {
+    setBusy(true);
+    try {
+      const outcome = await rpc('send_report', { p_report_id: report.id, p_recipient: person.id, p_note: note });
+      notify.success(outcome === 'added'
+        ? `Sent "${report.title}" to ${person.display_name}. It's in their reports now.`
+        : `Sent "${report.title}" to ${person.display_name}. They'll see it and can choose to add it.`);
+      onClose();
+    } catch (error) {
+      notify.error(`Couldn't send: ${error.message}`);
+      setBusy(false);
+    }
+  };
+
+  const box = { width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem' };
+  const btn = (primary) => ({ background: primary ? PERSONAL_FILL : 'transparent', color: '#fff', border: primary ? 'none' : '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem 1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' });
+
+  return (
+    <div role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5rem 1rem 1rem', overflowY: 'auto' }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="send-title"
+        style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '1.25rem', width: '100%', maxWidth: '32rem', color: '#fff' }}>
+        <h2 id="send-title" style={{ margin: '0 0 0.25rem', fontSize: '1.2rem' }}>Send a copy of "{report.title}"</h2>
+        <p style={{ color: GREY_TEXT, fontSize: '0.85rem', margin: '0 0 1rem' }}>
+          They get their own copy to change however they like. It shows them their own data, never yours.
+          Only people who have chosen to be findable on their profile show up here.
+        </p>
+
+        {!person ? (
+          <>
+            <label htmlFor="send-search" style={{ display: 'block', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Who should get it?</label>
+            <input id="send-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} style={box} placeholder="Type at least two letters of their display name" autoComplete="off" />
+            <div style={{ minHeight: '6rem', marginTop: '0.5rem' }} aria-live="polite">
+              {query.trim().length >= 2 && !searching && found.length === 0 && (
+                <p style={{ color: GREY_TEXT, fontSize: '0.85rem' }}>Nobody findable by that name. They may need to turn on "Let people find me to send me reports" on their profile.</p>
+              )}
+              {found.map(p => (
+                <button key={p.id} type="button" onClick={() => choose(p)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', textAlign: 'left', background: 'transparent', border: '1px solid #334155', borderRadius: '0.375rem', color: '#fff', padding: '0.5rem 0.6rem', marginBottom: '0.35rem', cursor: 'pointer' }}>
+                  <i className="ti ti-user" aria-hidden="true"></i>{p.display_name}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.5rem 0.6rem', border: `1px solid ${PERSONAL_TEXT}`, borderRadius: '0.375rem', background: `${PERSONAL_FILL}33` }}>
+              <span><i className="ti ti-user" aria-hidden="true"></i> {person.display_name}</span>
+              <button type="button" onClick={() => { setPerson(null); setCanSee(true); }} style={{ background: 'none', border: 'none', color: PERSONAL_TEXT, cursor: 'pointer', fontSize: '0.85rem' }}>Choose someone else</button>
+            </div>
+            {!canSee && (
+              <p style={{ fontSize: '0.85rem', margin: '0.6rem 0 0', color: '#cbd5e1' }}>
+                <i className="ti ti-alert-triangle" style={{ color: DANGER_TEXT }} aria-hidden="true"></i>{' '}
+                {person.display_name} doesn't have access to {source}, so the report won't show them anything unless that changes. You can still send it.
+              </p>
+            )}
+            <label htmlFor="send-note" style={{ display: 'block', fontWeight: 'bold', fontSize: '0.85rem', margin: '0.9rem 0 0.3rem' }}>
+              A note <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(optional)</span>
+            </label>
+            <textarea id="send-note" value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={500} style={{ ...box, resize: 'vertical' }}
+              placeholder="For example: this is the one I use to see what changed in the camp songbook" />
+          </>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+          <button type="button" style={btn(true)} disabled={!person || busy} onClick={send}>
+            <i className="ti ti-send" aria-hidden="true"></i> {busy ? 'Sending…' : 'Send'}
+          </button>
+          <button type="button" style={btn(false)} onClick={onClose}>Cancel</button>
+        </div>
       </div>
     </div>
   );
