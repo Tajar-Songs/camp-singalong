@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { notify } from '../lib/notify';
@@ -38,6 +38,8 @@ export default function TajarTracks() {
   const [dashPrefs, setDashPrefs] = useState({});         // dashboard id -> { sort_order, is_hidden }
   const [itemCounts, setItemCounts] = useState({});       // dashboard id -> number of reports
   const [showHiddenDash, setShowHiddenDash] = useState(false);
+  const dragRef = useRef(null);                           // { list, id } being dragged
+  const [dragOver, setDragOver] = useState('');
   const [reports, setReports] = useState([]);             // my own
   const [roleReports, setRoleReports] = useState([]);     // my roles'
   const [prefs, setPrefs] = useState({});                 // report id -> { sort_order, is_hidden }
@@ -355,6 +357,70 @@ export default function TajarTracks() {
     setBusy(false);
   };
 
+  // ---------- Drag and drop to reorder (Earlier / Later still work too) ----------
+  // Dropping a card on another puts it in that card's place.
+  const reorder = (list, fromId, toId) => {
+    const next = [...list];
+    const from = next.findIndex(x => x.id === fromId);
+    const to = next.findIndex(x => x.id === toId);
+    if (from < 0 || to < 0) return null;
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+  };
+
+  const dropOn = async (list, fromId, toId) => {
+    setBusy(true);
+    try {
+      if (list === 'mine') {
+        const next = reorder(reports, fromId, toId);
+        if (!next) return;
+        setReports(next.map((r, i) => ({ ...r, hub_order: i + 1 })));
+        await Promise.all(next.map((r, i) => (r.hub_order === i + 1 ? null : writeJson(`saved_reports?id=eq.${r.id}`, 'PATCH', { hub_order: i + 1 }))));
+      } else if (list === 'roles') {
+        const next = reorder(orderedRoleReports, fromId, toId);
+        if (next) await savePrefs(next.map((r, i) => ({ report_id: r.id, sort_order: i + 1, is_hidden: !!prefs[r.id]?.is_hidden })));
+      } else if (list === 'mydash') {
+        const next = reorder(myDashboards, fromId, toId);
+        if (!next) return;
+        setDashboards([...next.map((d, i) => ({ ...d, hub_order: i + 1 })), ...dashboards.filter(d => d.role_key)]);
+        await Promise.all(next.map((d, i) => (d.hub_order === i + 1 ? null : writeJson(`report_dashboards?id=eq.${d.id}`, 'PATCH', { hub_order: i + 1 }))));
+      } else if (list === 'roledash') {
+        const next = reorder(roleDashboardsAll, fromId, toId);
+        if (next) await saveDashPrefs(next.map((d, i) => ({ dashboard_id: d.id, sort_order: i + 1, is_hidden: !!dashPrefs[d.id]?.is_hidden })));
+      }
+    } catch (error) {
+      notify.error(`Couldn't move it: ${error.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dragProps = (list, id) => ({
+    draggable: true,
+    onDragStart: (e) => {
+      dragRef.current = { list, id };
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', id); } catch (err) { /* the ref is enough */ }
+    },
+    onDragOver: (e) => {
+      if (dragRef.current?.list !== list) return;
+      e.preventDefault();
+      if (dragOver !== id) setDragOver(id);
+    },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(''); },
+    onDrop: (e) => {
+      e.preventDefault();
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDragOver('');
+      if (d && d.list === list && d.id !== id) dropOn(list, d.id, id);
+    },
+    onDragEnd: () => { dragRef.current = null; setDragOver(''); }
+  });
+  const dragStyle = (id) => (dragOver === id ? { outline: `2px dashed ${PERSONAL_TEXT}`, outlineOffset: '2px' } : {}) ;
+  const grip = <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT, position: 'absolute', top: '0.6rem', right: '0.6rem', cursor: 'grab' }} title="Drag to move" aria-hidden="true"></i>;
+
   const canEditDashboard = (d) => (!d.role_key
     ? d.owner_id === user?.id
     : myRoles.some(r => r.key === d.role_key) && (d.owner_id === user?.id || permissions.includes('reporting.manage.content')));
@@ -568,7 +634,8 @@ export default function TajarTracks() {
         ) : (
           <div style={s.grid}>
             {reports.map((report, index) => (
-              <section key={report.id} style={s.card} aria-label={report.title}>
+              <section key={report.id} {...dragProps('mine', report.id)} style={{ ...s.card, position: 'relative', cursor: 'grab', ...dragStyle(report.id) }} aria-label={report.title}>
+                {grip}
                 {report.is_new && (
                   <span style={{ ...s.roleTag, color: '#fff', borderColor: PERSONAL_TEXT, background: `${PERSONAL_FILL}55` }}>
                     <i className="ti ti-sparkles" aria-hidden="true"></i> New
@@ -653,7 +720,8 @@ export default function TajarTracks() {
                   const author = names[report.owner_id] || 'someone';
                   const editor = report.last_edited_by && report.last_edited_by !== report.owner_id ? names[report.last_edited_by] : null;
                   return (
-                    <section key={report.id} style={{ ...s.card, opacity: hidden ? 0.6 : 1 }} aria-label={report.title}>
+                    <section key={report.id} {...dragProps('roles', report.id)} style={{ ...s.card, opacity: hidden ? 0.6 : 1, position: 'relative', cursor: 'grab', ...dragStyle(report.id) }} aria-label={report.title}>
+                      {grip}
                       <span style={s.roleTag}><i className="ti ti-users" aria-hidden="true"></i>{roleLabel(report.role_key)}</span>
                       <h2 style={s.cardTitle}>{report.title}{hidden && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}> (hidden)</span>}</h2>
                       <p style={{ ...s.cardDesc, color: '#cbd5e1', margin: '0.35rem 0 0.25rem' }}><strong>What it's for:</strong> {report.description}</p>
@@ -711,7 +779,8 @@ export default function TajarTracks() {
             ) : (
               <div style={{ ...s.grid, marginBottom: '1.5rem' }}>
                 {myDashboards.map((d, index) => (
-                  <section key={d.id} style={s.card} aria-label={d.title}>
+                  <section key={d.id} {...dragProps('mydash', d.id)} style={{ ...s.card, position: 'relative', cursor: 'grab', ...dragStyle(d.id) }} aria-label={d.title}>
+                    {grip}
                     <h3 style={s.cardTitle}>{d.title}</h3>
                     {d.description && <p style={s.cardDesc}>{d.description}</p>}
                     <p style={s.meta}>{itemCounts[d.id] || 0} report{(itemCounts[d.id] || 0) === 1 ? '' : 's'}</p>
@@ -757,7 +826,8 @@ export default function TajarTracks() {
                     {roleDashboards.map((d, index) => {
                       const hidden = !!dashPrefs[d.id]?.is_hidden;
                       return (
-                        <section key={d.id} style={{ ...s.card, opacity: hidden ? 0.6 : 1 }} aria-label={d.title}>
+                        <section key={d.id} {...dragProps('roledash', d.id)} style={{ ...s.card, opacity: hidden ? 0.6 : 1, position: 'relative', cursor: 'grab', ...dragStyle(d.id) }} aria-label={d.title}>
+                          {grip}
                           <span style={s.roleTag}><i className="ti ti-users" aria-hidden="true"></i>{roleLabel(d.role_key)}</span>
                           <h3 style={s.cardTitle}>{d.title}{hidden && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}> (hidden)</span>}</h3>
                           <p style={{ ...s.cardDesc, color: '#cbd5e1', margin: '0.35rem 0 0.25rem' }}><strong>What it's for:</strong> {d.description}</p>
