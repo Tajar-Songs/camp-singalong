@@ -14,7 +14,15 @@ import {
 //
 //   /dashboard?id=…           view
 //   /dashboard?id=…&edit=1    change it (if allowed)
-//   /dashboard?new=1          make one (&for=role to start it as a role dashboard)
+//   /dashboard?new=1          make one
+//       &template=1             … as a template (&for=role for a role's template)
+//       &from=<id>              … starting from one of your dashboards
+//
+// Templates (is_template) are starting points other people can use: for
+// everyone, or for one role (role_key). "Use as my own dashboard" makes the
+// person their own dashboard from it (use_dashboard_template). A role's
+// shared report on a template stays linked; any other report is stored on
+// the template as a snapshot and copied for each person who uses it.
 //
 // Layout (report_dashboards.layout) is a grid 12 columns wide:
 //   { "version": 2, "boxes": [ { "x", "y", "w", "h" }, … ] }
@@ -191,16 +199,15 @@ export default function Dashboard() {
   const [dashboard, setDashboard] = useState(null);        // saved row, or null when new
   const [items, setItems] = useState([]);                  // saved items
   const [reportsById, setReportsById] = useState({});      // reports this person can see
-  const [itemPrefs, setItemPrefs] = useState({});          // item id -> { is_hidden }
   const [results, setResults] = useState({});
-  const [showHidden, setShowHidden] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Editing
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [roleKey, setRoleKey] = useState('');
+  const [roleKey, setRoleKey] = useState('');              // a template's role ('' = for everyone)
+  const [isTemplate, setIsTemplate] = useState(false);
   const [boxes, setBoxes] = useState([]);                  // [{ x, y, w, h, entry }] in reading order
   const [tray, setTray] = useState([]);                    // added but not in a box yet
   const [selected, setSelected] = useState(-1);            // box whose shape is being changed
@@ -244,13 +251,31 @@ export default function Dashboard() {
 
       const id = router.query.id;
       if (!id) {
+        const template = router.query.template === '1';
         setDashboard(null);
         setItems([]);
         setTitle('');
         setDescription('');
-        setRoleKey(router.query.for === 'role' && held.length > 0 ? held[0].key : '');
+        setIsTemplate(template);
+        setRoleKey(template && router.query.for === 'role' && held.length > 0 ? held[0].key : '');
         setBoxes(PRESETS[0].boxes.map(x => ({ ...x, entry: null })));
         setTray([]);
+        // Starting a template from one of your own dashboards.
+        if (router.query.from) {
+          const source = (await getJson(`report_dashboards?id=eq.${router.query.from}&select=*`))[0];
+          if (source) {
+            const sourceItems = await getJson(`report_dashboard_items?dashboard_id=eq.${source.id}&select=*`);
+            const laid = layoutOf(source, sourceItems);
+            const asNew = (it) => (it ? { report_id: it.report_id, snapshot: it.snapshot, row_limit: it.row_limit } : null);
+            setTitle(source.title);
+            setDescription(source.description || '');
+            setBoxes(laid.boxes.map(({ item, ...shape }) => ({ ...shape, entry: asNew(item) })));
+            setTray(laid.extra.map(asNew));
+            // If it uses a role's reports, start it as that role's template.
+            const roleUsed = sourceItems.map(it => byId[it.report_id]?.role_key).find(k => k && held.some(r => r.key === k));
+            if (template && roleUsed) setRoleKey(roleUsed);
+          }
+        }
         setSelected(-1);
         setEditing(true);
         setLoading(false);
@@ -266,17 +291,14 @@ export default function Dashboard() {
       const savedItems = await getJson(`report_dashboard_items?dashboard_id=eq.${id}&select=*&order=position.asc`);
       setDashboard(found);
       setItems(savedItems);
-      if (found.role_key) {
-        const prefs = await getJson('dashboard_item_preferences?select=item_id,sort_order,is_hidden');
-        const map = {};
-        prefs.forEach(p => { map[p.item_id] = p; });
-        setItemPrefs(map);
-      }
       const canUseNow = (key) => {
         const d = datasetRows.find(x => x.key === key);
         return !!d && (d.audience === 'self' || perms.includes(d.required_permission));
       };
-      savedItems.forEach(it => { if (byId[it.report_id]) runOne(byId[it.report_id], it.row_limit, canUseNow); });
+      savedItems.forEach(it => {
+        const report = it.snapshot ? snapshotReport(it) : byId[it.report_id];
+        if (report) runOne(report, it.row_limit, canUseNow);
+      });
 
       startEditing(found, savedItems, router.query.edit === '1');
     } catch (error) {
@@ -306,7 +328,13 @@ export default function Dashboard() {
     }
   };
 
+  // A report stored on a template as a snapshot, shaped like a saved report.
+  // It always runs against the viewer's own data.
+  const snapshotReport = (it) => ({ ...it.snapshot, id: `snap-${it.id}`, role_key: null, isCopy: true });
+  const itemReport = (it) => (it.snapshot ? snapshotReport(it) : reportsById[it.report_id]);
+
   const roleOf = (key) => myRoles.find(r => r.key === key);
+  const audienceWords = (key) => (key ? `everyone with the ${roleOf(key)?.label || 'role'} role` : 'everyone');
   const canEdit = !dashboard
     || (!dashboard.role_key && dashboard.owner_id === user?.id)
     || (!!dashboard.role_key && !!roleOf(dashboard.role_key)
@@ -316,31 +344,30 @@ export default function Dashboard() {
     setTitle(d.title || '');
     setDescription(d.description || '');
     setRoleKey(d.role_key || '');
+    setIsTemplate(!!d.is_template);
     const laid = layoutOf(d, savedItems);
-    const asDraft = (it) => (it ? { id: it.id, report_id: it.report_id, row_limit: it.row_limit } : null);
+    const asDraft = (it) => (it ? { id: it.id, report_id: it.report_id, snapshot: it.snapshot, row_limit: it.row_limit } : null);
     setBoxes(laid.boxes.map(({ item, ...shape }) => ({ ...shape, entry: asDraft(item) })));
     setTray(laid.extra.map(asDraft));
     setSelected(-1);
     setEditing(on);
   };
 
-  // ---------- Viewing ----------
-  const setItemHidden = async (item, hidden) => {
+  // ---------- Using a template ----------
+  const copyTemplate = async () => {
     setBusy(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/dashboard_item_preferences?on_conflict=user_id,item_id`, {
-        method: 'POST',
-        headers: { ...authHeaders(), Prefer: 'resolution=merge-duplicates,return=representation' },
-        body: JSON.stringify([{ user_id: user.id, item_id: item.id, is_hidden: hidden, updated_at: new Date().toISOString() }])
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/use_dashboard_template`, {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ p_template_id: dashboard.id })
       });
       if (!res.ok) throw new Error(await errorDetail(res));
-      const saved = await res.json().catch(() => []);
-      if (!Array.isArray(saved) || saved.length === 0) throw new Error('nothing was saved - try reloading, or logging out and back in');
-      setItemPrefs(prev => ({ ...prev, [item.id]: saved[0] }));
+      const newId = await res.json();
+      notify.success(`"${dashboard.title}" is now one of your dashboards. Change it however you like - the template stays as it is.`);
+      router.push(`/dashboard?id=${newId}`);
     } catch (error) {
-      notify.error(`Couldn't change it: ${error.message}`);
+      notify.error(`Couldn't use the template: ${error.message}`);
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   // ---------- Editing: the shape of the layout ----------
@@ -440,11 +467,26 @@ export default function Dashboard() {
   };
 
   // ---------- Editing: placing reports ----------
-  const usedIds = [...boxes.map(x => x.entry).filter(Boolean), ...tray].map(x => x.report_id);
-  const allowedOn = (report, key) => (key
-    ? report.role_key === key
-    : (report.role_key === null && report.owner_id === user?.id) || (!!report.role_key && !!roleOf(report.role_key)));
-  const addable = eligible.filter(r => allowedOn(r, roleKey) && !usedIds.includes(r.id));
+  const usedIds = [...boxes.map(x => x.entry).filter(Boolean), ...tray].map(x => x.report_id).filter(Boolean);
+  // What can go where:
+  //   your own dashboard: your reports and your roles' reports
+  //   a role's template: that role's reports (linked) and your own (copied)
+  //   a template for everyone: your own reports (copied)
+  const allowedOn = (report, template, key) => {
+    const mine = report.role_key === null && report.owner_id === user?.id;
+    if (!template) return mine || (!!report.role_key && !!roleOf(report.role_key));
+    return mine || (!!key && report.role_key === key);
+  };
+  const addable = eligible.filter(r => allowedOn(r, isTemplate, roleKey) && !usedIds.includes(r.id));
+  const entryTitle = (entry) => (entry.snapshot ? entry.snapshot.title : reportsById[entry.report_id]?.title) || 'a report you can\'t see';
+  // How a report behaves when someone uses the template.
+  const entryNote = (entry) => {
+    if (!isTemplate) return '';
+    if (entry.snapshot) return 'each person gets their own copy';
+    const r = reportsById[entry.report_id];
+    if (r?.role_key) return `shared ${roleOf(r.role_key)?.label || 'role'} report - stays linked`;
+    return 'each person gets their own copy';
+  };
 
   // Put something in a box. Whatever was there swaps places with it.
   const placeInBox = (source, target) => {
@@ -483,15 +525,19 @@ export default function Dashboard() {
     else setTray(tray.map((x, j) => (j === index ? { ...x, row_limit: value } : x)));
   };
 
-  const changeRole = (key) => {
-    const fits = (x) => !x || !reportsById[x.report_id] || allowedOn(reportsById[x.report_id], key);
+  // Switch between your own dashboard, a template for everyone, and a
+  // role's template, taking off any report that can't go on the new kind.
+  const changeTarget = (template, key) => {
+    const fits = (x) => !x || (x.snapshot ? template : !reportsById[x.report_id] || allowedOn(reportsById[x.report_id], template, key));
     const dropped = [...boxes.map(x => x.entry), ...tray].filter(x => x && !fits(x));
     if (dropped.length > 0) {
-      notify.info(`Took off ${dropped.length} report${dropped.length === 1 ? '' : 's'} that can't go on ${key ? `a ${roleOf(key)?.label} dashboard` : 'a personal dashboard'}.`);
+      const where = !template ? 'your own dashboard' : key ? `a ${roleOf(key)?.label} template` : 'a template for everyone';
+      notify.info(`Took off ${dropped.length} report${dropped.length === 1 ? '' : 's'} that can't go on ${where}.`);
     }
     setBoxes(boxes.map(x => (fits(x.entry) ? x : { ...x, entry: null })));
     setTray(tray.filter(fits));
-    setRoleKey(key);
+    setIsTemplate(template);
+    setRoleKey(template ? key : '');
   };
 
   // Drag and drop.
@@ -505,7 +551,7 @@ export default function Dashboard() {
 
   const save = async () => {
     if (!title.trim()) { notify.error('Give the dashboard a name before saving.'); return; }
-    if (roleKey && !description.trim()) { notify.error('Say what this dashboard is for before adding it to a role - it\'s how everyone else will know why it\'s there.'); return; }
+    if (isTemplate && !description.trim()) { notify.error('Say what this template is for - it\'s how other people will know whether it\'s useful to them.'); return; }
     if (boxes.length === 0) { notify.error('Add at least one box to the layout before saving.'); return; }
     if (tray.length > 0 && !window.confirm(`${tray.length} report${tray.length === 1 ? ' isn\'t' : 's aren\'t'} in a box yet, so ${tray.length === 1 ? 'it' : 'they'} won't be on the dashboard. Save anyway?`)) return;
     const badLimit = boxes.find(x => x.entry && x.entry.row_limit !== null && !(Number.isInteger(x.entry.row_limit) && x.entry.row_limit > 0));
@@ -521,12 +567,23 @@ export default function Dashboard() {
         d = (await writeJson(`report_dashboards?id=eq.${d.id}`, 'PATCH', body))[0];
       } else {
         let hubOrder = 0;
-        if (!roleKey) {
-          const last = await getJson(`report_dashboards?select=hub_order&owner_id=eq.${user.id}&role_key=is.null&order=hub_order.desc&limit=1`);
+        if (!isTemplate) {
+          const last = await getJson(`report_dashboards?select=hub_order&owner_id=eq.${user.id}&is_template=eq.false&order=hub_order.desc&limit=1`);
           hubOrder = (last[0]?.hub_order || 0) + 1;
         }
-        d = (await writeJson('report_dashboards', 'POST', { ...body, owner_id: user.id, role_key: roleKey || null, hub_order: hubOrder }))[0];
+        d = (await writeJson('report_dashboards', 'POST', { ...body, owner_id: user.id, is_template: isTemplate, role_key: isTemplate && roleKey ? roleKey : null, hub_order: hubOrder }))[0];
       }
+
+      // On a template, your own reports are stored as a snapshot, so other
+      // people can preview them and each get their own copy.
+      const asSaved = (x) => {
+        if (!d.is_template || x.snapshot) return { report_id: x.report_id || null, snapshot: x.snapshot || null };
+        const r = reportsById[x.report_id];
+        if (r && !r.role_key) {
+          return { report_id: null, snapshot: { title: r.title, description: r.description, dataset_key: r.dataset_key, definition: r.definition, display: r.display } };
+        }
+        return { report_id: x.report_id, snapshot: null };
+      };
 
       // Bring the saved reports in line with the boxes, keeping existing
       // entries where possible.
@@ -539,10 +596,10 @@ export default function Dashboard() {
         if (x.id) {
           await writeJson(`report_dashboard_items?id=eq.${x.id}`, 'PATCH', { position: x.position, row_limit: x.row_limit });
         } else {
-          await writeJson('report_dashboard_items', 'POST', { dashboard_id: d.id, report_id: x.report_id, position: x.position, row_limit: x.row_limit });
+          await writeJson('report_dashboard_items', 'POST', { dashboard_id: d.id, ...asSaved(x), position: x.position, row_limit: x.row_limit });
         }
       }
-      notify.success(d.role_key ? `Saved "${d.title}" - everyone with the ${roleOf(d.role_key)?.label} role sees the change` : `Saved "${d.title}"`);
+      notify.success(d.is_template ? `Saved the template "${d.title}" for ${audienceWords(d.role_key)}` : `Saved "${d.title}"`);
       setEditing(false);
       if (dashboard) start();
       else router.replace(`/dashboard?id=${d.id}`);
@@ -553,8 +610,9 @@ export default function Dashboard() {
   };
 
   const remove = async () => {
-    const forEveryone = dashboard.role_key ? ` It disappears for everyone with the ${roleOf(dashboard.role_key)?.label} role.` : '';
-    if (!window.confirm(`Delete the dashboard "${dashboard.title}"?${forEveryone} The reports on it stay where they are. This can't be undone.`)) return;
+    const what = dashboard.is_template ? 'template' : 'dashboard';
+    const extra = dashboard.is_template ? ` It disappears for ${audienceWords(dashboard.role_key)}, but anyone who already used it keeps their own dashboard.` : '';
+    if (!window.confirm(`Delete the ${what} "${dashboard.title}"?${extra} The reports on it stay where they are. This can't be undone.`)) return;
     setBusy(true);
     try {
       await writeJson(`report_dashboards?id=eq.${dashboard.id}`, 'DELETE');
@@ -598,6 +656,11 @@ export default function Dashboard() {
 
   const backLink = <Link href="/insights?tab=dashboards" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>;
   const reportLabel = (r) => (r.role_key ? `${r.title} (${roleOf(r.role_key)?.label || 'role'} report)` : r.title);
+  const templateTag = (d) => (
+    <span style={{ ...s.tag, marginBottom: '0.4rem', color: '#fff', borderColor: PERSONAL_TEXT }}>
+      <i className="ti ti-template" aria-hidden="true"></i>Template · for {d.role_key ? `${roleOf(d.role_key)?.label || 'a role'}` : 'everyone'}
+    </span>
+  );
   const boxName = (i) => `Box ${i + 1}`;
 
   // How many results a box shows: a few set choices, All, or any number.
@@ -605,7 +668,7 @@ export default function Dashboard() {
     const value = entry.row_limit;
     const custom = value !== null && !LIMIT_CHOICES.includes(value);
     const choice = value === null ? 'all' : custom ? 'other' : String(value);
-    const name = reportsById[entry.report_id]?.title || 'this report';
+    const name = entryTitle(entry);
     return (
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
         <label style={{ color: GREY_TEXT }} htmlFor={`limit-${where}-${index}`}>Show</label>
@@ -635,14 +698,17 @@ export default function Dashboard() {
 
   // A placed report or a waiting one, with the non-drag way to move it.
   const entryCard = (entry, where, index) => {
-    const r = reportsById[entry.report_id];
+    const note = entryNote(entry);
     return (
       <div draggable onDragStart={(e) => startDrag(e, { kind: where, index })}
         style={{ border: `1px solid ${PERSONAL_TEXT}66`, background: `${PERSONAL_FILL}33`, borderRadius: '0.375rem', padding: '0.5rem', cursor: 'grab', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
           <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT, marginTop: '0.15rem' }} aria-hidden="true"></i>
-          <span style={{ flex: 1, fontWeight: 'bold', fontSize: '0.875rem', overflowWrap: 'anywhere' }}>{r ? reportLabel(r) : <em style={{ color: GREY_TEXT }}>A report you can't see</em>}</span>
-          <button type="button" style={{ ...s.link, color: GREY_TEXT }} aria-label={`Take ${r?.title || 'this report'} off the dashboard`}
+          <span style={{ flex: 1, fontWeight: 'bold', fontSize: '0.875rem', overflowWrap: 'anywhere' }}>
+            {entry.snapshot || reportsById[entry.report_id] ? (entry.snapshot ? entry.snapshot.title : reportLabel(reportsById[entry.report_id])) : <em style={{ color: GREY_TEXT }}>A report you can't see</em>}
+            {note && <span style={{ display: 'block', color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.75rem' }}>{note}</span>}
+          </span>
+          <button type="button" style={{ ...s.link, color: GREY_TEXT }} aria-label={`Take ${entryTitle(entry)} off the dashboard`}
             onClick={() => (where === 'box' ? setBoxes(boxes.map((x, j) => (j === index ? { ...x, entry: null } : x))) : setTray(tray.filter((_, j) => j !== index)))}>
             <i className="ti ti-x" aria-hidden="true"></i>
           </button>
@@ -659,7 +725,7 @@ export default function Dashboard() {
             <option value="">Choose a box…</option>
             {boxes.map((box, j) => (where === 'box' && j === index ? null : (
               <option key={j} value={String(j)}>
-                {boxName(j)} ({sizeWords(box)}){box.entry ? ` - swap with ${reportsById[box.entry.report_id]?.title || 'the report there'}` : ''}
+                {boxName(j)} ({sizeWords(box)}){box.entry ? ` - swap with ${entryTitle(box.entry)}` : ''}
               </option>
             )))}
             {where === 'box' && <option value="tray">Out of the layout, for now</option>}
@@ -686,44 +752,63 @@ export default function Dashboard() {
     return (
       <div style={s.container}><div style={{ ...s.wrapper, maxWidth: '1200px' }}>
         {backLink}
-        <h1 style={{ ...s.title, marginBottom: '1rem' }}>{dashboard ? 'Edit dashboard' : 'New dashboard'}</h1>
+        <h1 style={{ ...s.title, marginBottom: '1rem' }}>
+          {dashboard ? (isTemplate ? 'Edit template' : 'Edit dashboard') : (isTemplate ? 'New template' : 'New dashboard')}
+        </h1>
+        {dashboard?.is_template && (
+          <div role="note" style={{ ...s.card, marginBottom: '1rem', borderColor: PERSONAL_TEXT, background: `${PERSONAL_FILL}22`, flexDirection: 'row', gap: '0.6rem', alignItems: 'flex-start' }}>
+            <i className="ti ti-template" style={{ fontSize: '1.3rem', color: PERSONAL_TEXT }} aria-hidden="true"></i>
+            <div>
+              <strong>You're editing the template for {audienceWords(dashboard.role_key)}, not your own copy.</strong>
+              <p style={{ ...s.help, margin: '0.2rem 0 0' }}>
+                Changes affect what people get when they use it from now on. Dashboards people already made from it don't change.
+                To change only your own version, use the template and change your copy instead.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div style={{ ...s.card, marginBottom: '1rem' }}>
-          {!dashboard && myRoles.length > 0 && (
+          {!dashboard && (
             <>
-              <span style={{ ...s.label, marginTop: 0 }}>Where should it go?</span>
-              <div style={s.segment} role="group" aria-label="Where to save">
-                <button type="button" style={s.segmentBtn(!roleKey)} aria-pressed={!roleKey} onClick={() => changeRole('')}>My dashboards</button>
-                <button type="button" style={s.segmentBtn(!!roleKey)} aria-pressed={!!roleKey} onClick={() => changeRole(roleKey || myRoles[0].key)}>Role dashboards</button>
+              <span style={{ ...s.label, marginTop: 0 }}>What are you making?</span>
+              <div style={s.segment} role="group" aria-label="Dashboard or template">
+                <button type="button" style={s.segmentBtn(!isTemplate)} aria-pressed={!isTemplate} onClick={() => changeTarget(false, '')}>My own dashboard</button>
+                <button type="button" style={s.segmentBtn(isTemplate)} aria-pressed={isTemplate} onClick={() => changeTarget(true, roleKey)}>A template for other people</button>
               </div>
-              {roleKey && myRoles.length > 1 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }} role="group" aria-label="Which role">
-                  {myRoles.map(r => (
-                    <button key={r.key} type="button" style={s.pill(roleKey === r.key)} aria-pressed={roleKey === r.key} onClick={() => changeRole(r.key)}>
-                      {roleKey === r.key && <i className="ti ti-check" aria-hidden="true"></i>}{r.label}
+              {isTemplate && (
+                <>
+                  <span style={s.label}>Who's it for?</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }} role="group" aria-label="Who the template is for">
+                    <button type="button" style={s.pill(!roleKey)} aria-pressed={!roleKey} onClick={() => changeTarget(true, '')}>
+                      {!roleKey && <i className="ti ti-check" aria-hidden="true"></i>}Everyone
                     </button>
-                  ))}
-                </div>
+                    {myRoles.map(r => (
+                      <button key={r.key} type="button" style={s.pill(roleKey === r.key)} aria-pressed={roleKey === r.key} onClick={() => changeTarget(true, r.key)}>
+                        {roleKey === r.key && <i className="ti ti-check" aria-hidden="true"></i>}{r.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
               <p style={s.help}>
-                {roleKey
-                  ? `Everyone with the ${roleOf(roleKey)?.label} role will see this dashboard, and it can only hold that role's reports.`
-                  : 'Only you will see this dashboard. It can hold your own reports and your roles\' reports.'}
+                {!isTemplate
+                  ? 'Only you will see this dashboard. It can hold your own reports and your roles\' reports.'
+                  : roleKey
+                    ? `Everyone with the ${roleOf(roleKey)?.label} role can preview it and use it as their own dashboard. ${roleOf(roleKey)?.label} reports on it stay linked, so their updates reach everyone; your own reports are copied for each person.`
+                    : 'Anyone signed in can preview it and use it as their own dashboard. Your reports on it are copied for each person, so later changes don\'t affect them.'}
               </p>
             </>
-          )}
-          {dashboard?.role_key && (
-            <p style={{ ...s.help, marginTop: 0 }}><i className="ti ti-users" aria-hidden="true"></i> A {roleOf(dashboard.role_key)?.label} dashboard. Changes show for everyone with that role.</p>
           )}
 
           <label style={s.label} htmlFor="dash-title">Name <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>(required)</span></label>
           <input id="dash-title" value={title} onChange={(e) => setTitle(e.target.value)} style={s.input} placeholder="For example: Songbook work" />
           <label style={s.label} htmlFor="dash-desc">
-            {roleKey ? 'What it\'s for' : 'Description'}{' '}
-            <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>{roleKey ? '(required for role dashboards)' : '(optional)'}</span>
+            {isTemplate ? 'What it\'s for' : 'Description'}{' '}
+            <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>{isTemplate ? '(required for templates)' : '(optional)'}</span>
           </label>
           <input id="dash-desc" value={description} onChange={(e) => setDescription(e.target.value)} style={s.input}
-            placeholder={roleKey ? 'Why this dashboard is here and when to use it' : 'A short note about what this dashboard is for'} />
+            placeholder={isTemplate ? 'Who this is useful for, and what it helps with' : 'A short note about what this dashboard is for'} />
         </div>
 
         {/* Ready-made layouts */}
@@ -837,12 +922,14 @@ export default function Dashboard() {
         <div style={{ ...s.card, marginBottom: '1rem' }}>
           <h2 style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Add reports</h2>
           <p style={{ ...s.help, margin: '0 0 0.5rem' }}>
-            {roleKey ? `${roleOf(roleKey)?.label} reports that aren't on it yet.` : 'Your reports and your roles\' reports that aren\'t on it yet.'}
+            {!isTemplate ? 'Your reports and your roles\' reports that aren\'t on it yet.'
+              : roleKey ? `${roleOf(roleKey)?.label} reports (linked) and your own reports (copied for each person) that aren't on it yet.`
+                : 'Your own reports that aren\'t on it yet. Each person who uses the template gets their own copy.'}
             {' '}Each one goes in the first empty box, or waits to be placed.
           </p>
           {addable.length === 0 ? (
             <p style={{ color: GREY_TEXT, fontSize: '0.85rem', fontStyle: 'italic', margin: 0 }}>
-              {roleKey ? 'No more reports for this role. Add one from the report builder by saving it to Role reports.' : 'Every report you can use is already on it.'}
+              Every report that can go on it is already there.
             </p>
           ) : addable.map(r => (
             <div key={r.id} style={s.row}>
@@ -861,7 +948,7 @@ export default function Dashboard() {
           <button type="button" style={s.secondary} onClick={() => (dashboard ? startEditing(dashboard, items, false) : router.push('/insights?tab=dashboards'))} disabled={busy}>Cancel</button>
           {dashboard && (
             <button type="button" style={{ ...s.secondary, color: DANGER_TEXT, borderColor: `${DANGER_TEXT}66`, marginLeft: 'auto' }} onClick={remove} disabled={busy}>
-              <i className="ti ti-trash" aria-hidden="true"></i> {dashboard.role_key ? 'Delete for everyone' : 'Delete dashboard'}
+              <i className="ti ti-trash" aria-hidden="true"></i> {dashboard.is_template ? 'Delete template' : 'Delete dashboard'}
             </button>
           )}
         </div>
@@ -873,8 +960,7 @@ export default function Dashboard() {
 
   // ---------- View screen ----------
   const laid = layoutOf(dashboard, items);
-  const hiddenCount = dashboard.role_key ? items.filter(it => itemPrefs[it.id]?.is_hidden).length : 0;
-  const visibleBoxes = laid.boxes.filter(box => box.item && (showHidden || !itemPrefs[box.item.id]?.is_hidden));
+  const visibleBoxes = laid.boxes.filter(box => box.item);
 
   const resultArea = (report, rowLimit) => {
     const state = results[report.id];
@@ -886,15 +972,19 @@ export default function Dashboard() {
   };
 
   const viewCard = (item) => {
-    const report = reportsById[item.report_id];
-    const hidden = !!itemPrefs[item.id]?.is_hidden;
+    const report = itemReport(item);
     return (
-      <section style={{ ...s.card, opacity: hidden ? 0.6 : 1 }} aria-label={report?.title || 'A report you can\'t see'}>
+      <section style={s.card} aria-label={report?.title || 'A report you can\'t see'}>
         {report ? (
           <>
-            <h2 style={s.cardTitle}>{report.title}{hidden && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}> (hidden)</span>}</h2>
+            <h2 style={s.cardTitle}>{report.title}</h2>
+            {dashboard.is_template && (
+              <p style={{ ...s.help, margin: '0.2rem 0 0', fontSize: '0.75rem' }}>
+                {report.isCopy ? 'You\'ll get your own copy of this report' : `Shared ${roleOf(report.role_key)?.label || 'role'} report - stays linked`}
+              </p>
+            )}
             {report.description ? <p style={{ ...s.help, margin: '0.25rem 0 0.75rem' }}>{report.description}</p> : <div style={{ height: '0.75rem' }} />}
-            {!hidden && <div style={{ marginBottom: '0.5rem', overflowX: 'auto' }}>{resultArea(report, item.row_limit)}</div>}
+            <div style={{ marginBottom: '0.5rem', overflowX: 'auto' }}>{resultArea(report, item.row_limit)}</div>
           </>
         ) : (
           <p style={{ color: '#cbd5e1', margin: '0 0 0.5rem' }}>
@@ -902,15 +992,10 @@ export default function Dashboard() {
           </p>
         )}
         <div style={s.actions}>
-          {report && (
+          {report && !report.isCopy && (
             <Link href={`/reports?id=${report.id}&view=full`} style={{ ...s.action, color: PERSONAL_TEXT, borderColor: `${PERSONAL_TEXT}66` }}>
               <i className="ti ti-arrows-maximize" aria-hidden="true"></i> Open
             </Link>
-          )}
-          {dashboard.role_key && (
-            <button type="button" style={s.action} disabled={busy} onClick={() => setItemHidden(item, !hidden)}>
-              <i className={`ti ${hidden ? 'ti-eye' : 'ti-eye-off'}`} aria-hidden="true"></i> {hidden ? 'Show again' : 'Hide for me'}
-            </button>
           )}
         </div>
       </section>
@@ -922,22 +1007,29 @@ export default function Dashboard() {
       {backLink}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.25rem' }}>
         <div>
-          {dashboard.role_key && <span style={{ ...s.tag, marginBottom: '0.4rem' }}><i className="ti ti-users" aria-hidden="true"></i>{roleOf(dashboard.role_key)?.label || 'Role'} dashboard</span>}
+          {dashboard.is_template && templateTag(dashboard)}
           <h1 style={s.title}>{dashboard.title}</h1>
           {dashboard.description && (
-            <p style={{ ...s.help, color: '#cbd5e1' }}>{dashboard.role_key ? <><strong>What it's for:</strong> {dashboard.description}</> : dashboard.description}</p>
+            <p style={{ ...s.help, color: '#cbd5e1' }}>{dashboard.is_template ? <><strong>What it's for:</strong> {dashboard.description}</> : dashboard.description}</p>
+          )}
+          {dashboard.is_template && (
+            <p style={s.help}>This is a preview, showing your own data. Use it as your own dashboard to change anything - the template stays as it is.</p>
           )}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-          {hiddenCount > 0 && (
-            <button type="button" style={s.link} onClick={() => setShowHidden(!showHidden)} aria-pressed={showHidden}>
-              <i className={`ti ${showHidden ? 'ti-eye-off' : 'ti-eye'}`} aria-hidden="true"></i>
-              {showHidden ? 'Leave out the ones I hid' : `Show the ${hiddenCount} I hid`}
+          {dashboard.is_template && (
+            <button type="button" style={s.primary} onClick={copyTemplate} disabled={busy}>
+              <i className="ti ti-copy" aria-hidden="true"></i> Use as my own dashboard
             </button>
+          )}
+          {!dashboard.is_template && (
+            <Link href={`/dashboard?new=1&template=1&from=${dashboard.id}`} style={{ ...s.secondary, textDecoration: 'none' }}>
+              <i className="ti ti-template" aria-hidden="true"></i> Make a template from this
+            </Link>
           )}
           {canEdit && (
             <button type="button" style={s.secondary} onClick={() => startEditing(dashboard, items)}>
-              <i className="ti ti-layout" aria-hidden="true"></i> Edit dashboard
+              <i className="ti ti-layout" aria-hidden="true"></i> {dashboard.is_template ? 'Edit template' : 'Edit dashboard'}
             </button>
           )}
         </div>
