@@ -16,92 +16,125 @@ import {
 //   /dashboard?id=…&edit=1    change it (if allowed)
 //   /dashboard?new=1          make one (&for=role to start it as a role dashboard)
 //
-// Layout (report_dashboards.layout) is a list of rows; each row type has a
-// fixed number of boxes. A report's position is the number of its box,
-// counting from the top left. Each box also says how many results to show
-// (row_limit; empty = all).
+// Layout (report_dashboards.layout) is a grid 12 columns wide:
+//   { "version": 2, "boxes": [ { "x", "y", "w", "h" }, … ] }
+// x and w count columns (so a quarter is 3, a third 4, a half 6); y and h
+// count height units, and a box is 1 to 4 units tall. Boxes are kept in
+// reading order (top to bottom, then left to right), and a report's position
+// is the number of its box in that order. Each box also says how many results
+// to show (report_dashboard_items.row_limit; empty = all).
+//
+// Older dashboards stored a list of row types, or nothing at all (just
+// normal/wide sizes); they're converted on the way in and saved in the new
+// form the next time they're edited.
 //
 // Order follows the style guide: drag and drop wherever things are put in
 // order, always with a way to do the same thing without dragging.
 
-const ROW_TYPES = {
-  '1': { label: 'One wide box', boxes: 1 },
-  '2': { label: 'Two side by side', boxes: 2 },
-  '3': { label: 'Three side by side', boxes: 3 },
-  'big-left': { label: 'One big box, two small on the right', boxes: 3 },
-  'big-right': { label: 'One big box, two small on the left', boxes: 3 }
-};
-const BOX_NAMES = {
-  '1': [''],
-  '2': ['left', 'right'],
-  '3': ['left', 'middle', 'right'],
-  'big-left': ['big box', 'top right', 'bottom right'],
-  'big-right': ['big box', 'top left', 'bottom left']
-};
-const PRESETS = [
-  { label: 'Two on top, one wide below', rows: ['2', '1'] },
-  { label: 'One wide on top, two below', rows: ['1', '2'] },
-  { label: 'Three across', rows: ['3'] },
-  { label: 'One big beside two small', rows: ['big-left'] },
-  { label: 'Four in a grid', rows: ['2', '2'] },
-  { label: 'One under another', rows: ['1', '1', '1'] }
-];
+const COLUMNS = 12;
+const MAX_HEIGHT = 4;
+const WIDTHS = [3, 4, 6, 8, 9, 12];   // quarter, third, half, two thirds, three quarters, full
+const WIDTH_WORDS = { 3: 'a quarter wide', 4: 'a third wide', 6: 'half wide', 8: 'two thirds wide', 9: 'three quarters wide', 12: 'full width' };
 const LIMIT_CHOICES = [5, 10, 25, 50];
 const SLOW_ABOVE = 100;
 
-const boxCount = (rows) => rows.reduce((n, t) => n + (ROW_TYPES[t]?.boxes || 0), 0);
-const rowStarts = (rows) => {
-  const starts = [];
-  let n = 0;
-  rows.forEach(t => { starts.push(n); n += ROW_TYPES[t]?.boxes || 0; });
-  return starts;
+const b = (x, y, w, h) => ({ x, y, w, h });
+const PRESETS = [
+  { label: 'Two on top, one wide below', boxes: [b(0, 0, 6, 1), b(6, 0, 6, 1), b(0, 1, 12, 1)] },
+  { label: 'One wide on top, two below', boxes: [b(0, 0, 12, 1), b(0, 1, 6, 1), b(6, 1, 6, 1)] },
+  { label: 'Three across', boxes: [b(0, 0, 4, 1), b(4, 0, 4, 1), b(8, 0, 4, 1)] },
+  { label: 'Four across', boxes: [b(0, 0, 3, 1), b(3, 0, 3, 1), b(6, 0, 3, 1), b(9, 0, 3, 1)] },
+  { label: 'Four in a grid', boxes: [b(0, 0, 6, 1), b(6, 0, 6, 1), b(0, 1, 6, 1), b(6, 1, 6, 1)] },
+  { label: 'One big beside two small', boxes: [b(0, 0, 8, 2), b(8, 0, 4, 1), b(8, 1, 4, 1)] },
+  { label: 'One big beside three small', boxes: [b(0, 0, 8, 3), b(8, 0, 4, 1), b(8, 1, 4, 1), b(8, 2, 4, 1)] },
+  { label: 'One under another', boxes: [b(0, 0, 12, 1), b(0, 1, 12, 1), b(0, 2, 12, 1)] }
+];
+
+const readingOrder = (list) => [...list].sort((p, q) => p.y - q.y || p.x - q.x);
+const sizeWords = (box) => `${WIDTH_WORDS[box.w] || `${box.w} of 12 columns wide`}, ${box.h} unit${box.h === 1 ? '' : 's'} tall`;
+const sameShape = (p, q) => p.length === q.length && readingOrder(p).every((x, i) => {
+  const y = readingOrder(q)[i];
+  return x.x === y.x && x.y === y.y && x.w === y.w && x.h === y.h;
+});
+
+// Which grid cells are taken, ignoring the boxes listed in `skip`.
+const taken = (boxes, skip = []) => {
+  const cells = new Set();
+  boxes.forEach((box, i) => {
+    if (skip.includes(i)) return;
+    for (let y = box.y; y < box.y + box.h; y++) {
+      for (let x = box.x; x < box.x + box.w; x++) cells.add(`${x},${y}`);
+    }
+  });
+  return cells;
 };
-const boxName = (rows, box) => {
-  const starts = rowStarts(rows);
-  for (let r = rows.length - 1; r >= 0; r--) {
-    if (box >= starts[r]) {
-      const part = BOX_NAMES[rows[r]]?.[box - starts[r]];
-      return `Row ${r + 1}${part ? `, ${part}` : ''}`;
+const areaFree = (cells, x, y, w, h) => {
+  if (x < 0 || x + w > COLUMNS) return false;
+  for (let yy = y; yy < y + h; yy++) {
+    for (let xx = x; xx < x + w; xx++) if (cells.has(`${xx},${yy}`)) return false;
+  }
+  return true;
+};
+const gridHeight = (boxes) => boxes.reduce((n, box) => Math.max(n, box.y + box.h), 0);
+
+// Empty stretches of the grid, row by row, for "add a box here".
+const emptySpaces = (boxes) => {
+  const cells = taken(boxes);
+  const spaces = [];
+  for (let y = 0; y < gridHeight(boxes); y++) {
+    let x = 0;
+    while (x < COLUMNS) {
+      if (cells.has(`${x},${y}`)) { x++; continue; }
+      const start = x;
+      while (x < COLUMNS && !cells.has(`${x},${y}`)) x++;
+      spaces.push({ x: start, y, w: x - start, h: 1 });
     }
   }
-  return `Box ${box + 1}`;
+  return spaces;
 };
 
-// Dashboards made before layouts: wide reports get a row of their own, the
-// rest pair up two to a row.
-const layoutFromOldSizes = (items) => {
-  const rows = [];
-  const boxes = [];
-  let openPair = -1;
-  [...items].sort((a, b) => a.position - b.position).forEach(it => {
-    if (it.size === 'wide') {
-      rows.push('1');
-      boxes.push(it);
-      openPair = -1;
-    } else if (openPair >= 0) {
-      boxes[openPair] = it;
-      openPair = -1;
-    } else {
-      rows.push('2');
-      boxes.push(it, null);
-      openPair = boxes.length - 1;
-    }
-  });
-  if (rows.length === 0) rows.push('2', '1');
-  while (boxes.length < boxCount(rows)) boxes.push(null);
-  return { rows, boxes };
+// ---------- Older layouts ----------
+const OLD_ROWS = {
+  '1': (y) => [b(0, y, 12, 1)],
+  '2': (y) => [b(0, y, 6, 1), b(6, y, 6, 1)],
+  '3': (y) => [b(0, y, 4, 1), b(4, y, 4, 1), b(8, y, 4, 1)],
+  'big-left': (y) => [b(0, y, 8, 2), b(8, y, 4, 1), b(8, y + 1, 4, 1)],
+  'big-right': (y) => [b(4, y, 8, 2), b(0, y, 4, 1), b(0, y + 1, 4, 1)]
 };
+const OLD_HEIGHT = { '1': 1, '2': 1, '3': 1, 'big-left': 2, 'big-right': 2 };
 
+// Returns boxes (each with its saved item, if any) in reading order, plus any
+// saved items that had no box.
 const layoutOf = (dashboard, items) => {
-  const rows = Array.isArray(dashboard?.layout) && dashboard.layout.length > 0 ? dashboard.layout : null;
-  if (!rows) return layoutFromOldSizes(items);
-  const boxes = Array(boxCount(rows)).fill(null);
+  const sorted = [...items].sort((p, q) => p.position - q.position);
+  let shapes;    // boxes in the order positions refer to
+  const layout = dashboard?.layout;
+  if (layout && Array.isArray(layout.boxes)) {
+    shapes = layout.boxes.map(x => ({ ...x }));
+  } else if (Array.isArray(layout) && layout.length > 0) {
+    shapes = [];
+    let y = 0;
+    layout.forEach(t => { if (OLD_ROWS[t]) { shapes.push(...OLD_ROWS[t](y)); y += OLD_HEIGHT[t]; } });
+  } else {
+    // No layout at all: wide reports get a row of their own, the rest pair up.
+    shapes = [];
+    let y = 0;
+    let half = null;
+    sorted.forEach(it => {
+      if (it.size === 'wide') { shapes.push(b(0, y, 12, 1)); y += 1; half = null; }
+      else if (half) { shapes.push(b(6, half, 6, 1)); half = null; }
+      else { shapes.push(b(0, y, 6, 1)); half = y; y += 1; }
+    });
+    if (shapes.length === 0) shapes = PRESETS[0].boxes.map(x => ({ ...x }));
+    return { boxes: readingOrder(shapes.map((s, i) => ({ ...s, item: sorted[i] || null }))), extra: [] };
+  }
+  const boxes = shapes.map(s => ({ ...s, item: null }));
   const extra = [];
-  [...items].sort((a, b) => a.position - b.position).forEach(it => {
-    if (it.position >= 0 && it.position < boxes.length && !boxes[it.position]) boxes[it.position] = it;
+  sorted.forEach(it => {
+    if (it.position >= 0 && it.position < boxes.length && !boxes[it.position].item) boxes[it.position].item = it;
     else extra.push(it);
   });
-  return { rows, boxes, extra };
+  return { boxes: readingOrder(boxes), extra };
 };
 
 // Narrow screens show every box full width, one under another.
@@ -116,43 +149,30 @@ function useNarrow() {
   return narrow;
 }
 
-// One row of boxes, laid out by its type.
-function LayoutRow({ type, narrow, children }) {
-  const kids = Array.isArray(children) ? children : [children];
-  const gap = '1rem';
-  if (narrow || type === '1') {
-    return <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap }}>{kids}</div>;
+// The grid itself. Each child is placed by its box.
+function Grid({ boxes, narrow, render, extra }) {
+  if (narrow) {
+    return <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>{boxes.map((box, i) => <div key={i}>{render(box, i)}</div>)}{extra}</div>;
   }
-  if (type === '2' || type === '3') {
-    return <div style={{ display: 'grid', gridTemplateColumns: `repeat(${type}, minmax(0, 1fr))`, gap }}>{kids}</div>;
-  }
-  const bigLeft = type === 'big-left';
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: bigLeft ? 'minmax(0, 2fr) minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 2fr)', gridTemplateRows: 'auto auto', gap }}>
-      <div style={{ gridColumn: bigLeft ? 1 : 2, gridRow: '1 / span 2', display: 'flex' }}>{kids[0]}</div>
-      <div style={{ gridColumn: bigLeft ? 2 : 1, gridRow: 1, display: 'flex' }}>{kids[1]}</div>
-      <div style={{ gridColumn: bigLeft ? 2 : 1, gridRow: 2, display: 'flex' }}>{kids[2]}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, minmax(0, 1fr))`, gridAutoRows: 'minmax(9rem, auto)', gap: '1rem' }}>
+      {boxes.map((box, i) => (
+        <div key={i} style={{ gridColumn: `${box.x + 1} / span ${box.w}`, gridRow: `${box.y + 1} / span ${box.h}`, display: 'flex', minWidth: 0 }}>
+          {render(box, i)}
+        </div>
+      ))}
+      {extra}
     </div>
   );
 }
 
 // A small picture of a layout, for choosing one.
-function LayoutPicture({ rows }) {
-  const cell = { background: '#475569', borderRadius: '2px', minHeight: '0.6rem' };
+function LayoutPicture({ boxes }) {
+  const rows = Math.max(1, gridHeight(boxes));
   return (
-    <div style={{ width: '4.5rem', display: 'flex', flexDirection: 'column', gap: '3px' }} aria-hidden="true">
-      {rows.map((t, i) => (
-        t === 'big-left' || t === 'big-right' ? (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: t === 'big-left' ? '2fr 1fr' : '1fr 2fr', gridTemplateRows: '0.6rem 0.6rem', gap: '3px' }}>
-            <div style={{ ...cell, gridColumn: t === 'big-left' ? 1 : 2, gridRow: '1 / span 2' }} />
-            <div style={{ ...cell, gridColumn: t === 'big-left' ? 2 : 1, gridRow: 1 }} />
-            <div style={{ ...cell, gridColumn: t === 'big-left' ? 2 : 1, gridRow: 2 }} />
-          </div>
-        ) : (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: `repeat(${ROW_TYPES[t]?.boxes || 1}, 1fr)`, gap: '3px' }}>
-            {Array.from({ length: ROW_TYPES[t]?.boxes || 1 }).map((_, j) => <div key={j} style={cell} />)}
-          </div>
-        )
+    <div aria-hidden="true" style={{ width: '4.5rem', display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, gridTemplateRows: `repeat(${rows}, 0.55rem)`, gap: '2px' }}>
+      {boxes.map((box, i) => (
+        <div key={i} style={{ gridColumn: `${box.x + 1} / span ${box.w}`, gridRow: `${box.y + 1} / span ${box.h}`, background: '#475569', borderRadius: '2px' }} />
       ))}
     </div>
   );
@@ -181,12 +201,12 @@ export default function Dashboard() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [roleKey, setRoleKey] = useState('');
-  const [rows, setRows] = useState(['2', '1']);
-  const [boxes, setBoxes] = useState([null, null, null]);  // per box: { id?, report_id, row_limit } or null
+  const [boxes, setBoxes] = useState([]);                  // [{ x, y, w, h, entry }] in reading order
   const [tray, setTray] = useState([]);                    // added but not in a box yet
+  const [selected, setSelected] = useState(-1);            // box whose shape is being changed
   const [eligible, setEligible] = useState([]);
-  const [over, setOver] = useState('');                    // what's being dragged over
-  const drag = useRef(null);                               // { kind: 'box'|'tray'|'row', index }
+  const [over, setOver] = useState('');
+  const drag = useRef(null);                               // { kind: 'box'|'tray', index }
 
   useEffect(() => { if (router.isReady) start(); }, [router.isReady, router.query.id]);
 
@@ -229,9 +249,9 @@ export default function Dashboard() {
         setTitle('');
         setDescription('');
         setRoleKey(router.query.for === 'role' && held.length > 0 ? held[0].key : '');
-        setRows(['2', '1']);
-        setBoxes([null, null, null]);
+        setBoxes(PRESETS[0].boxes.map(x => ({ ...x, entry: null })));
         setTray([]);
+        setSelected(-1);
         setEditing(true);
         setLoading(false);
         return;
@@ -271,7 +291,7 @@ export default function Dashboard() {
     return !!d && (d.audience === 'self' || permissions.includes(d.required_permission));
   };
 
-  // Ask only for as many results as the box shows (all, when it shows all).
+  // Ask only for about as many results as the box shows (all, when it shows all).
   const runOne = async (report, rowLimit, usable = canUse) => {
     if (!usable(report.dataset_key)) {
       setResults(prev => ({ ...prev, [report.id]: { noAccess: true } }));
@@ -298,9 +318,9 @@ export default function Dashboard() {
     setRoleKey(d.role_key || '');
     const laid = layoutOf(d, savedItems);
     const asDraft = (it) => (it ? { id: it.id, report_id: it.report_id, row_limit: it.row_limit } : null);
-    setRows(laid.rows);
-    setBoxes(laid.boxes.map(asDraft));
-    setTray((laid.extra || []).map(asDraft));
+    setBoxes(laid.boxes.map(({ item, ...shape }) => ({ ...shape, entry: asDraft(item) })));
+    setTray(laid.extra.map(asDraft));
+    setSelected(-1);
     setEditing(on);
   };
 
@@ -323,115 +343,153 @@ export default function Dashboard() {
     setBusy(false);
   };
 
-  // ---------- Editing: layout ----------
-  const usedIds = [...boxes.filter(Boolean), ...tray].map(x => x.report_id);
+  // ---------- Editing: the shape of the layout ----------
+  // Every change keeps boxes in reading order and keeps track of which
+  // report is in which box. `keep` is the box to leave selected afterwards.
+  const commit = (next, extraTray = [], keep = null) => {
+    const ordered = readingOrder(next);
+    setBoxes(ordered);
+    if (extraTray.length > 0) setTray([...tray, ...extraTray]);
+    setSelected(keep ? ordered.indexOf(keep) : -1);
+  };
+
+  // Start from a ready-made layout; reports already placed keep their order.
+  const applyPreset = (preset) => {
+    const placed = boxes.filter(x => x.entry).map(x => x.entry);
+    const next = preset.boxes.map(x => ({ ...x, entry: null }));
+    placed.slice(0, next.length).forEach((entry, i) => { next[i].entry = entry; });
+    const leftOver = placed.slice(next.length);
+    if (leftOver.length > 0) notify.info(`${leftOver.length} report${leftOver.length === 1 ? ' doesn\'t' : 's don\'t'} fit this layout, so ${leftOver.length === 1 ? 'it\'s' : 'they\'re'} waiting below to be placed.`);
+    commit(next, leftOver);
+  };
+
+  // What each shape change would do to the selected box, or why it can't.
+  const shapeOptions = (i) => {
+    const box = boxes[i];
+    const others = taken(boxes, [i]);
+    const opts = {};
+
+    [2, 3, 4].forEach(n => {
+      opts[`across${n}`] = box.w % n !== 0 || box.w / n < 3
+        ? { why: `It's too narrow to split into ${n} side by side (the smallest box is a quarter wide).` }
+        : { run: () => {
+            const part = box.w / n;
+            const pieces = Array.from({ length: n }, (_, k) => ({ x: box.x + k * part, y: box.y, w: part, h: box.h, entry: k === 0 ? box.entry : null }));
+            commit([...boxes.filter((_, j) => j !== i), ...pieces], [], pieces[0]);
+          } };
+      opts[`down${n}`] = box.h % n !== 0
+        ? { why: `It's ${box.h} unit${box.h === 1 ? '' : 's'} tall, which doesn't split evenly into ${n}. Make it taller first.` }
+        : { run: () => {
+            const part = box.h / n;
+            const pieces = Array.from({ length: n }, (_, k) => ({ x: box.x, y: box.y + k * part, w: box.w, h: part, entry: k === 0 ? box.entry : null }));
+            commit([...boxes.filter((_, j) => j !== i), ...pieces], [], pieces[0]);
+          } };
+    });
+
+    const join = (j, merged) => () => {
+      const other = boxes[j];
+      // Keep a report if there is one; if both have one, the second waits to be placed.
+      const entry = box.entry || other.entry;
+      const bumped = box.entry && other.entry ? [other.entry] : [];
+      const next = { ...merged, entry };
+      commit([...boxes.filter((_, k) => k !== i && k !== j), next], bumped, next);
+    };
+    const right = boxes.findIndex(o => o.x === box.x + box.w && o.y === box.y && o.h === box.h);
+    opts.mergeRight = right < 0
+      ? { why: 'There\'s no box to the right with the same top and height, so they can\'t be joined.' }
+      : { run: join(right, { x: box.x, y: box.y, w: box.w + boxes[right].w, h: box.h }) };
+    const below = boxes.findIndex(o => o.y === box.y + box.h && o.x === box.x && o.w === box.w);
+    opts.mergeBelow = below < 0
+      ? { why: 'There\'s no box underneath with the same left edge and width, so they can\'t be joined.' }
+      : { run: join(below, { x: box.x, y: box.y, w: box.w, h: box.h + boxes[below].h }) };
+
+    const reshape = (shape) => () => {
+      const next = { ...box, ...shape };
+      commit([...boxes.filter((_, j) => j !== i), next], [], next);
+    };
+    const wider = WIDTHS.find(w => w > box.w && box.x + w <= COLUMNS);
+    opts.wider = !wider
+      ? { why: 'It already reaches the right edge.' }
+      : !areaFree(others, box.x, box.y, wider, box.h)
+        ? { why: 'Another box is in the way on the right. Make that one narrower, or remove it, first.' }
+        : { run: reshape({ w: wider }) };
+    const narrower = [...WIDTHS].reverse().find(w => w < box.w);
+    opts.narrower = !narrower ? { why: 'It\'s already as narrow as a box can be (a quarter).' } : { run: reshape({ w: narrower }) };
+    opts.taller = box.h >= MAX_HEIGHT
+      ? { why: `It's already as tall as a box can be (${MAX_HEIGHT} units).` }
+      : !areaFree(others, box.x, box.y, box.w, box.h + 1)
+        ? { why: 'Another box is right underneath. Make that one shorter, or remove it, first.' }
+        : { run: reshape({ h: box.h + 1 }) };
+    opts.shorter = box.h <= 1 ? { why: 'It\'s already as short as a box can be (1 unit).' } : { run: reshape({ h: box.h - 1 }) };
+    return opts;
+  };
+
+  const removeBox = (i) => {
+    const gone = boxes[i];
+    commit(boxes.filter((_, j) => j !== i), gone.entry ? [gone.entry] : []);
+  };
+
+  const addBoxAt = (space) => {
+    const next = { ...space, entry: null };
+    commit([...boxes, next], [], next);
+  };
+
+  const addRowBelow = () => {
+    const next = { x: 0, y: gridHeight(boxes), w: 12, h: 1, entry: null };
+    commit([...boxes, next], [], next);
+  };
+
+  // ---------- Editing: placing reports ----------
+  const usedIds = [...boxes.map(x => x.entry).filter(Boolean), ...tray].map(x => x.report_id);
   const allowedOn = (report, key) => (key
     ? report.role_key === key
     : (report.role_key === null && report.owner_id === user?.id) || (!!report.role_key && !!roleOf(report.role_key)));
   const addable = eligible.filter(r => allowedOn(r, roleKey) && !usedIds.includes(r.id));
 
-  // Change the rows, keeping reports in the same order; any that no longer
-  // fit go back to the list of reports to place.
-  const applyRows = (nextRows) => {
-    const placed = boxes.filter(Boolean);
-    const count = boxCount(nextRows);
-    const nextBoxes = Array(count).fill(null);
-    placed.slice(0, count).forEach((x, i) => { nextBoxes[i] = x; });
-    const leftOver = placed.slice(count);
-    if (leftOver.length > 0) notify.info(`${leftOver.length} report${leftOver.length === 1 ? ' doesn\'t' : 's don\'t'} fit the new layout, so ${leftOver.length === 1 ? 'it\'s' : 'they\'re'} waiting below to be placed.`);
-    setRows(nextRows);
-    setBoxes(nextBoxes);
-    setTray([...tray, ...leftOver]);
-  };
-
-  // Changing a row's type keeps every box where it is, as far as possible.
-  const setRowType = (r, type) => {
-    const starts = rowStarts(rows);
-    const nextRows = rows.map((t, i) => (i === r ? type : t));
-    const nextStarts = rowStarts(nextRows);
-    const nextBoxes = Array(boxCount(nextRows)).fill(null);
-    const leftOver = [];
-    rows.forEach((t, i) => {
-      for (let j = 0; j < ROW_TYPES[t].boxes; j++) {
-        const x = boxes[starts[i] + j];
-        if (!x) continue;
-        if (j < ROW_TYPES[nextRows[i]].boxes) nextBoxes[nextStarts[i] + j] = x;
-        else leftOver.push(x);
-      }
-    });
-    setRows(nextRows);
-    setBoxes(nextBoxes);
-    setTray([...tray, ...leftOver]);
-  };
-
-  const moveRow = (from, to) => {
-    if (to < 0 || to >= rows.length || from === to) return;
-    const starts = rowStarts(rows);
-    const groups = rows.map((t, i) => ({ type: t, boxes: boxes.slice(starts[i], starts[i] + ROW_TYPES[t].boxes) }));
-    const [moved] = groups.splice(from, 1);
-    groups.splice(to, 0, moved);
-    setRows(groups.map(g => g.type));
-    setBoxes(groups.flatMap(g => g.boxes));
-  };
-
-  const removeRow = (r) => {
-    const starts = rowStarts(rows);
-    const gone = boxes.slice(starts[r], starts[r] + ROW_TYPES[rows[r]].boxes).filter(Boolean);
-    setRows(rows.filter((_, i) => i !== r));
-    setBoxes([...boxes.slice(0, starts[r]), ...boxes.slice(starts[r] + ROW_TYPES[rows[r]].boxes)]);
-    setTray([...tray, ...gone]);
-  };
-
-  const addRow = (type) => {
-    setRows([...rows, type]);
-    setBoxes([...boxes, ...Array(ROW_TYPES[type].boxes).fill(null)]);
-  };
-
-  // ---------- Editing: placing reports ----------
   // Put something in a box. Whatever was there swaps places with it.
-  const placeInBox = (source, box) => {
-    const nextBoxes = [...boxes];
+  const placeInBox = (source, target) => {
+    const next = boxes.map(x => ({ ...x }));
     let nextTray = [...tray];
     let moving;
     if (source.kind === 'box') {
-      if (source.index === box) return;
-      moving = nextBoxes[source.index];
-      nextBoxes[source.index] = nextBoxes[box];
+      if (source.index === target) return;
+      moving = next[source.index].entry;
+      next[source.index].entry = next[target].entry;
     } else {
       moving = nextTray[source.index];
       nextTray.splice(source.index, 1);
-      if (nextBoxes[box]) nextTray = [...nextTray, nextBoxes[box]];
+      if (next[target].entry) nextTray = [...nextTray, next[target].entry];
     }
-    nextBoxes[box] = moving;
-    setBoxes(nextBoxes);
+    next[target].entry = moving;
+    setBoxes(next);
     setTray(nextTray);
   };
 
-  const backToTray = (box) => {
-    if (!boxes[box]) return;
-    setTray([...tray, boxes[box]]);
-    setBoxes(boxes.map((x, i) => (i === box ? null : x)));
+  const backToTray = (i) => {
+    if (!boxes[i].entry) return;
+    setTray([...tray, boxes[i].entry]);
+    setBoxes(boxes.map((x, j) => (j === i ? { ...x, entry: null } : x)));
   };
 
   const addReport = (report) => {
     const entry = { report_id: report.id, row_limit: 10 };
-    const free = boxes.indexOf(null);
-    if (free >= 0) setBoxes(boxes.map((x, i) => (i === free ? entry : x)));
+    const free = boxes.findIndex(x => !x.entry);
+    if (free >= 0) setBoxes(boxes.map((x, j) => (j === free ? { ...x, entry } : x)));
     else setTray([...tray, entry]);
   };
 
   const setLimit = (where, index, value) => {
-    if (where === 'box') setBoxes(boxes.map((x, i) => (i === index ? { ...x, row_limit: value } : x)));
-    else setTray(tray.map((x, i) => (i === index ? { ...x, row_limit: value } : x)));
+    if (where === 'box') setBoxes(boxes.map((x, j) => (j === index ? { ...x, entry: { ...x.entry, row_limit: value } } : x)));
+    else setTray(tray.map((x, j) => (j === index ? { ...x, row_limit: value } : x)));
   };
 
   const changeRole = (key) => {
     const fits = (x) => !x || !reportsById[x.report_id] || allowedOn(reportsById[x.report_id], key);
-    const dropped = [...boxes, ...tray].filter(x => x && !fits(x));
+    const dropped = [...boxes.map(x => x.entry), ...tray].filter(x => x && !fits(x));
     if (dropped.length > 0) {
       notify.info(`Took off ${dropped.length} report${dropped.length === 1 ? '' : 's'} that can't go on ${key ? `a ${roleOf(key)?.label} dashboard` : 'a personal dashboard'}.`);
     }
-    setBoxes(boxes.map(x => (fits(x) ? x : null)));
+    setBoxes(boxes.map(x => (fits(x.entry) ? x : { ...x, entry: null })));
     setTray(tray.filter(fits));
     setRoleKey(key);
   };
@@ -448,14 +506,17 @@ export default function Dashboard() {
   const save = async () => {
     if (!title.trim()) { notify.error('Give the dashboard a name before saving.'); return; }
     if (roleKey && !description.trim()) { notify.error('Say what this dashboard is for before adding it to a role - it\'s how everyone else will know why it\'s there.'); return; }
+    if (boxes.length === 0) { notify.error('Add at least one box to the layout before saving.'); return; }
     if (tray.length > 0 && !window.confirm(`${tray.length} report${tray.length === 1 ? ' isn\'t' : 's aren\'t'} in a box yet, so ${tray.length === 1 ? 'it' : 'they'} won't be on the dashboard. Save anyway?`)) return;
-    const badLimit = boxes.find(x => x && x.row_limit !== null && !(Number.isInteger(x.row_limit) && x.row_limit > 0));
+    const badLimit = boxes.find(x => x.entry && x.entry.row_limit !== null && !(Number.isInteger(x.entry.row_limit) && x.entry.row_limit > 0));
     if (badLimit) { notify.error('Each "how many results" needs to be a whole number above 0, or All.'); return; }
 
     setBusy(true);
     try {
       let d = dashboard;
-      const body = { title: title.trim(), description: description.trim() || null, layout: rows };
+      const ordered = readingOrder(boxes);
+      const layout = { version: 2, boxes: ordered.map(({ x, y, w, h }) => ({ x, y, w, h })) };
+      const body = { title: title.trim(), description: description.trim() || null, layout };
       if (d) {
         d = (await writeJson(`report_dashboards?id=eq.${d.id}`, 'PATCH', body))[0];
       } else {
@@ -469,7 +530,7 @@ export default function Dashboard() {
 
       // Bring the saved reports in line with the boxes, keeping existing
       // entries where possible.
-      const placed = boxes.map((x, box) => (x ? { ...x, position: box } : null)).filter(Boolean);
+      const placed = ordered.map((x, position) => (x.entry ? { ...x.entry, position } : null)).filter(Boolean);
       const keepIds = placed.filter(x => x.id).map(x => x.id);
       for (const it of items.filter(i => !keepIds.includes(i.id))) {
         await writeJson(`report_dashboard_items?id=eq.${it.id}`, 'DELETE');
@@ -527,7 +588,8 @@ export default function Dashboard() {
     pill: (on) => ({ padding: '0.4rem 0.75rem', borderRadius: '0.375rem', border: `1px solid ${on ? PERSONAL_TEXT : '#334155'}`, background: on ? `${PERSONAL_FILL}40` : 'transparent', color: on ? '#fff' : '#cbd5e1', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }),
     row: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0', borderTop: '1px solid #334155' },
     link: { background: 'none', border: 'none', color: PERSONAL_TEXT, cursor: 'pointer', padding: 0, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' },
-    drop: (on, filled) => ({ border: `1px dashed ${on ? PERSONAL_TEXT : '#475569'}`, background: on ? `${PERSONAL_FILL}22` : filled ? '#1e293b' : '#0f172a', borderRadius: '0.5rem', padding: '0.6rem', minHeight: '5.5rem', width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '0.4rem' })
+    drop: (on, chosen) => ({ border: `${chosen ? 2 : 1}px ${chosen ? 'solid' : 'dashed'} ${on || chosen ? PERSONAL_TEXT : '#475569'}`, background: on ? `${PERSONAL_FILL}22` : '#0f172a', borderRadius: '0.5rem', padding: '0.6rem', minHeight: '7rem', width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '0.4rem' }),
+    tool: (ok) => ({ background: 'none', border: '1px solid #334155', color: ok ? '#fff' : GREY_TEXT, borderRadius: '0.375rem', padding: '0.35rem 0.6rem', fontSize: '0.8rem', cursor: ok ? 'pointer' : 'not-allowed', opacity: ok ? 1 : 0.5, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' })
   };
 
   if (loading) {
@@ -536,6 +598,7 @@ export default function Dashboard() {
 
   const backLink = <Link href="/insights?tab=dashboards" style={s.back}><i className="ti ti-arrow-left" aria-hidden="true"></i> Tajar Tracks</Link>;
   const reportLabel = (r) => (r.role_key ? `${r.title} (${roleOf(r.role_key)?.label || 'role'} report)` : r.title);
+  const boxName = (i) => `Box ${i + 1}`;
 
   // How many results a box shows: a few set choices, All, or any number.
   const limitControl = (entry, where, index) => {
@@ -573,15 +636,14 @@ export default function Dashboard() {
   // A placed report or a waiting one, with the non-drag way to move it.
   const entryCard = (entry, where, index) => {
     const r = reportsById[entry.report_id];
-    const placeOptions = boxes.map((_, box) => box).filter(box => !(where === 'box' && box === index));
     return (
       <div draggable onDragStart={(e) => startDrag(e, { kind: where, index })}
         style={{ border: `1px solid ${PERSONAL_TEXT}66`, background: `${PERSONAL_FILL}33`, borderRadius: '0.375rem', padding: '0.5rem', cursor: 'grab', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
           <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT, marginTop: '0.15rem' }} aria-hidden="true"></i>
-          <span style={{ flex: 1, fontWeight: 'bold', fontSize: '0.875rem' }}>{r ? reportLabel(r) : <em style={{ color: GREY_TEXT }}>A report you can't see</em>}</span>
+          <span style={{ flex: 1, fontWeight: 'bold', fontSize: '0.875rem', overflowWrap: 'anywhere' }}>{r ? reportLabel(r) : <em style={{ color: GREY_TEXT }}>A report you can't see</em>}</span>
           <button type="button" style={{ ...s.link, color: GREY_TEXT }} aria-label={`Take ${r?.title || 'this report'} off the dashboard`}
-            onClick={() => (where === 'box' ? setBoxes(boxes.map((x, i) => (i === index ? null : x))) : setTray(tray.filter((_, i) => i !== index)))}>
+            onClick={() => (where === 'box' ? setBoxes(boxes.map((x, j) => (j === index ? { ...x, entry: null } : x))) : setTray(tray.filter((_, j) => j !== index)))}>
             <i className="ti ti-x" aria-hidden="true"></i>
           </button>
         </div>
@@ -595,9 +657,11 @@ export default function Dashboard() {
               else if (v !== '') placeInBox({ kind: where, index }, Number(v));
             }}>
             <option value="">Choose a box…</option>
-            {placeOptions.map(box => (
-              <option key={box} value={String(box)}>{boxName(rows, box)}{boxes[box] ? ` (swap with ${reportsById[boxes[box].report_id]?.title || 'the report there'})` : ''}</option>
-            ))}
+            {boxes.map((box, j) => (where === 'box' && j === index ? null : (
+              <option key={j} value={String(j)}>
+                {boxName(j)} ({sizeWords(box)}){box.entry ? ` - swap with ${reportsById[box.entry.report_id]?.title || 'the report there'}` : ''}
+              </option>
+            )))}
             {where === 'box' && <option value="tray">Out of the layout, for now</option>}
           </select>
         </div>
@@ -607,9 +671,20 @@ export default function Dashboard() {
 
   // ---------- Edit screen ----------
   if (editing && canEdit) {
-    const starts = rowStarts(rows);
+    const opts = selected >= 0 && boxes[selected] ? shapeOptions(selected) : null;
+    const tool = (key, icon, text) => {
+      const o = opts[key];
+      return (
+        <button key={key} type="button" style={s.tool(!!o.run)} disabled={!o.run} onClick={o.run} title={o.why || undefined}>
+          <i className={`ti ${icon}`} aria-hidden="true"></i>{text}
+        </button>
+      );
+    };
+    const reasons = opts ? Object.entries(opts).filter(([, o]) => o.why) : [];
+    const spaces = emptySpaces(boxes);
+
     return (
-      <div style={s.container}><div style={{ ...s.wrapper, maxWidth: '1100px' }}>
+      <div style={s.container}><div style={{ ...s.wrapper, maxWidth: '1200px' }}>
         {backLink}
         <h1 style={{ ...s.title, marginBottom: '1rem' }}>{dashboard ? 'Edit dashboard' : 'New dashboard'}</h1>
 
@@ -651,73 +726,101 @@ export default function Dashboard() {
             placeholder={roleKey ? 'Why this dashboard is here and when to use it' : 'A short note about what this dashboard is for'} />
         </div>
 
-        {/* Layout */}
+        {/* Ready-made layouts */}
         <div style={{ ...s.card, marginBottom: '1rem' }}>
-          <h2 style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Layout</h2>
-          <p style={{ ...s.help, margin: '0 0 0.75rem' }}>Start from a ready-made layout, or build your own row by row. Reports already placed keep their order.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }} role="group" aria-label="Ready-made layouts">
+          <h2 style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Start from a layout</h2>
+          <p style={{ ...s.help, margin: '0 0 0.75rem' }}>Pick one to start from, then change any box below. Reports already placed keep their order.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }} role="group" aria-label="Ready-made layouts">
             {PRESETS.map(p => {
-              const on = p.rows.join() === rows.join();
+              const on = sameShape(p.boxes, boxes);
               return (
-                <button key={p.label} type="button" onClick={() => applyRows(p.rows)} aria-pressed={on}
+                <button key={p.label} type="button" onClick={() => applyPreset(p)} aria-pressed={on}
                   style={{ ...s.pill(on), flexDirection: 'column', alignItems: 'flex-start', gap: '0.4rem', padding: '0.5rem 0.65rem', width: '9.5rem' }}>
-                  <LayoutPicture rows={p.rows} />
+                  <LayoutPicture boxes={p.boxes} />
                   <span style={{ fontSize: '0.8rem', textAlign: 'left' }}>{p.label}</span>
                 </button>
               );
             })}
           </div>
-
-          <span style={{ ...s.label, marginTop: 0 }}>Rows</span>
-          {rows.map((t, r) => (
-            <div key={r} draggable onDragStart={(e) => startDrag(e, { kind: 'row', index: r })}
-              onDragOver={allowDrop(`row-${r}`)} onDrop={(e) => { const d = endDrop(e); if (d?.kind === 'row') moveRow(d.index, r); }}
-              style={{ ...s.row, borderTop: `1px ${over === `row-${r}` ? 'dashed' : 'solid'} ${over === `row-${r}` ? PERSONAL_TEXT : '#334155'}`, cursor: 'grab' }}>
-              <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT }} aria-hidden="true"></i>
-              <span style={{ color: GREY_TEXT, minWidth: '3.5rem' }}>Row {r + 1}</span>
-              <select style={s.select} value={t} onChange={(e) => setRowType(r, e.target.value)} aria-label={`Kind of row ${r + 1}`}>
-                {Object.entries(ROW_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-              <span style={{ flex: 1 }} />
-              <button type="button" style={{ ...s.action, opacity: r === 0 ? 0.4 : 1 }} disabled={r === 0} onClick={() => moveRow(r, r - 1)} aria-label={`Move row ${r + 1} up`}><i className="ti ti-arrow-up" aria-hidden="true"></i></button>
-              <button type="button" style={{ ...s.action, opacity: r === rows.length - 1 ? 0.4 : 1 }} disabled={r === rows.length - 1} onClick={() => moveRow(r, r + 1)} aria-label={`Move row ${r + 1} down`}><i className="ti ti-arrow-down" aria-hidden="true"></i></button>
-              <button type="button" style={s.action} disabled={rows.length === 1} onClick={() => removeRow(r)}><i className="ti ti-x" aria-hidden="true"></i> Remove row</button>
-            </div>
-          ))}
-          <div style={{ ...s.row, borderTop: '1px solid #334155' }}>
-            <label htmlFor="add-row" style={{ color: GREY_TEXT, fontSize: '0.85rem' }}>Add a row:</label>
-            <select id="add-row" style={s.select} value="" onChange={(e) => { if (e.target.value) addRow(e.target.value); }}>
-              <option value="">Choose a kind of row…</option>
-              {Object.entries(ROW_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-          </div>
         </div>
 
-        {/* Boxes */}
+        {/* The grid */}
         <div style={{ ...s.card, marginBottom: '1rem' }}>
-          <h2 style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Put reports in the boxes</h2>
+          <h2 style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Boxes and reports</h2>
           <p style={{ ...s.help, margin: '0 0 0.75rem' }}>
-            Drag a report into a box, or use "Move to". Dropping on a box that's taken swaps the two. Each box can show a different number of results.
+            Drag a report into a box, or use "Move to". Dropping on a box that's taken swaps the two.
+            Choose "Change shape" on a box to split it, join it to a neighbor, or make it bigger or smaller.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {rows.map((t, r) => (
-              <LayoutRow key={r} type={t} narrow={narrow}>
-                {Array.from({ length: ROW_TYPES[t].boxes }).map((_, j) => {
-                  const box = starts[r] + j;
-                  const entry = boxes[box];
-                  const key = `box-${box}`;
-                  return (
-                    <div key={box} onDragOver={allowDrop(key)} onDragLeave={() => setOver('')}
-                      onDrop={(e) => { const d = endDrop(e); if (d && (d.kind === 'box' || d.kind === 'tray')) placeInBox(d, box); }}
-                      style={s.drop(over === key, !!entry)} aria-label={boxName(rows, box)}>
-                      <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}>{boxName(rows, box)}</span>
-                      {entry ? entryCard(entry, 'box', box) : <span style={{ color: GREY_TEXT, fontSize: '0.8rem', fontStyle: 'italic' }}>Empty - drop a report here</span>}
-                    </div>
-                  );
-                })}
-              </LayoutRow>
+
+          <Grid boxes={boxes} narrow={narrow}
+            render={(box, i) => {
+              const key = `box-${i}`;
+              const chosen = selected === i;
+              return (
+                <div onDragOver={allowDrop(key)} onDragLeave={() => setOver('')}
+                  onDrop={(e) => { const d = endDrop(e); if (d && (d.kind === 'box' || d.kind === 'tray')) placeInBox(d, i); }}
+                  style={s.drop(over === key, chosen)} aria-label={`${boxName(i)}, ${sizeWords(box)}`}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <span style={{ color: GREY_TEXT, fontSize: '0.75rem' }}><strong style={{ color: '#cbd5e1' }}>{boxName(i)}</strong> · {sizeWords(box)}</span>
+                    <button type="button" style={{ ...s.link, fontSize: '0.75rem' }} aria-pressed={chosen} onClick={() => setSelected(chosen ? -1 : i)}>
+                      <i className="ti ti-layout-grid" aria-hidden="true"></i> {chosen ? 'Done changing shape' : 'Change shape'}
+                    </button>
+                  </div>
+                  {box.entry ? entryCard(box.entry, 'box', i) : <span style={{ color: GREY_TEXT, fontSize: '0.8rem', fontStyle: 'italic' }}>Empty - drop a report here</span>}
+                </div>
+              );
+            }}
+            extra={!narrow && spaces.map((sp, k) => (
+              <div key={`space-${k}`} style={{ gridColumn: `${sp.x + 1} / span ${sp.w}`, gridRow: `${sp.y + 1} / span 1`, display: 'flex' }}>
+                <button type="button" onClick={() => addBoxAt(sp)}
+                  style={{ width: '100%', border: '1px dashed #334155', borderRadius: '0.5rem', background: 'transparent', color: GREY_TEXT, cursor: 'pointer', fontSize: '0.8rem' }}>
+                  <i className="ti ti-plus" aria-hidden="true"></i> Add a box here
+                </button>
+              </div>
             ))}
+          />
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+            <button type="button" style={s.tool(true)} onClick={addRowBelow}><i className="ti ti-row-insert-bottom" aria-hidden="true"></i> Add a full-width box at the bottom</button>
+            {narrow && spaces.length > 0 && <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}>There's empty space in the layout. It's easier to fill on a wider screen.</span>}
           </div>
+
+          {opts && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', border: `1px solid ${PERSONAL_TEXT}`, borderRadius: '0.5rem', background: '#0f172a' }} aria-live="polite">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
+                <span style={{ fontWeight: 'bold' }}>Change the shape of {boxName(selected)} <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.85rem' }}>({sizeWords(boxes[selected])})</span></span>
+                <button type="button" style={{ ...s.link, color: GREY_TEXT }} onClick={() => setSelected(-1)}><i className="ti ti-x" aria-hidden="true"></i> Close</button>
+              </div>
+              <p style={{ ...s.help, margin: '0.5rem 0 0.3rem' }}>Split it side by side:</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {tool('across2', 'ti-columns-2', 'In half')}{tool('across3', 'ti-columns-3', 'In thirds')}{tool('across4', 'ti-layout-columns', 'In quarters')}
+              </div>
+              <p style={{ ...s.help, margin: '0.5rem 0 0.3rem' }}>Split it top and bottom:</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {tool('down2', 'ti-layout-rows', 'In half')}{tool('down3', 'ti-layout-rows', 'In thirds')}{tool('down4', 'ti-layout-rows', 'In quarters')}
+              </div>
+              <p style={{ ...s.help, margin: '0.5rem 0 0.3rem' }}>Join or resize:</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {tool('mergeRight', 'ti-arrow-merge-right', 'Join with the box to the right')}
+                {tool('mergeBelow', 'ti-arrow-merge', 'Join with the box below')}
+                {tool('wider', 'ti-arrows-horizontal', 'Wider')}
+                {tool('narrower', 'ti-arrows-diagonal-minimize-2', 'Narrower')}
+                {tool('taller', 'ti-arrows-vertical', 'Taller')}
+                {tool('shorter', 'ti-arrows-diagonal-minimize', 'Shorter')}
+                <button type="button" style={{ ...s.tool(true), color: DANGER_TEXT }} onClick={() => removeBox(selected)}>
+                  <i className="ti ti-trash" aria-hidden="true"></i> Remove this box
+                </button>
+              </div>
+              {reasons.length > 0 && (
+                <details style={{ marginTop: '0.6rem' }}>
+                  <summary style={{ color: PERSONAL_TEXT, cursor: 'pointer', fontSize: '0.8rem' }}>Why are some of these unavailable?</summary>
+                  <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem', color: '#cbd5e1', fontSize: '0.8rem' }}>
+                    {[...new Set(reasons.map(([, o]) => o.why))].map(why => <li key={why}>{why}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
 
           <div onDragOver={allowDrop('tray')} onDragLeave={() => setOver('')}
             onDrop={(e) => { const d = endDrop(e); if (d?.kind === 'box') backToTray(d.index); }}
@@ -770,8 +873,8 @@ export default function Dashboard() {
 
   // ---------- View screen ----------
   const laid = layoutOf(dashboard, items);
-  const starts = rowStarts(laid.rows);
   const hiddenCount = dashboard.role_key ? items.filter(it => itemPrefs[it.id]?.is_hidden).length : 0;
+  const visibleBoxes = laid.boxes.filter(box => box.item && (showHidden || !itemPrefs[box.item.id]?.is_hidden));
 
   const resultArea = (report, rowLimit) => {
     const state = results[report.id];
@@ -783,10 +886,8 @@ export default function Dashboard() {
   };
 
   const viewCard = (item) => {
-    if (!item) return <div style={{ width: '100%' }} />;
     const report = reportsById[item.report_id];
     const hidden = !!itemPrefs[item.id]?.is_hidden;
-    if (hidden && !showHidden) return <div style={{ width: '100%' }} />;
     return (
       <section style={{ ...s.card, opacity: hidden ? 0.6 : 1 }} aria-label={report?.title || 'A report you can\'t see'}>
         {report ? (
@@ -850,22 +951,10 @@ export default function Dashboard() {
           )}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {laid.rows.map((t, r) => {
-            const rowBoxes = laid.boxes.slice(starts[r], starts[r] + ROW_TYPES[t].boxes);
-            if (rowBoxes.every(x => !x)) return null;
-            return (
-              <LayoutRow key={r} type={t} narrow={narrow}>
-                {rowBoxes.map((item, j) => <div key={j} style={{ display: 'flex', width: '100%' }}>{viewCard(item)}</div>)}
-              </LayoutRow>
-            );
-          })}
-          {(laid.extra || []).length > 0 && (
-            <LayoutRow type="2" narrow={narrow}>
-              {laid.extra.map(item => <div key={item.id} style={{ display: 'flex', width: '100%' }}>{viewCard(item)}</div>)}
-            </LayoutRow>
-          )}
-        </div>
+        <Grid boxes={visibleBoxes} narrow={narrow} render={(box) => viewCard(box.item)}
+          extra={laid.extra.length > 0 ? laid.extra.map((item, k) => (
+            <div key={`extra-${k}`} style={narrow ? {} : { gridColumn: '1 / span 12', display: 'flex' }}>{viewCard(item)}</div>
+          )) : null} />
       )}
     </div></div>
   );
