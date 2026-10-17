@@ -39,6 +39,11 @@ export default function TajarTracks() {
   const [itemCounts, setItemCounts] = useState({});       // dashboard id -> number of reports
   const [showHiddenDash, setShowHiddenDash] = useState(false);
   const [templateFilter, setTemplateFilter] = useState('all');   // 'all' | 'everyone' | a role key
+  const [templateSort, setTemplateSort] = useState('mine');      // 'mine' | 'hearts' | 'uses' | 'newest'
+  const [stats, setStats] = useState({});                        // template id -> { hearts, uses }
+  const [myHearts, setMyHearts] = useState([]);                  // template ids I've hearted
+  const [notices, setNotices] = useState([]);
+  const [reporting, setReporting] = useState(null);              // template being reported
   const dragRef = useRef(null);                           // { list, id } being dragged
   const [dragOver, setDragOver] = useState('');
   const [reports, setReports] = useState([]);             // my own
@@ -272,11 +277,21 @@ export default function TajarTracks() {
 
   // ---------- Dashboards ----------
   const loadDashboards = async (userId = user?.id) => {
-    const [rows, prefRows, itemRows] = await Promise.all([
+    const [allRows, prefRows, itemRows, statRows, heartRows, noticeRows] = await Promise.all([
       getJson('report_dashboards?select=*&order=hub_order.asc,created_at.asc'),
       getJson('dashboard_view_preferences?select=dashboard_id,sort_order,is_hidden'),
-      getJson('report_dashboard_items?select=dashboard_id')
+      getJson('report_dashboard_items?select=dashboard_id'),
+      getJson('dashboard_template_stats?select=*'),
+      getJson(`dashboard_template_hearts?select=dashboard_id&user_id=eq.${userId}`),
+      getJson(`insights_notices?select=*&user_id=eq.${userId}&dismissed_at=is.null&order=created_at.desc`)
     ]);
+    // Retired dashboard templates (merged or removed) drop out of the list.
+    const rows = allRows.filter(d => !d.retired_at);
+    const statMap = {};
+    statRows.forEach(x => { statMap[x.dashboard_id] = x; });
+    setStats(statMap);
+    setMyHearts(heartRows.map(h => h.dashboard_id));
+    setNotices(noticeRows);
     const prefMap = {};
     prefRows.forEach(p => { prefMap[p.dashboard_id] = p; });
     const counts = {};
@@ -300,7 +315,12 @@ export default function TajarTracks() {
   });
   const hiddenDashCount = roleDashboardsAll.filter(d => dashPrefs[d.id]?.is_hidden).length;
   const inTemplateFilter = (d) => templateFilter === 'all' || (templateFilter === 'everyone' ? !d.role_key : d.role_key === templateFilter);
-  const roleDashboards = roleDashboardsAll.filter(d => inTemplateFilter(d) && (showHiddenDash || !dashPrefs[d.id]?.is_hidden));
+  const sortedTemplates = templateSort === 'mine' ? roleDashboardsAll : [...roleDashboardsAll].sort((a, b) => {
+    if (templateSort === 'hearts') return (stats[b.id]?.hearts || 0) - (stats[a.id]?.hearts || 0) || a.title.localeCompare(b.title);
+    if (templateSort === 'uses') return (stats[b.id]?.uses || 0) - (stats[a.id]?.uses || 0) || a.title.localeCompare(b.title);
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+  const roleDashboards = sortedTemplates.filter(d => inTemplateFilter(d) && (showHiddenDash || !dashPrefs[d.id]?.is_hidden));
 
   const moveMyDashboard = async (index, direction) => {
     const other = index + direction;
@@ -425,14 +445,37 @@ export default function TajarTracks() {
   const dragStyle = (id) => (dragOver === id ? { outline: `2px dashed ${PERSONAL_TEXT}`, outlineOffset: '2px' } : {}) ;
   const grip = <i className="ti ti-grip-vertical" style={{ color: GREY_TEXT, position: 'absolute', top: '0.6rem', right: '0.6rem', cursor: 'grab' }} title="Drag to move" aria-hidden="true"></i>;
 
+  // Hearts: one per person per dashboard template.
+  const toggleHeart = async (d) => {
+    const on = myHearts.includes(d.id);
+    setMyHearts(on ? myHearts.filter(x => x !== d.id) : [...myHearts, d.id]);
+    setStats(prev => ({ ...prev, [d.id]: { ...(prev[d.id] || { uses: 0 }), hearts: Math.max(0, (prev[d.id]?.hearts || 0) + (on ? -1 : 1)) } }));
+    try {
+      if (on) await writeJson(`dashboard_template_hearts?dashboard_id=eq.${d.id}&user_id=eq.${user.id}`, 'DELETE');
+      else await writeJson('dashboard_template_hearts', 'POST', { user_id: user.id, dashboard_id: d.id });
+    } catch (error) {
+      notify.error(`Couldn't change your heart: ${error.message}`);
+      loadDashboards();
+    }
+  };
+
+  const dismissNotice = async (n) => {
+    try {
+      await writeJson(`insights_notices?id=eq.${n.id}`, 'PATCH', { dismissed_at: new Date().toISOString() });
+      setNotices(notices.filter(x => x.id !== n.id));
+    } catch (error) {
+      notify.error(`Couldn't dismiss it: ${error.message}`);
+    }
+  };
+
   const copyTemplate = async (d) => {
     setBusy(true);
     try {
       const newId = await rpc('use_dashboard_template', { p_template_id: d.id });
-      notify.success(`"${d.title}" is now one of your dashboards. Change it however you like - the template stays as it is.`);
+      notify.success(`"${d.title}" is now one of your dashboards. Change it however you like - the dashboard template stays as it is.`);
       router.push(`/dashboard?id=${newId}`);
     } catch (error) {
-      notify.error(`Couldn't use the template: ${error.message}`);
+      notify.error(`Couldn't use the dashboard template: ${error.message}`);
       setBusy(false);
     }
   };
@@ -586,7 +629,7 @@ export default function TajarTracks() {
                 ? 'Your songs, stats and reports. Only you can see your own data here.'
                 : tab === 'roles'
                   ? 'Reports shared with everyone who has the same role as you. Each one shows you your own data, and how you arrange them only changes your view.'
-                  : 'Pages that gather several reports in one place. Your dashboards are only for you. Templates are starting points other people made - use one to get your own copy to change however you like.'}
+                  : 'Pages that gather several reports in one place. Your dashboards are only for you. Dashboard templates are starting points other people made - use one to get your own copy to change however you like.'}
             </p>
           </div>
           <Link href={tab === 'roles' ? '/reports?for=role' : tab === 'dashboards' ? '/dashboard?new=1' : '/reports'} style={s.newBtn}>
@@ -607,6 +650,24 @@ export default function TajarTracks() {
             <i className="ti ti-layout-dashboard" aria-hidden="true"></i> Dashboards
           </button>
         </div>
+
+        {notices.length > 0 && (
+          <section aria-label="Notices" style={{ ...s.card, marginBottom: '1.25rem', borderColor: PERSONAL_TEXT }}>
+            {notices.map((n, i) => (
+              <div key={n.id} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', paddingTop: i ? '0.6rem' : 0, marginTop: i ? '0.6rem' : 0, borderTop: i ? '1px solid #334155' : 'none' }}>
+                <i className="ti ti-info-circle" style={{ color: PERSONAL_TEXT, fontSize: '1.2rem' }} aria-hidden="true"></i>
+                <div style={{ flex: 1, fontSize: '0.9rem' }}>
+                  {n.message}
+                  <div style={{ ...s.meta, margin: '0.2rem 0 0' }}>
+                    {when(n.created_at)}
+                    {n.link && <> · <Link href={n.link} style={{ color: PERSONAL_TEXT }}>Take a look</Link></>}
+                  </div>
+                </div>
+                <button type="button" style={s.action} onClick={() => dismissNotice(n)}><i className="ti ti-x" aria-hidden="true"></i> Dismiss</button>
+              </div>
+            ))}
+          </section>
+        )}
 
         {tab === 'mine' && pending.length > 0 && (
           <section aria-label="Reports sent to you" style={{ ...s.card, marginBottom: '1.25rem', borderColor: PERSONAL_TEXT }}>
@@ -820,7 +881,7 @@ export default function TajarTracks() {
             )}
 
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', margin: '0 0 0.5rem' }}>
-              <h2 style={{ ...s.cardTitle, margin: 0 }}>Templates</h2>
+              <h2 style={{ ...s.cardTitle, margin: 0 }}>Dashboard templates</h2>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
                 {hiddenDashCount > 0 && (
                   <button type="button" style={s.link} onClick={() => setShowHiddenDash(!showHiddenDash)} aria-pressed={showHiddenDash}>
@@ -828,14 +889,25 @@ export default function TajarTracks() {
                     {showHiddenDash ? 'Leave out the ones I hid' : `Show the ${hiddenDashCount} I hid`}
                   </button>
                 )}
-                <Link href="/dashboard?new=1&template=1" style={s.link}><i className="ti ti-plus" aria-hidden="true"></i> New template</Link>
+                <Link href="/dashboard?new=1&template=1" style={s.link}><i className="ti ti-plus" aria-hidden="true"></i> New dashboard template</Link>
               </div>
             </div>
             <p style={{ ...s.meta, margin: '0 0 0.75rem' }}>
-              Using a template gives you your own dashboard. A role's shared reports on it stay linked, so their updates reach you; everything else becomes your own copy.
+              Using a dashboard template gives you your own dashboard. A role's shared reports on it stay linked, so their updates reach you; everything else becomes your own copy.
             </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <label htmlFor="template-sort" style={{ color: GREY_TEXT, fontSize: '0.85rem' }}>Order:</label>
+              <select id="template-sort" value={templateSort} onChange={(e) => setTemplateSort(e.target.value)}
+                style={{ background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}>
+                <option value="mine">My order</option>
+                <option value="hearts">Most hearted</option>
+                <option value="uses">Most used</option>
+                <option value="newest">Newest first</option>
+              </select>
+              {templateSort !== 'mine' && <span style={{ color: GREY_TEXT, fontSize: '0.8rem' }}>Switch to "My order" to drag them into your own order.</span>}
+            </div>
             {myRoles.length > 0 && (
-              <div style={{ ...s.segment, marginBottom: '0.75rem' }} role="group" aria-label="Show templates for">
+              <div style={{ ...s.segment, marginBottom: '0.75rem' }} role="group" aria-label="Show dashboard templates for">
                 <button type="button" style={s.segmentBtn(templateFilter === 'all')} aria-pressed={templateFilter === 'all'} onClick={() => setTemplateFilter('all')}>All</button>
                 <button type="button" style={s.segmentBtn(templateFilter === 'everyone')} aria-pressed={templateFilter === 'everyone'} onClick={() => setTemplateFilter('everyone')}>For everyone</button>
                 {myRoles.map(r => (
@@ -846,7 +918,7 @@ export default function TajarTracks() {
             {roleDashboards.length === 0 ? (
               <div style={{ ...s.card, alignItems: 'flex-start' }}>
                 <p style={{ margin: 0 }}>
-                  {roleDashboardsAll.some(inTemplateFilter) ? 'You\'ve hidden all of these.' : 'There aren\'t any templates here yet. You can make one from any of your dashboards with "Make a template from this".'}
+                  {roleDashboardsAll.some(inTemplateFilter) ? 'You\'ve hidden all of these.' : 'There aren\'t any dashboard templates here yet. You can make one from any of your dashboards with "Make a dashboard template from this".'}
                 </p>
               </div>
             ) : (
@@ -854,15 +926,16 @@ export default function TajarTracks() {
                 {roleDashboards.map((d, index) => {
                   const hidden = !!dashPrefs[d.id]?.is_hidden;
                   return (
-                    <section key={d.id} {...dragProps('roledash', d.id)} style={{ ...s.card, opacity: hidden ? 0.6 : 1, position: 'relative', cursor: 'grab', ...dragStyle(d.id) }} aria-label={d.title}>
-                      {grip}
+                    <section key={d.id} {...(templateSort === 'mine' ? dragProps('roledash', d.id) : {})} style={{ ...s.card, opacity: hidden ? 0.6 : 1, position: 'relative', cursor: templateSort === 'mine' ? 'grab' : 'default', ...dragStyle(d.id) }} aria-label={d.title}>
+                      {templateSort === 'mine' && grip}
                       <span style={{ ...s.roleTag, color: '#fff', borderColor: PERSONAL_TEXT }}>
-                        <i className="ti ti-template" aria-hidden="true"></i>Template · for {d.role_key ? roleLabel(d.role_key) : 'everyone'}
+                        <i className="ti ti-template" aria-hidden="true"></i>Dashboard template · for {d.role_key ? roleLabel(d.role_key) : 'everyone'}
                       </span>
                       <h3 style={s.cardTitle}>{d.title}{hidden && <span style={{ color: GREY_TEXT, fontWeight: 'normal', fontSize: '0.8rem' }}> (hidden)</span>}</h3>
                       <p style={{ ...s.cardDesc, color: '#cbd5e1', margin: '0.35rem 0 0.25rem' }}><strong>What it's for:</strong> {d.description}</p>
                       <p style={s.meta}>
                         {itemCounts[d.id] || 0} report{(itemCounts[d.id] || 0) === 1 ? '' : 's'}
+                        {' · '}used {stats[d.id]?.uses || 0} time{(stats[d.id]?.uses || 0) === 1 ? '' : 's'}
                         {' · '}made by {names[d.owner_id] || 'someone'}{d.owner_id === user.id ? ' (you)' : ''}
                         {' · '}last changed {when(d.updated_at)}
                       </p>
@@ -873,20 +946,34 @@ export default function TajarTracks() {
                         <Link href={`/dashboard?id=${d.id}`} style={s.action}>
                           <i className="ti ti-eye" aria-hidden="true"></i> Preview
                         </Link>
+                        <button type="button" style={{ ...s.action, color: myHearts.includes(d.id) ? '#fff' : GREY_TEXT }} aria-pressed={myHearts.includes(d.id)}
+                          onClick={() => toggleHeart(d)} aria-label={`${myHearts.includes(d.id) ? 'Take back your heart for' : 'Heart'} "${d.title}" (${stats[d.id]?.hearts || 0} so far)`}>
+                          <i className={`ti ${myHearts.includes(d.id) ? 'ti-heart-filled' : 'ti-heart'}`} style={{ color: myHearts.includes(d.id) ? DANGER_TEXT : undefined }} aria-hidden="true"></i>
+                          {stats[d.id]?.hearts || 0}{myHearts.includes(d.id) ? ' · hearted' : ''}
+                        </button>
                         {canEditDashboard(d) && (
                           <Link href={`/dashboard?id=${d.id}&edit=1`} style={s.action}>
-                            <i className="ti ti-pencil" aria-hidden="true"></i> Edit template
+                            <i className="ti ti-pencil" aria-hidden="true"></i> Edit dashboard template
                           </Link>
                         )}
-                        <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveRoleDashboard(d, -1)} aria-label={`Move "${d.title}" earlier in your view`}>
-                          <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
-                        </button>
-                        <button type="button" style={s.action} disabled={busy || index === roleDashboards.length - 1} onClick={() => moveRoleDashboard(d, 1)} aria-label={`Move "${d.title}" later in your view`}>
-                          <i className="ti ti-arrow-down" aria-hidden="true"></i> Later
-                        </button>
+                        {templateSort === 'mine' && (
+                          <>
+                            <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveRoleDashboard(d, -1)} aria-label={`Move "${d.title}" earlier in your view`}>
+                              <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
+                            </button>
+                            <button type="button" style={s.action} disabled={busy || index === roleDashboards.length - 1} onClick={() => moveRoleDashboard(d, 1)} aria-label={`Move "${d.title}" later in your view`}>
+                              <i className="ti ti-arrow-down" aria-hidden="true"></i> Later
+                            </button>
+                          </>
+                        )}
                         <button type="button" style={s.action} disabled={busy} onClick={() => setDashHidden(d, !hidden)}>
                           <i className={`ti ${hidden ? 'ti-eye' : 'ti-eye-off'}`} aria-hidden="true"></i> {hidden ? 'Show again' : 'Hide for me'}
                         </button>
+                        {d.owner_id !== user.id && (
+                          <button type="button" style={s.action} onClick={() => setReporting(d)}>
+                            <i className="ti ti-flag" aria-hidden="true"></i> Report
+                          </button>
+                        )}
                       </div>
                     </section>
                   );
@@ -897,6 +984,7 @@ export default function TajarTracks() {
         )}
       </div>
       {sending && <SendDialog report={sending} rpc={rpc} datasets={datasets} onClose={() => setSending(null)} />}
+      {reporting && <ReportTemplateDialog template={reporting} templates={roleDashboardsAll} rpc={rpc} roleLabel={roleLabel} onClose={() => setReporting(null)} />}
     </div>
   );
 }
@@ -1014,6 +1102,72 @@ function SendDialog({ report, rpc, datasets, onClose }) {
           <button type="button" style={btn(true)} disabled={!person || busy} onClick={send}>
             <i className="ti ti-send" aria-hidden="true"></i> {busy ? 'Sending…' : 'Send'}
           </button>
+          <button type="button" style={btn(false)} onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Report a dashboard template: as a possible duplicate of another one, or
+// for some other problem. Goes to the Insights admin page.
+function ReportTemplateDialog({ template, templates, rpc, roleLabel, onClose }) {
+  const [kind, setKind] = useState('duplicate');
+  const [other, setOther] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const others = templates.filter(t => t.id !== template.id);
+
+  useEffect(() => {
+    const close = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, []);
+
+  const send = async () => {
+    if (kind === 'duplicate' && !other) { notify.error('Choose the dashboard template it duplicates.'); return; }
+    if (kind === 'problem' && !note.trim()) { notify.error('Say what the problem is, so an admin knows what to look for.'); return; }
+    setBusy(true);
+    try {
+      await rpc('report_dashboard_template', { p_dashboard_id: template.id, p_kind: kind, p_duplicate_of: kind === 'duplicate' ? other : null, p_note: note });
+      notify.success('Thanks - an admin will take a look. You\'ll get a notice here in Tajar Tracks when they do.');
+      onClose();
+    } catch (error) {
+      notify.error(`Couldn't send the report: ${error.message}`);
+      setBusy(false);
+    }
+  };
+
+  const box = { width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '0.375rem', padding: '0.5rem 0.6rem', fontSize: '0.9rem', boxSizing: 'border-box' };
+  const btn = (primary) => ({ background: primary ? PERSONAL_FILL : 'transparent', color: '#fff', border: primary ? 'none' : '1px solid #334155', borderRadius: '0.375rem', padding: '0.5rem 1rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' });
+  const seg = (on) => ({ padding: '0.4rem 0.85rem', border: 'none', background: on ? PERSONAL_FILL : 'transparent', color: on ? '#fff' : GREY_TEXT, fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' });
+
+  return (
+    <div role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5rem 1rem 1rem', overflowY: 'auto' }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="report-title"
+        style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', padding: '1.25rem', width: '100%', maxWidth: '32rem', color: '#fff' }}>
+        <h2 id="report-title" style={{ margin: '0 0 0.25rem', fontSize: '1.2rem' }}>Report "{template.title}"</h2>
+        <p style={{ color: GREY_TEXT, fontSize: '0.85rem', margin: '0 0 1rem' }}>Reports go to the admins. The person who made it isn't told who reported it.</p>
+        <div style={{ display: 'inline-flex', flexWrap: 'wrap', border: '1px solid #334155', borderRadius: '0.375rem', overflow: 'hidden', marginBottom: '0.9rem' }} role="group" aria-label="What's wrong">
+          <button type="button" style={seg(kind === 'duplicate')} aria-pressed={kind === 'duplicate'} onClick={() => setKind('duplicate')}>It's a duplicate</button>
+          <button type="button" style={seg(kind === 'problem')} aria-pressed={kind === 'problem'} onClick={() => setKind('problem')}>Something else is wrong</button>
+        </div>
+        {kind === 'duplicate' && (
+          <>
+            <label htmlFor="dup-of" style={{ display: 'block', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '0.3rem' }}>Which dashboard template does it duplicate?</label>
+            <select id="dup-of" value={other} onChange={(e) => setOther(e.target.value)} style={box}>
+              <option value="">Choose one…</option>
+              {others.map(t => <option key={t.id} value={t.id}>{t.title} (for {t.role_key ? roleLabel(t.role_key) : 'everyone'})</option>)}
+            </select>
+          </>
+        )}
+        <label htmlFor="report-note" style={{ display: 'block', fontWeight: 'bold', fontSize: '0.85rem', margin: '0.9rem 0 0.3rem' }}>
+          {kind === 'problem' ? 'What\'s wrong?' : 'A note'} <span style={{ color: GREY_TEXT, fontWeight: 'normal' }}>{kind === 'problem' ? '(required)' : '(optional)'}</span>
+        </label>
+        <textarea id="report-note" value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={1000} style={{ ...box, resize: 'vertical' }} />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+          <button type="button" style={btn(true)} disabled={busy} onClick={send}><i className="ti ti-flag" aria-hidden="true"></i> {busy ? 'Sending…' : 'Send report'}</button>
           <button type="button" style={btn(false)} onClick={onClose}>Cancel</button>
         </div>
       </div>
