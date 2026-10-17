@@ -190,6 +190,7 @@ export default function App({ Component, pageProps }) {
     { href: '/tags', label: 'Tags', canChange: can('tags.manage') },
     { href: '/users', label: 'Users' },
     { href: '/settings', label: 'Settings', canChange: can('settings.song') || can('settings.health') || can('permissions.manage') },
+    { href: '/insights-admin', label: 'Insights', canChange: can('insights.moderate') },
   ].filter(item => !(userProfile?.hide_view_only && item.canChange === false));
 
   const visibleUserItems = userNavItems.filter(item => item.show);
