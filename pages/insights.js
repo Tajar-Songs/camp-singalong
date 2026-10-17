@@ -44,6 +44,7 @@ export default function TajarTracks() {
   const [myHearts, setMyHearts] = useState([]);                  // template ids I've hearted
   const [notices, setNotices] = useState([]);
   const [reporting, setReporting] = useState(null);              // template being reported
+  const [pins, setPins] = useState([]);                          // my home page pins
   const dragRef = useRef(null);                           // { list, id } being dragged
   const [dragOver, setDragOver] = useState('');
   const [reports, setReports] = useState([]);             // my own
@@ -98,6 +99,7 @@ export default function TajarTracks() {
       await loadPending(me.id);
       if (held.length > 0) await loadRoleReports(canUse);
       await loadDashboards(me.id);
+      setPins(await getJson('home_pins?select=*&order=position.asc'));
     } catch (error) {
       console.error('Error loading Tajar Tracks:', error);
       notify.error(`Couldn't load Tajar Tracks: ${error.message}`);
@@ -468,6 +470,36 @@ export default function TajarTracks() {
     }
   };
 
+  // ---------- Home page pins ----------
+  const pinFor = (kind, id) => pins.find(p => (kind === 'report' ? p.report_id : p.dashboard_id) === id);
+  const togglePin = async (kind, item) => {
+    const existing = pinFor(kind, item.id);
+    setBusy(true);
+    try {
+      if (existing) {
+        await writeJson(`home_pins?id=eq.${existing.id}`, 'DELETE');
+        setPins(pins.filter(p => p.id !== existing.id));
+        notify.success(`Unpinned "${item.title}" from your home page`);
+      } else {
+        const position = Math.max(0, ...pins.map(p => p.position || 0)) + 1;
+        const rows = await writeJson('home_pins', 'POST', { user_id: user.id, [kind === 'report' ? 'report_id' : 'dashboard_id']: item.id, position });
+        setPins([...pins, rows[0]]);
+        notify.success(`Pinned "${item.title}" to your home page`);
+      }
+    } catch (error) {
+      notify.error(error.message);
+    }
+    setBusy(false);
+  };
+  const pinButton = (kind, item) => {
+    const on = !!pinFor(kind, item.id);
+    return (
+      <button type="button" style={{ ...s.action, color: on ? '#fff' : GREY_TEXT }} disabled={busy} aria-pressed={on} onClick={() => togglePin(kind, item)}>
+        <i className={`ti ${on ? 'ti-pinned-filled' : 'ti-pin'}`} style={{ color: on ? PERSONAL_TEXT : undefined }} aria-hidden="true"></i> {on ? 'Pinned to home' : 'Pin to home'}
+      </button>
+    );
+  };
+
   const copyTemplate = async (d) => {
     setBusy(true);
     try {
@@ -740,6 +772,7 @@ export default function TajarTracks() {
                   <button type="button" style={s.action} disabled={busy} onClick={() => setSending(report)}>
                     <i className="ti ti-send" aria-hidden="true"></i> Send a copy
                   </button>
+                  {pinButton('report', report)}
                   {report.sent_by && (
                     <button type="button" style={s.action} disabled={busy} onClick={() => setNew(report, !report.is_new)}>
                       <i className={`ti ${report.is_new ? 'ti-mail-opened' : 'ti-mail'}`} aria-hidden="true"></i> {report.is_new ? 'Mark as seen' : 'Mark as new'}
@@ -822,6 +855,7 @@ export default function TajarTracks() {
                         <button type="button" style={s.action} disabled={busy} onClick={() => setSending(report)}>
                           <i className="ti ti-send" aria-hidden="true"></i> Send a copy
                         </button>
+                        {pinButton('report', report)}
                         <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveRole(report, -1)} aria-label={`Move "${report.title}" earlier in your view`}>
                           <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
                         </button>
@@ -868,6 +902,7 @@ export default function TajarTracks() {
                       <Link href={`/dashboard?id=${d.id}&edit=1`} style={s.action}>
                         <i className="ti ti-pencil" aria-hidden="true"></i> Edit
                       </Link>
+                      {pinButton('dashboard', d)}
                       <button type="button" style={s.action} disabled={busy || index === 0} onClick={() => moveMyDashboard(index, -1)} aria-label={`Move "${d.title}" earlier`}>
                         <i className="ti ti-arrow-up" aria-hidden="true"></i> Earlier
                       </button>
