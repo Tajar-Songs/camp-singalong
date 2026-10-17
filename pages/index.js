@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import HomePins from '../lib/homePins';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
@@ -432,6 +433,9 @@ export default function Home() {
           </div>
 
         </div>
+
+        {/* Reports and dashboards pinned from Tajar Tracks (lib/homePins.js). */}
+        {user && <HomePins isDark={isDark} />}
 
       </div>
     </div>
