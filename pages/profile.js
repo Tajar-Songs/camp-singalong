@@ -29,6 +29,9 @@ export default function Profile() {
   const [findable, setFindable] = useState(false);
   const [sentMode, setSentMode] = useState('ask');
   const [newLabel, setNewLabel] = useState('until_opened');
+  // Home page pins: my own number, up to the admins' maximum
+  const [pinLimit, setPinLimit] = useState(3);
+  const [pinMax, setPinMax] = useState(6);
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -71,6 +74,12 @@ export default function Profile() {
         setFindable(!!data[0].findable_for_reports);
         setSentMode(data[0].sent_reports_mode || 'ask');
         setNewLabel(data[0].sent_reports_new_label || 'until_opened');
+        setPinLimit(data[0].home_pins_limit ?? 3);
+      }
+      const limitsRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/home_pin_limits`, { method: 'POST', headers: getAuthHeaders(), body: '{}' });
+      if (limitsRes.ok) {
+        const limits = await limitsRes.json();
+        if (limits?.max) setPinMax(limits.max);
       }
       setIsAdmin(hasAnyRole(await fetchUserRoleKeys(userId, getAuthHeaders(false))));
     } catch (error) { console.error('Error loading profile:', error); }
@@ -231,6 +240,21 @@ export default function Profile() {
           ], newLabel, (v) => saveChoice('sent_reports_new_label', v, newLabel, setNewLabel, 'Saved how new reports are labeled'))}
           <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '0.5rem 0 0' }}>
             Either way, you can use "Mark as new" on a report to flag it again for a while.
+          </p>
+        </div>
+
+        {/* Home page pins - personal (blue) */}
+        <div style={s.card}>
+          <h2 style={s.cardTitle}>Home page</h2>
+          <label htmlFor="pin-limit" style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.4rem' }}>How many things can I pin to my home page?</label>
+          <select id="pin-limit" value={Math.min(pinLimit, pinMax)}
+            onChange={(e) => saveChoice('home_pins_limit', Number(e.target.value), pinLimit, setPinLimit, 'Saved how many things you can pin')}
+            style={{ ...s.input, width: 'auto', minWidth: '6rem' }}>
+            {Array.from({ length: pinMax + 1 }, (_, n) => <option key={n} value={n}>{n === 0 ? 'None' : n}</option>)}
+          </select>
+          <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '0.5rem 0 0' }}>
+            Pin reports and dashboards from Tajar Tracks, and they'll show on your home page. Admins set the most anyone can pin (currently {pinMax}).
+            If you lower this below how many you've already pinned, those pins stay until you unpin them.
           </p>
         </div>
 
