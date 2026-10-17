@@ -434,10 +434,16 @@ export default function Home() {
 
         </div>
 
-        {/* Reports and dashboards pinned from Tajar Tracks (lib/homePins.js). */}
-        {user && <HomePins isDark={isDark} />}
-
       </div>
+
+      {/* Reports and dashboards pinned from Tajar Tracks (lib/homePins.js).
+          Outside the narrow column above, so reports have room to spread out,
+          and set well apart from the cards everyone sees. */}
+      {user && (
+        <div className="max-w-7xl mx-auto mt-12">
+          <HomePins isDark={isDark} />
+        </div>
+      )}
     </div>
   );
 }
