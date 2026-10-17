@@ -362,10 +362,10 @@ export default function Dashboard() {
       });
       if (!res.ok) throw new Error(await errorDetail(res));
       const newId = await res.json();
-      notify.success(`"${dashboard.title}" is now one of your dashboards. Change it however you like - the template stays as it is.`);
+      notify.success(`"${dashboard.title}" is now one of your dashboards. Change it however you like - the dashboard template stays as it is.`);
       router.push(`/dashboard?id=${newId}`);
     } catch (error) {
-      notify.error(`Couldn't use the template: ${error.message}`);
+      notify.error(`Couldn't use the dashboard template: ${error.message}`);
       setBusy(false);
     }
   };
@@ -531,7 +531,7 @@ export default function Dashboard() {
     const fits = (x) => !x || (x.snapshot ? template : !reportsById[x.report_id] || allowedOn(reportsById[x.report_id], template, key));
     const dropped = [...boxes.map(x => x.entry), ...tray].filter(x => x && !fits(x));
     if (dropped.length > 0) {
-      const where = !template ? 'your own dashboard' : key ? `a ${roleOf(key)?.label} template` : 'a template for everyone';
+      const where = !template ? 'your own dashboard' : key ? `a ${roleOf(key)?.label} dashboard template` : 'a dashboard template for everyone';
       notify.info(`Took off ${dropped.length} report${dropped.length === 1 ? '' : 's'} that can't go on ${where}.`);
     }
     setBoxes(boxes.map(x => (fits(x.entry) ? x : { ...x, entry: null })));
@@ -551,7 +551,7 @@ export default function Dashboard() {
 
   const save = async () => {
     if (!title.trim()) { notify.error('Give the dashboard a name before saving.'); return; }
-    if (isTemplate && !description.trim()) { notify.error('Say what this template is for - it\'s how other people will know whether it\'s useful to them.'); return; }
+    if (isTemplate && !description.trim()) { notify.error('Say what this dashboard template is for - it\'s how other people will know whether it\'s useful to them.'); return; }
     if (boxes.length === 0) { notify.error('Add at least one box to the layout before saving.'); return; }
     if (tray.length > 0 && !window.confirm(`${tray.length} report${tray.length === 1 ? ' isn\'t' : 's aren\'t'} in a box yet, so ${tray.length === 1 ? 'it' : 'they'} won't be on the dashboard. Save anyway?`)) return;
     const badLimit = boxes.find(x => x.entry && x.entry.row_limit !== null && !(Number.isInteger(x.entry.row_limit) && x.entry.row_limit > 0));
@@ -599,7 +599,7 @@ export default function Dashboard() {
           await writeJson('report_dashboard_items', 'POST', { dashboard_id: d.id, ...asSaved(x), position: x.position, row_limit: x.row_limit });
         }
       }
-      notify.success(d.is_template ? `Saved the template "${d.title}" for ${audienceWords(d.role_key)}` : `Saved "${d.title}"`);
+      notify.success(d.is_template ? `Saved the dashboard template "${d.title}" for ${audienceWords(d.role_key)}` : `Saved "${d.title}"`);
       setEditing(false);
       if (dashboard) start();
       else router.replace(`/dashboard?id=${d.id}`);
@@ -610,7 +610,7 @@ export default function Dashboard() {
   };
 
   const remove = async () => {
-    const what = dashboard.is_template ? 'template' : 'dashboard';
+    const what = dashboard.is_template ? 'dashboard template' : 'dashboard';
     const extra = dashboard.is_template ? ` It disappears for ${audienceWords(dashboard.role_key)}, but anyone who already used it keeps their own dashboard.` : '';
     if (!window.confirm(`Delete the ${what} "${dashboard.title}"?${extra} The reports on it stay where they are. This can't be undone.`)) return;
     setBusy(true);
@@ -658,7 +658,7 @@ export default function Dashboard() {
   const reportLabel = (r) => (r.role_key ? `${r.title} (${roleOf(r.role_key)?.label || 'role'} report)` : r.title);
   const templateTag = (d) => (
     <span style={{ ...s.tag, marginBottom: '0.4rem', color: '#fff', borderColor: PERSONAL_TEXT }}>
-      <i className="ti ti-template" aria-hidden="true"></i>Template · for {d.role_key ? `${roleOf(d.role_key)?.label || 'a role'}` : 'everyone'}
+      <i className="ti ti-template" aria-hidden="true"></i>Dashboard template · for {d.role_key ? `${roleOf(d.role_key)?.label || 'a role'}` : 'everyone'}
     </span>
   );
   const boxName = (i) => `Box ${i + 1}`;
@@ -753,16 +753,16 @@ export default function Dashboard() {
       <div style={s.container}><div style={{ ...s.wrapper, maxWidth: '1200px' }}>
         {backLink}
         <h1 style={{ ...s.title, marginBottom: '1rem' }}>
-          {dashboard ? (isTemplate ? 'Edit template' : 'Edit dashboard') : (isTemplate ? 'New template' : 'New dashboard')}
+          {dashboard ? (isTemplate ? 'Edit dashboard template' : 'Edit dashboard') : (isTemplate ? 'New dashboard template' : 'New dashboard')}
         </h1>
         {dashboard?.is_template && (
           <div role="note" style={{ ...s.card, marginBottom: '1rem', borderColor: PERSONAL_TEXT, background: `${PERSONAL_FILL}22`, flexDirection: 'row', gap: '0.6rem', alignItems: 'flex-start' }}>
             <i className="ti ti-template" style={{ fontSize: '1.3rem', color: PERSONAL_TEXT }} aria-hidden="true"></i>
             <div>
-              <strong>You're editing the template for {audienceWords(dashboard.role_key)}, not your own copy.</strong>
+              <strong>You're editing the dashboard template for {audienceWords(dashboard.role_key)}, not your own copy.</strong>
               <p style={{ ...s.help, margin: '0.2rem 0 0' }}>
                 Changes affect what people get when they use it from now on. Dashboards people already made from it don't change.
-                To change only your own version, use the template and change your copy instead.
+                To change only your own version, use the dashboard template and change your copy instead.
               </p>
             </div>
           </div>
@@ -772,14 +772,14 @@ export default function Dashboard() {
           {!dashboard && (
             <>
               <span style={{ ...s.label, marginTop: 0 }}>What are you making?</span>
-              <div style={s.segment} role="group" aria-label="Dashboard or template">
+              <div style={s.segment} role="group" aria-label="Dashboard or dashboard template">
                 <button type="button" style={s.segmentBtn(!isTemplate)} aria-pressed={!isTemplate} onClick={() => changeTarget(false, '')}>My own dashboard</button>
-                <button type="button" style={s.segmentBtn(isTemplate)} aria-pressed={isTemplate} onClick={() => changeTarget(true, roleKey)}>A template for other people</button>
+                <button type="button" style={s.segmentBtn(isTemplate)} aria-pressed={isTemplate} onClick={() => changeTarget(true, roleKey)}>A dashboard template for other people</button>
               </div>
               {isTemplate && (
                 <>
                   <span style={s.label}>Who's it for?</span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }} role="group" aria-label="Who the template is for">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }} role="group" aria-label="Who the dashboard template is for">
                     <button type="button" style={s.pill(!roleKey)} aria-pressed={!roleKey} onClick={() => changeTarget(true, '')}>
                       {!roleKey && <i className="ti ti-check" aria-hidden="true"></i>}Everyone
                     </button>
@@ -924,7 +924,7 @@ export default function Dashboard() {
           <p style={{ ...s.help, margin: '0 0 0.5rem' }}>
             {!isTemplate ? 'Your reports and your roles\' reports that aren\'t on it yet.'
               : roleKey ? `${roleOf(roleKey)?.label} reports (linked) and your own reports (copied for each person) that aren't on it yet.`
-                : 'Your own reports that aren\'t on it yet. Each person who uses the template gets their own copy.'}
+                : 'Your own reports that aren\'t on it yet. Each person who uses the dashboard template gets their own copy.'}
             {' '}Each one goes in the first empty box, or waits to be placed.
           </p>
           {addable.length === 0 ? (
@@ -948,7 +948,7 @@ export default function Dashboard() {
           <button type="button" style={s.secondary} onClick={() => (dashboard ? startEditing(dashboard, items, false) : router.push('/insights?tab=dashboards'))} disabled={busy}>Cancel</button>
           {dashboard && (
             <button type="button" style={{ ...s.secondary, color: DANGER_TEXT, borderColor: `${DANGER_TEXT}66`, marginLeft: 'auto' }} onClick={remove} disabled={busy}>
-              <i className="ti ti-trash" aria-hidden="true"></i> {dashboard.is_template ? 'Delete template' : 'Delete dashboard'}
+              <i className="ti ti-trash" aria-hidden="true"></i> {dashboard.is_template ? 'Delete dashboard template' : 'Delete dashboard'}
             </button>
           )}
         </div>
@@ -1012,24 +1012,32 @@ export default function Dashboard() {
           {dashboard.description && (
             <p style={{ ...s.help, color: '#cbd5e1' }}>{dashboard.is_template ? <><strong>What it's for:</strong> {dashboard.description}</> : dashboard.description}</p>
           )}
-          {dashboard.is_template && (
-            <p style={s.help}>This is a preview, showing your own data. Use it as your own dashboard to change anything - the template stays as it is.</p>
+          {dashboard.retired_at && (
+            <p style={{ ...s.help, color: '#cbd5e1' }}>
+              <i className="ti ti-archive" aria-hidden="true"></i>{' '}
+              {dashboard.retired_reason === 'merged'
+                ? <>This dashboard template was merged into another one{dashboard.merged_into_id && <> - <Link href={`/dashboard?id=${dashboard.merged_into_id}`} style={{ color: PERSONAL_TEXT }}>see the one that was kept</Link></>}. Only you can still see it.</>
+                : 'This dashboard template was removed by an admin. Only you can still see it.'}
+            </p>
+          )}
+          {dashboard.is_template && !dashboard.retired_at && (
+            <p style={s.help}>This is a preview, showing your own data. Use it as your own dashboard to change anything - the dashboard template stays as it is.</p>
           )}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-          {dashboard.is_template && (
+          {dashboard.is_template && !dashboard.retired_at && (
             <button type="button" style={s.primary} onClick={copyTemplate} disabled={busy}>
               <i className="ti ti-copy" aria-hidden="true"></i> Use as my own dashboard
             </button>
           )}
           {!dashboard.is_template && (
             <Link href={`/dashboard?new=1&template=1&from=${dashboard.id}`} style={{ ...s.secondary, textDecoration: 'none' }}>
-              <i className="ti ti-template" aria-hidden="true"></i> Make a template from this
+              <i className="ti ti-template" aria-hidden="true"></i> Make a dashboard template from this
             </Link>
           )}
           {canEdit && (
             <button type="button" style={s.secondary} onClick={() => startEditing(dashboard, items)}>
-              <i className="ti ti-layout" aria-hidden="true"></i> {dashboard.is_template ? 'Edit template' : 'Edit dashboard'}
+              <i className="ti ti-layout" aria-hidden="true"></i> {dashboard.is_template ? 'Edit dashboard template' : 'Edit dashboard'}
             </button>
           )}
         </div>
