@@ -109,7 +109,7 @@ export default function TajarTracks() {
 
   const makeCanUse = (datasetRows, perms) => (key) => {
     const d = datasetRows.find(x => x.key === key);
-    return !!d && (d.audience === 'self' || perms.includes(d.required_permission));
+    return !!d && (d.audience !== 'permission' || perms.includes(d.required_permission));
   };
   const canUse = makeCanUse(datasets, permissions);
 
