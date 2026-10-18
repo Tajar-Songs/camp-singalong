@@ -293,7 +293,7 @@ export default function Dashboard() {
       setItems(savedItems);
       const canUseNow = (key) => {
         const d = datasetRows.find(x => x.key === key);
-        return !!d && (d.audience === 'self' || perms.includes(d.required_permission));
+        return !!d && (d.audience !== 'permission' || perms.includes(d.required_permission));
       };
       savedItems.forEach(it => {
         const report = it.snapshot ? snapshotReport(it) : byId[it.report_id];
@@ -310,7 +310,7 @@ export default function Dashboard() {
 
   const canUse = (key) => {
     const d = datasets.find(x => x.key === key);
-    return !!d && (d.audience === 'self' || permissions.includes(d.required_permission));
+    return !!d && (d.audience !== 'permission' || permissions.includes(d.required_permission));
   };
 
   // Ask only for about as many results as the box shows (all, when it shows all).
