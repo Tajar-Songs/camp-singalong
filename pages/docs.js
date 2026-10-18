@@ -3,124 +3,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { fetchMyPermissions, hasPermission } from '../lib/permissions';
 import { notifyLegacy } from '../lib/notify';
+import { cleanHtml, htmlToMarkdown, markdownToHtml, docSource, htmlHasTable, textHasMdTable, isTableLine, isTableSeparator, splitTableRow } from '../lib/docMarkdown';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
-// Clean up messy HTML (strip inline styles, normalize tags)
-const cleanHtml = (html) => {
-  if (!html) return '';
-  return html
-    // Remove inline styles
-    .replace(/\s*style="[^"]*"/gi, '')
-    // Remove empty tags
-    .replace(/<(\w+)[^>]*>\s*<\/\1>/gi, '')
-    // Normalize whitespace
-    .replace(/\s+/g, ' ')
-    // Clean up br tags
-    .replace(/<br\s*\/?>/gi, '<br>')
-    .trim();
-};
-
-// Convert HTML to simple markdown
-const htmlToMarkdown = (html) => {
-  if (!html) return '';
-  let md = html;
-
-  // FIX: merge adjacent identical inline formatting tags BEFORE converting
-  // them to markdown. Without this, <strong>A</strong><strong>B</strong>
-  // (two separately-bolded spans sitting next to each other, e.g. from
-  // selecting and bolding a label, then separately bolding the text after
-  // it) converts independently into "**A****B**" - four consecutive
-  // asterisks with no way for any markdown parser to know where one bold
-  // span ends and the next begins. This was a real, reproducible cause of
-  // corrupted docs (confirmed against this project's Admin Model doc).
-  // Repeated until no more merges happen, since 3+ adjacent spans can occur.
-  ['strong', 'b', 'em', 'i'].forEach(tag => {
-    let prev;
-    do {
-      prev = md;
-      md = md.replace(new RegExp(`</${tag}>\\s*<${tag}[^>]*>`, 'gi'), '');
-    } while (prev !== md);
-  });
-
-  md = md
-    // Headers
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n')
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n')
-    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n\n')
-    // Bold
-    .replace(/<(b|strong)[^>]*>(.*?)<\/\1>/gi, '**$2**')
-    // Italic
-    .replace(/<(i|em)[^>]*>(.*?)<\/\1>/gi, '*$2*')
-    // Links
-    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
-    // Line breaks and paragraphs
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
-    .replace(/<p[^>]*>/gi, '')
-    .replace(/<\/p>/gi, '\n\n')
-    // Lists
-    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
-    .replace(/<\/?[uo]l[^>]*>/gi, '\n')
-    // Strip remaining tags
-    .replace(/<[^>]+>/g, '')
-    // Clean up whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  return md;
-};
-
-// Simple markdown to HTML converter
-const markdownToHtml = (md) => {
-  if (!md) return '';
-  let html = md
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // FIX: use [\s\S] instead of . for the bold/italic body match. '.' does
-    // not match newlines by default, so a bold span whose ** markers land on
-    // different lines (which happens with this project's older docs, a
-    // leftover from earlier lossy HTML->MD conversions before the adjacent-tag
-    // fix above existed) was left as literal, unconverted "**" characters
-    // instead of becoming <strong>. [\s\S] matches any character including
-    // newlines, so the pairing now works regardless of line breaks.
-    .replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([\s\S]+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // FIX: group consecutive list-item lines into ONE <ul> each, done here -
-  // before the paragraph/<br> conversion below - using placeholder markers.
-  // Previously, "- item1\n- item2" converted each line to its own <li>, then
-  // the <br> insertion ran on what was still separate lines, placing a <br>
-  // between sibling <li> elements - which broke the "consecutive <li> tags"
-  // pattern the old list-wrapping regex needed to find them as one group.
-  // Each item ended up wrapped in its own single-item <ul> instead of one
-  // shared list. Marking items first and grouping BEFORE <br> insertion
-  // fixes this; blank lines between item lines (common in this project's
-  // docs) are tolerated by the grouping regex below.
-  html = html.replace(/^\s*[-*]\s+(.+)$/gm, '@@LI@@$1@@/LI@@');
-  html = html.replace(/(?:@@LI@@[\s\S]*?@@\/LI@@\s*\n?)+/g, (block) => {
-    const items = [...block.matchAll(/@@LI@@([\s\S]*?)@@\/LI@@/g)].map(m => `<li>${m[1]}</li>`);
-    return `<ul>${items.join('')}</ul>`;
-  });
-
-  html = html
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>');
-  html = '<p>' + html + '</p>';
-  html = html.replace(/<p><\/p>/g, '').replace(/<p><br><\/p>/g, '');
-  // Clean up: a <ul> shouldn't be trapped inside a stray <p>, and shouldn't
-  // have a dangling <br> immediately touching it on either side.
-  html = html.replace(/<p>\s*<ul>/g, '<ul>').replace(/<\/ul>\s*<\/p>/g, '</ul>');
-  html = html.replace(/<br>\s*<ul>/g, '<ul>').replace(/<\/ul>\s*<br>/g, '</ul>');
-  // Cleanup: strip stray <p> wrapping that lands around headers (harmless to
-  // browsers either way, but not clean output).
-  html = html.replace(/<p>\s*(<h[123]>)/g, '$1').replace(/(<\/h[123]>)\s*<\/p>/g, '$1');
-  return html;
-};
+// Converting between the editor's HTML and markdown (including tables)
+// lives in lib/docMarkdown.js, shared with the docs API.
 
 // --- Word-level diff (LCS-based) ---
 // Tokenizes into runs of non-whitespace and runs of whitespace, so spacing
@@ -237,6 +126,29 @@ const applyDiffStyling = (html) => html
   .replace(/@@DIFFDEL@@/g, '<span class="diff-removed">')
   .replace(/@@\/DIFFDEL@@/g, '</span>');
 
+// Mark a whole line as added or removed. Table rows are marked cell by
+// cell, so the row stays a table row; a table's --- line is never marked.
+const markDiffLine = (line, type) => {
+  const tag = type === 'added' ? 'DIFFADD' : 'DIFFDEL';
+  if (isTableLine(line)) {
+    if (isTableSeparator(line)) return line;
+    return `| ${splitTableRow(line).map(c => (c ? `@@${tag}@@${c}@@/${tag}@@` : c)).join(' | ')} |`;
+  }
+  const [prefix, rest] = splitMarkdownPrefix(line);
+  return `${prefix}@@${tag}@@${rest}@@/${tag}@@`;
+};
+
+// An edited table row, compared cell by cell, so a highlight never crosses
+// from one cell into the next. Null when the rows can't be paired up.
+const diffTableRow = (oldLine, newLine) => {
+  if (isTableSeparator(oldLine) && isTableSeparator(newLine)) return newLine;
+  if (isTableSeparator(oldLine) || isTableSeparator(newLine)) return null;
+  const oldCells = splitTableRow(oldLine);
+  const newCells = splitTableRow(newLine);
+  if (oldCells.length !== newCells.length) return null;
+  return `| ${newCells.map((c, i) => buildDiffMarkdown(diffTokens(oldCells[i], c))).join(' | ')} |`;
+};
+
 // The main entry point: takes two markdown strings, returns fully-rendered,
 // diff-highlighted HTML (via the existing markdownToHtml pipeline), safe to
 // drop into dangerouslySetInnerHTML alongside the .doc-content styles.
@@ -250,7 +162,28 @@ const renderMarkdownDiff = (oldMd, newMd) => {
     if (block.type === 'same') {
       outputLines.push(...block.lines);
     } else if (block.type === 'replace') {
-      if (block.oldLines.length === 1 && block.newLines.length === 1) {
+      const touchesTable = [...block.oldLines, ...block.newLines].some(isTableLine);
+      if (touchesTable) {
+        // Pair old and new lines up in order; table rows are compared cell
+        // by cell, and anything that can't be paired is shown as removed
+        // then added.
+        const pairs = Math.min(block.oldLines.length, block.newLines.length);
+        for (let k = 0; k < pairs; k++) {
+          const o = block.oldLines[k];
+          const n = block.newLines[k];
+          const both = isTableLine(o) && isTableLine(n) ? diffTableRow(o, n) : null;
+          if (both !== null) outputLines.push(both);
+          else if (!isTableLine(o) && !isTableLine(n)) {
+            const [, oldRest] = splitMarkdownPrefix(o);
+            const [newPrefix, newRest] = splitMarkdownPrefix(n);
+            outputLines.push(newPrefix + buildDiffMarkdown(diffTokens(oldRest, newRest)));
+          } else {
+            outputLines.push(markDiffLine(o, 'removed'), markDiffLine(n, 'added'));
+          }
+        }
+        block.oldLines.slice(pairs).forEach(line => outputLines.push(markDiffLine(line, 'removed')));
+        block.newLines.slice(pairs).forEach(line => outputLines.push(markDiffLine(line, 'added')));
+      } else if (block.oldLines.length === 1 && block.newLines.length === 1) {
         const [, oldRest] = splitMarkdownPrefix(block.oldLines[0]);
         const [newPrefix, newRest] = splitMarkdownPrefix(block.newLines[0]);
         outputLines.push(newPrefix + buildDiffMarkdown(diffTokens(oldRest, newRest)));
@@ -258,15 +191,9 @@ const renderMarkdownDiff = (oldMd, newMd) => {
         outputLines.push(buildDiffMarkdown(diffTokens(block.oldLines.join('\n'), block.newLines.join('\n'))));
       }
     } else if (block.type === 'removed') {
-      block.lines.forEach(line => {
-        const [prefix, rest] = splitMarkdownPrefix(line);
-        outputLines.push(`${prefix}@@DIFFDEL@@${rest}@@/DIFFDEL@@`);
-      });
+      block.lines.forEach(line => outputLines.push(markDiffLine(line, 'removed')));
     } else if (block.type === 'added') {
-      block.lines.forEach(line => {
-        const [prefix, rest] = splitMarkdownPrefix(line);
-        outputLines.push(`${prefix}@@DIFFADD@@${rest}@@/DIFFADD@@`);
-      });
+      block.lines.forEach(line => outputLines.push(markDiffLine(line, 'added')));
     }
   }
   return applyDiffStyling(markdownToHtml(outputLines.join('\n')));
@@ -663,12 +590,15 @@ export default function Docs() {
     // default for most people). content_md/content_html are both populated
     // either way, so switching modes still works correctly - only the
     // initially-shown tab changes.
-    if (doc.content_md) {
-      setEditContentMd(doc.content_md);
-      setEditContentHtml(markdownToHtml(doc.content_md));
+    // docSource picks the markdown copy, unless it has lost tables the HTML
+    // copy still has - then the HTML copy, so the tables come back.
+    const source = docSource(doc);
+    if (source.kind === 'md') {
+      setEditContentMd(source.md);
+      setEditContentHtml(markdownToHtml(source.md));
     } else {
-      setEditContentHtml(doc.content || '');
-      setEditContentMd(htmlToMarkdown(doc.content || ''));
+      setEditContentHtml(source.html || '');
+      setEditContentMd(htmlToMarkdown(source.html || ''));
     }
     setEditorMode('wysiwyg');
     setDraftStatus('');
@@ -754,6 +684,148 @@ export default function Docs() {
   const insertLink = () => {
     const url = prompt('Enter URL:');
     if (url) execCommand('createLink', url);
+  };
+
+  // --- Tables in the Visual editor ---
+  // The table buttons use onMouseDown preventDefault (see the toolbar), so
+  // clicking one doesn't take the cursor out of the editor; each acts on the
+  // cell the cursor is in.
+  const currentCell = () => {
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (!sel || !sel.anchorNode) return null;
+    const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+    const cell = node?.closest?.('td, th');
+    return cell && editorRef.current?.contains(cell) ? cell : null;
+  };
+
+  // Put the cursor in a cell. With selectAll, the cell's text is selected
+  // (as Tab does), so typing replaces it.
+  const placeCursorIn = (el, selectAll = false) => {
+    if (!el) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    if (!selectAll) range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+
+  const needCell = () => {
+    const cell = currentCell();
+    if (!cell) showMessage('Click inside a table first.');
+    return cell;
+  };
+
+  const newCell = (tag) => {
+    const c = document.createElement(tag);
+    c.innerHTML = '<br>';
+    return c;
+  };
+
+  const insertTable = () => {
+    const sel = window.getSelection();
+    const inEditor = sel && sel.anchorNode && editorRef.current?.contains(sel.anchorNode);
+    if (!inEditor) {
+      // No cursor in the editor: add the table at the end.
+      editorRef.current?.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    if (currentCell()) { showMessage('Tables can\'t go inside other tables. Move the cursor out of the table first.'); return; }
+    const head = '<th><br></th><th><br></th>';
+    const row = '<td><br></td><td><br></td>';
+    document.execCommand('insertHTML', false, `<table><thead><tr>${head}</tr></thead><tbody><tr>${row}</tr><tr>${row}</tr></tbody></table><p><br></p>`);
+  };
+
+  const addRow = () => {
+    const cell = needCell();
+    if (!cell) return;
+    const tr = cell.parentElement;
+    const table = tr.closest('table');
+    const width = Math.max(...[...table.rows].map(r => r.cells.length));
+    const fresh = document.createElement('tr');
+    for (let i = 0; i < width; i++) fresh.appendChild(newCell('td'));
+    if (tr.parentElement.tagName === 'THEAD') {
+      // Below the heading row means the first row of the body.
+      let body = table.tBodies[0];
+      if (!body) { body = document.createElement('tbody'); table.appendChild(body); }
+      body.insertBefore(fresh, body.firstChild);
+    } else {
+      tr.after(fresh);
+    }
+    placeCursorIn(fresh.cells[Math.min(cell.cellIndex, width - 1)]);
+    return fresh;
+  };
+
+  const addColumn = () => {
+    const cell = needCell();
+    if (!cell) return;
+    const index = cell.cellIndex;
+    const table = cell.closest('table');
+    [...table.rows].forEach(tr => {
+      const ref = tr.cells[index] || tr.cells[tr.cells.length - 1];
+      const tag = tr.parentElement.tagName === 'THEAD' || ref?.tagName === 'TH' ? 'th' : 'td';
+      const fresh = newCell(tag);
+      if (ref) ref.after(fresh); else tr.appendChild(fresh);
+    });
+    placeCursorIn(cell.parentElement.cells[index + 1]);
+  };
+
+  const removeRow = () => {
+    const cell = needCell();
+    if (!cell) return;
+    const tr = cell.parentElement;
+    const table = tr.closest('table');
+    const next = tr.nextElementSibling || tr.previousElementSibling;
+    tr.remove();
+    if (table.rows.length === 0) { table.remove(); return; }
+    if (next) placeCursorIn(next.cells[0]);
+  };
+
+  const removeColumn = () => {
+    const cell = needCell();
+    if (!cell) return;
+    const index = cell.cellIndex;
+    const table = cell.closest('table');
+    const row = cell.parentElement;
+    [...table.rows].forEach(tr => { if (tr.cells[index]) tr.cells[index].remove(); });
+    [...table.rows].forEach(tr => { if (tr.cells.length === 0) tr.remove(); });
+    if (table.rows.length === 0) { table.remove(); return; }
+    if (row.isConnected) placeCursorIn(row.cells[Math.min(index, row.cells.length - 1)]);
+  };
+
+  const removeTable = () => {
+    const cell = needCell();
+    if (!cell) return;
+    if (!window.confirm('Delete this whole table?')) return;
+    cell.closest('table').remove();
+  };
+
+  // Tab and Shift+Tab move between cells; Tab in the last cell adds a row.
+  const handleEditorKeyDown = (e) => {
+    if (e.key !== 'Tab') return;
+    const cell = currentCell();
+    if (!cell) return;
+    e.preventDefault();
+    const cells = [...cell.closest('table').querySelectorAll('th, td')];
+    const at = cells.indexOf(cell);
+    if (e.shiftKey) { if (at > 0) placeCursorIn(cells[at - 1], true); return; }
+    if (at < cells.length - 1) placeCursorIn(cells[at + 1], true);
+    else { const fresh = addRow(); if (fresh) placeCursorIn(fresh.cells[0]); }
+  };
+
+  // Pasting text that contains a markdown table (for example, a table copied
+  // from a .md file as plain text) turns it into a real table. Anything else
+  // pastes as usual.
+  const handleEditorPaste = (e) => {
+    const html = e.clipboardData?.getData('text/html') || '';
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (htmlHasTable(html) || !textHasMdTable(text)) return;
+    e.preventDefault();
+    document.execCommand('insertHTML', false, markdownToHtml(text.replace(/\r\n?/g, '\n')));
   };
 
   // Renamed from saveDoc: this is "Save & Publish" - it writes the real,
@@ -1955,6 +2027,20 @@ export default function Docs() {
                           <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
                           <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link"><i className="ti ti-link" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Link</button>
                           <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting"><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Clear</button>
+                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
+                          {[
+                            { label: '+ Table', icon: 'ti-table-plus', title: 'Insert a table', run: insertTable },
+                            { label: '+ Row', icon: 'ti-row-insert-bottom', title: 'Add a row below', run: addRow },
+                            { label: '+ Column', icon: 'ti-column-insert-right', title: 'Add a column to the right', run: addColumn },
+                            { label: '− Row', icon: 'ti-row-remove', title: 'Delete this row', run: removeRow },
+                            { label: '− Column', icon: 'ti-column-remove', title: 'Delete this column', run: removeColumn },
+                            { label: '− Table', icon: 'ti-table-minus', title: 'Delete this table', run: removeTable }
+                          ].map(b => (
+                            <button key={b.title} style={s.toolbarBtn} title={b.title} aria-label={b.title}
+                              onMouseDown={(e) => e.preventDefault()} onClick={b.run}>
+                              <i className={`ti ${b.icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {b.label}
+                            </button>
+                          ))}
                         </div>
                         <div
                           ref={editorRef}
@@ -1963,6 +2049,8 @@ export default function Docs() {
                           className="doc-content"
                           dangerouslySetInnerHTML={{ __html: editContentHtml }}
                           onBlur={() => setEditContentHtml(editorRef.current?.innerHTML || '')}
+                          onKeyDown={handleEditorKeyDown}
+                          onPaste={handleEditorPaste}
                         />
                       </div>
                     </>
