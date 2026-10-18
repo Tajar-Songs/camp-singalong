@@ -228,14 +228,17 @@ export default function ReportBuilder() {
       const me = await res.json();
       setUser(me);
 
-      const [allDatasets, fieldRows, permissions, grants, roles] = await Promise.all([
+      const [allDatasets, registryFields, permissions, grants, roles] = await Promise.all([
         getJson('report_datasets?select=*&order=display_order.asc'),
         getJson('report_fields?select=*&order=display_order.asc'),
         fetchMyPermissions(authHeaders(false)),
         getJson(`user_roles?user_id=eq.${me.id}&select=role_id`),
         getJson('roles?select=id,key,label&order=label.asc')
       ]);
-      const canUse = (d) => d.audience === 'self' || permissions.includes(d.required_permission);
+      const canUse = (d) => d.audience !== 'permission' || permissions.includes(d.required_permission);
+      // Leave out fields this person isn't allowed to use (for example, the
+      // exact time of a content change, which only song editors can see).
+      const fieldRows = registryFields.filter(f => !f.required_permission || permissions.includes(f.required_permission));
       setAllFields(fieldRows);
       setMyPermissions(permissions);
       const held = roles.filter(r => grants.some(g => g.role_id === r.id));
