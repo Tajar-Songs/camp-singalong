@@ -8,9 +8,9 @@
 // returns 404 - the same as a doc that doesn't exist, so the API doesn't
 // reveal which internal slugs exist.
 //
-// docs.js saves both content (HTML) and content_md (markdown). content_md is
-// preferred; content is used when content_md is empty, or when content_md
-// has lost tables that content still has (older converters flattened them).
+// docs.js saves both content (HTML) and content_md (markdown). The HTML is
+// the real copy, so the markdown returned here is made fresh from it
+// (lib/docMarkdown.js). content_md is only used for a doc with no HTML.
 
 import { SUPABASE_URL, secretHeaders, hasInternalAccess, noStore } from '../../../lib/docsApi';
 import { htmlToMarkdown, docSource } from '../../../lib/docMarkdown';
@@ -57,8 +57,8 @@ export default async function handler(req, res) {
     }
 
     const doc = docs[0];
-    // Same choice the editor makes (lib/docMarkdown.js): the markdown copy,
-    // unless it has lost tables the HTML copy still has.
+    // Same choice the editor makes (lib/docMarkdown.js): the HTML copy,
+    // converted to markdown, or the markdown copy if there's no HTML.
     const source = docSource(doc);
     const content = decodeEntities(source.kind === 'md' ? source.md : htmlToMarkdown(source.html));
 
