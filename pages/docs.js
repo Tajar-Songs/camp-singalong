@@ -3,13 +3,18 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { fetchMyPermissions, hasPermission } from '../lib/permissions';
 import { notifyLegacy } from '../lib/notify';
-import { cleanHtml, htmlToMarkdown, markdownToHtml, docSource, htmlHasTable, textHasMdTable, isTableLine, isTableSeparator, splitTableRow } from '../lib/docMarkdown';
+import dynamic from 'next/dynamic';
+import { htmlToMarkdown, markdownToHtml, docSource, countTables, isTableLine, isTableSeparator, splitTableRow } from '../lib/docMarkdown';
+
+// The editor (TipTap) only runs in the browser.
+const DocEditor = dynamic(() => import('../lib/DocEditor'), { ssr: false });
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
-// Converting between the editor's HTML and markdown (including tables)
-// lives in lib/docMarkdown.js, shared with the docs API.
+// The HTML copy of a doc is the real one. The editor (lib/DocEditor.js)
+// works on HTML only; the markdown copy is made from it on save
+// (lib/docMarkdown.js, shared with the docs API).
 
 // --- Word-level diff (LCS-based) ---
 // Tokenizes into runs of non-whitespace and runs of whitespace, so spacing
@@ -110,7 +115,7 @@ const coalesceLineOps = (ops) => {
 // re-attached unmarked - structural regexes must see it at the true start
 // of the line regardless of what's highlighted in the rest of the line.
 const splitMarkdownPrefix = (line) => {
-  const m = line.match(/^(\s*(?:[-*]\s+|#{1,3}\s+))(.*)$/);
+  const m = line.match(/^(\s*(?:[-*]\s+|\d+\.\s+|>\s*|#{1,6}\s+))(.*)$/);
   return m ? [m[1], m[2]] : ['', line];
 };
 
@@ -341,7 +346,9 @@ export default function Docs() {
   
   const [editMode, setEditMode] = useState(false);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
-  const [editorMode, setEditorMode] = useState('wysiwyg'); // 'wysiwyg', 'markdown', 'code'
+  const [editorMode, setEditorMode] = useState('wysiwyg'); // 'wysiwyg' (the editor) | 'markdown' (read-only view of the markdown copy)
+  const [editorKey, setEditorKey] = useState(0);           // bumped to load new content into the editor
+  const [pendingDraft, setPendingDraft] = useState(null);  // unpublished changes found on opening, waiting for a choice
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   
@@ -406,7 +413,9 @@ export default function Docs() {
   // a new doc is still unpublished.
   const pendingNewDocIdRef = useRef(null);
   
-  const editorRef = useRef(null);
+  // Whether the editor is open, readable from timers (autosave), so a save
+  // that was already queued can't recreate a draft after Discard or Cancel.
+  const editModeRef = useRef(false);
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -590,33 +599,41 @@ export default function Docs() {
     // default for most people). content_md/content_html are both populated
     // either way, so switching modes still works correctly - only the
     // initially-shown tab changes.
-    // docSource picks the markdown copy, unless it has lost tables the HTML
-    // copy still has - then the HTML copy, so the tables come back.
+    // Always open the published HTML (the real copy). The markdown copy is
+    // only used for a doc that has no HTML at all.
     const source = docSource(doc);
-    if (source.kind === 'md') {
-      setEditContentMd(source.md);
-      setEditContentHtml(markdownToHtml(source.md));
-    } else {
-      setEditContentHtml(source.html || '');
-      setEditContentMd(htmlToMarkdown(source.html || ''));
-    }
+    const html = source.kind === 'html' ? source.html : markdownToHtml(source.md);
+    setEditContentHtml(html);
+    setEditContentMd(htmlToMarkdown(html));
+    setEditorKey(k => k + 1);
     setEditorMode('wysiwyg');
     setDraftStatus('');
+    setPendingDraft(null);
 
-    // Check for a newer unpublished draft than what's actually live, and
-    // offer to restore it rather than silently discarding in-progress work.
+    // Unpublished changes newer than the published doc? Don't load them
+    // silently or behind a yes/no box: show them as a choice above the
+    // editor (with a warning if they have fewer tables), and keep the
+    // editor read-only until the choice is made.
     const draft = await findDraft(doc.id);
     if (draft) {
       const draftIsNewer = !doc.updated_at || new Date(draft.updated_at) > new Date(doc.updated_at);
-      if (draftIsNewer) {
-        const draftTime = new Date(draft.updated_at).toLocaleString();
-        if (confirm(`You have unsaved changes from ${draftTime}. Restore them?`)) {
-          applyDraft(draft);
-        } else {
-          await clearDraft(doc.id);
-        }
-      }
+      if (draftIsNewer) setPendingDraft(draft);
+      else await clearDraft(doc.id); // older than what's published: nothing to keep
     }
+  };
+
+  // The choice offered by startEdit.
+  const useDraft = () => {
+    if (!pendingDraft) return;
+    applyDraft(pendingDraft);
+    setPendingDraft(null);
+  };
+  const dropDraft = async () => {
+    if (!pendingDraft) return;
+    const ok = await clearDraft(pendingDraft.record_id);
+    if (!ok) { showMessage("❌ Couldn't discard those changes. Try again, or reload the page."); return; }
+    setPendingDraft(null);
+    showMessage('✅ Discarded the unpublished changes. You are editing the published doc.');
   };
 
   // Note: no longer async, and no longer auto-checks for a prior in-progress
@@ -638,6 +655,8 @@ export default function Docs() {
     setEditSlug('');
     setEditContentHtml('');
     setEditContentMd('');
+    setEditorKey(k => k + 1);
+    setPendingDraft(null);
     setEditorMode('wysiwyg');
     setDraftStatus('');
     // Org fields for THIS new doc reset to defaults too - a fresh "+ New"
@@ -648,184 +667,29 @@ export default function Docs() {
     setOrgAudienceKeys([]);
   };
 
-  const cancelEdit = () => { setEditMode(false); setIsCreatingNew(false); setDraftStatus(''); };
+  // Cancel leaves editing but keeps the autosaved draft. A save that's still
+  // waiting is done now, so the last few seconds of changes aren't lost.
+  const cancelEdit = () => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+      if (!pendingDraft) saveDraft();
+    }
+    editModeRef.current = false;
+    setPendingDraft(null);
+    setEditMode(false);
+    setIsCreatingNew(false);
+    setDraftStatus('');
+  };
   const viewDoc = (doc) => { setSelectedDoc(doc); setEditMode(false); setIsCreatingNew(false); resetHistoryView(); };
   const addOrgTag = (tag) => { const t = tag.trim().toLowerCase(); if (t && !orgTags.includes(t)) setOrgTags([...orgTags, t]); setOrgTagInput(''); };
   const removeOrgTag = (tag) => { setOrgTags(orgTags.filter(t => t !== tag)); };
 
-  // Sync content when switching modes
+  // The Markdown tab only shows the markdown copy (read-only), so switching
+  // tabs never converts or changes the doc.
   const switchEditorMode = (newMode) => {
-    // Save current content first
-    if (editorMode === 'wysiwyg' && editorRef.current) {
-      setEditContentHtml(editorRef.current.innerHTML);
-    }
-    
-    if (newMode === 'markdown' && editorMode !== 'markdown') {
-      // Convert HTML to markdown
-      const html = editorMode === 'wysiwyg' && editorRef.current ? editorRef.current.innerHTML : editContentHtml;
-      setEditContentMd(htmlToMarkdown(html));
-    } else if (newMode === 'wysiwyg' && editorMode === 'markdown') {
-      // Convert markdown to HTML
-      setEditContentHtml(markdownToHtml(editContentMd));
-    } else if (newMode === 'code' && editorMode === 'markdown') {
-      // Convert markdown to HTML for code view
-      setEditContentHtml(markdownToHtml(editContentMd));
-    }
-    
+    if (newMode === 'markdown') setEditContentMd(htmlToMarkdown(editContentHtml));
     setEditorMode(newMode);
-  };
-
-  // WYSIWYG toolbar commands
-  const execCommand = (cmd, value = null) => {
-    document.execCommand(cmd, false, value);
-    editorRef.current?.focus();
-  };
-
-  const insertLink = () => {
-    const url = prompt('Enter URL:');
-    if (url) execCommand('createLink', url);
-  };
-
-  // --- Tables in the Visual editor ---
-  // The table buttons use onMouseDown preventDefault (see the toolbar), so
-  // clicking one doesn't take the cursor out of the editor; each acts on the
-  // cell the cursor is in.
-  const currentCell = () => {
-    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
-    if (!sel || !sel.anchorNode) return null;
-    const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
-    const cell = node?.closest?.('td, th');
-    return cell && editorRef.current?.contains(cell) ? cell : null;
-  };
-
-  // Put the cursor in a cell. With selectAll, the cell's text is selected
-  // (as Tab does), so typing replaces it.
-  const placeCursorIn = (el, selectAll = false) => {
-    if (!el) return;
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    if (!selectAll) range.collapse(true);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  };
-
-  const needCell = () => {
-    const cell = currentCell();
-    if (!cell) showMessage('Click inside a table first.');
-    return cell;
-  };
-
-  const newCell = (tag) => {
-    const c = document.createElement(tag);
-    c.innerHTML = '<br>';
-    return c;
-  };
-
-  const insertTable = () => {
-    const sel = window.getSelection();
-    const inEditor = sel && sel.anchorNode && editorRef.current?.contains(sel.anchorNode);
-    if (!inEditor) {
-      // No cursor in the editor: add the table at the end.
-      editorRef.current?.focus();
-      const range = document.createRange();
-      range.selectNodeContents(editorRef.current);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-    if (currentCell()) { showMessage('Tables can\'t go inside other tables. Move the cursor out of the table first.'); return; }
-    const head = '<th><br></th><th><br></th>';
-    const row = '<td><br></td><td><br></td>';
-    document.execCommand('insertHTML', false, `<table><thead><tr>${head}</tr></thead><tbody><tr>${row}</tr><tr>${row}</tr></tbody></table><p><br></p>`);
-  };
-
-  const addRow = () => {
-    const cell = needCell();
-    if (!cell) return;
-    const tr = cell.parentElement;
-    const table = tr.closest('table');
-    const width = Math.max(...[...table.rows].map(r => r.cells.length));
-    const fresh = document.createElement('tr');
-    for (let i = 0; i < width; i++) fresh.appendChild(newCell('td'));
-    if (tr.parentElement.tagName === 'THEAD') {
-      // Below the heading row means the first row of the body.
-      let body = table.tBodies[0];
-      if (!body) { body = document.createElement('tbody'); table.appendChild(body); }
-      body.insertBefore(fresh, body.firstChild);
-    } else {
-      tr.after(fresh);
-    }
-    placeCursorIn(fresh.cells[Math.min(cell.cellIndex, width - 1)]);
-    return fresh;
-  };
-
-  const addColumn = () => {
-    const cell = needCell();
-    if (!cell) return;
-    const index = cell.cellIndex;
-    const table = cell.closest('table');
-    [...table.rows].forEach(tr => {
-      const ref = tr.cells[index] || tr.cells[tr.cells.length - 1];
-      const tag = tr.parentElement.tagName === 'THEAD' || ref?.tagName === 'TH' ? 'th' : 'td';
-      const fresh = newCell(tag);
-      if (ref) ref.after(fresh); else tr.appendChild(fresh);
-    });
-    placeCursorIn(cell.parentElement.cells[index + 1]);
-  };
-
-  const removeRow = () => {
-    const cell = needCell();
-    if (!cell) return;
-    const tr = cell.parentElement;
-    const table = tr.closest('table');
-    const next = tr.nextElementSibling || tr.previousElementSibling;
-    tr.remove();
-    if (table.rows.length === 0) { table.remove(); return; }
-    if (next) placeCursorIn(next.cells[0]);
-  };
-
-  const removeColumn = () => {
-    const cell = needCell();
-    if (!cell) return;
-    const index = cell.cellIndex;
-    const table = cell.closest('table');
-    const row = cell.parentElement;
-    [...table.rows].forEach(tr => { if (tr.cells[index]) tr.cells[index].remove(); });
-    [...table.rows].forEach(tr => { if (tr.cells.length === 0) tr.remove(); });
-    if (table.rows.length === 0) { table.remove(); return; }
-    if (row.isConnected) placeCursorIn(row.cells[Math.min(index, row.cells.length - 1)]);
-  };
-
-  const removeTable = () => {
-    const cell = needCell();
-    if (!cell) return;
-    if (!window.confirm('Delete this whole table?')) return;
-    cell.closest('table').remove();
-  };
-
-  // Tab and Shift+Tab move between cells; Tab in the last cell adds a row.
-  const handleEditorKeyDown = (e) => {
-    if (e.key !== 'Tab') return;
-    const cell = currentCell();
-    if (!cell) return;
-    e.preventDefault();
-    const cells = [...cell.closest('table').querySelectorAll('th, td')];
-    const at = cells.indexOf(cell);
-    if (e.shiftKey) { if (at > 0) placeCursorIn(cells[at - 1], true); return; }
-    if (at < cells.length - 1) placeCursorIn(cells[at + 1], true);
-    else { const fresh = addRow(); if (fresh) placeCursorIn(fresh.cells[0]); }
-  };
-
-  // Pasting text that contains a markdown table (for example, a table copied
-  // from a .md file as plain text) turns it into a real table. Anything else
-  // pastes as usual.
-  const handleEditorPaste = (e) => {
-    const html = e.clipboardData?.getData('text/html') || '';
-    const text = e.clipboardData?.getData('text/plain') || '';
-    if (htmlHasTable(html) || !textHasMdTable(text)) return;
-    e.preventDefault();
-    document.execCommand('insertHTML', false, markdownToHtml(text.replace(/\r\n?/g, '\n')));
   };
 
   // Renamed from saveDoc: this is "Save & Publish" - it writes the real,
@@ -845,20 +709,11 @@ export default function Docs() {
     // published. Exiting edit mode alone does not prevent this.
     if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
     
-    // Get final content based on current mode
-    let finalHtml = editContentHtml;
-    let finalMd = editContentMd;
-    
-    if (editorMode === 'wysiwyg' && editorRef.current) {
-      finalHtml = cleanHtml(editorRef.current.innerHTML);
-      finalMd = htmlToMarkdown(finalHtml);
-    } else if (editorMode === 'markdown') {
-      finalHtml = markdownToHtml(editContentMd);
-      finalMd = editContentMd;
-    } else if (editorMode === 'code') {
-      finalHtml = cleanHtml(editContentHtml);
-      finalMd = htmlToMarkdown(finalHtml);
-    }
+    if (pendingDraft) { showMessage('❌ First choose whether to use or discard the unpublished changes shown above the editor.'); return; }
+
+    // The editor's HTML is the doc; the markdown copy is made from it.
+    const finalHtml = editContentHtml;
+    const finalMd = htmlToMarkdown(finalHtml);
     
     setSaving(true);
     try {
@@ -972,8 +827,8 @@ export default function Docs() {
   const currentDraftContent = () => ({
     title: editTitle,
     slug: editSlug,
-    content: editorMode === 'wysiwyg' && editorRef.current ? editorRef.current.innerHTML : editContentHtml,
-    content_md: editContentMd,
+    content: editContentHtml,
+    content_md: htmlToMarkdown(editContentHtml),
     ...(isCreatingNew ? { folder: orgFolder, visibility: orgVisibility, tags: orgTags, audienceKeys: orgAudienceKeys } : {})
   });
 
@@ -987,6 +842,10 @@ export default function Docs() {
     // findDraft() for the doc the person actually thinks they're editing).
     // Skipping this autosave is safe; the next successful one will catch up.
     if (!isCreatingNew && !selectedDoc?.id) return;
+    // Never save after leaving the editor (a save queued before Discard or
+    // Cancel used to recreate the draft), or while unpublished changes are
+    // waiting for a choice (saving now would overwrite them).
+    if (!editModeRef.current || pendingDraft) return;
     setDraftStatus('saving');
     try {
       const draftRow = {
@@ -1066,8 +925,10 @@ export default function Docs() {
         console.error('Failed to clear draft:', res.status, errorText);
       }
       loadUserDrafts(); // keep the Drafts list/badge in sync
+      return res.ok;
     } catch (error) {
       console.error('Error clearing draft:', error);
+      return false;
     }
   };
 
@@ -1078,8 +939,10 @@ export default function Docs() {
     const c = draft.content || {};
     setEditTitle(c.title || '');
     setEditSlug(c.slug || '');
-    setEditContentHtml(c.content || '');
-    setEditContentMd(c.content_md || '');
+    const html = c.content || markdownToHtml(c.content_md || '');
+    setEditContentHtml(html);
+    setEditContentMd(htmlToMarkdown(html));
+    setEditorKey(k => k + 1);
   };
 
   // Loads every draft the current user owns for docs (across ALL records,
@@ -1403,9 +1266,11 @@ export default function Docs() {
       if (!proceed) return;
     }
     setEditMode(true);
+    editModeRef.current = true;
     resetHistoryView();
     skipNextAutosaveRef.current = true;
     setDraftStatus('');
+    setPendingDraft(null);
     const liveDoc = draft.record_id ? docs.find(d => d.id === draft.record_id) : null;
     if (liveDoc) {
       setSelectedDoc(liveDoc);
@@ -1436,8 +1301,10 @@ export default function Docs() {
   // making changes, rather than on every keystroke. Skipped once right after
   // a doc/draft is first loaded into the editor, so opening something for
   // editing doesn't immediately count as "a change" and autosave a no-op draft.
+  useEffect(() => { editModeRef.current = editMode; }, [editMode]);
+
   useEffect(() => {
-    if (!editMode) return;
+    if (!editMode || pendingDraft) return;
     if (skipNextAutosaveRef.current) { skipNextAutosaveRef.current = false; return; }
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = setTimeout(() => { saveDraft(); }, 4000);
@@ -1523,8 +1390,14 @@ export default function Docs() {
   // action that actually deletes it.
   const discardDraft = async () => {
     if (!confirm('Discard this draft? Any unsaved changes will be permanently lost.')) return;
+    // Stop any save that's already queued first, or it would recreate the
+    // draft a few seconds after it's deleted.
+    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
+    editModeRef.current = false;
+    setPendingDraft(null);
     const recordId = isCreatingNew ? pendingNewDocIdRef.current : (selectedDoc?.id || null);
-    await clearDraft(recordId);
+    const ok = await clearDraft(recordId);
+    if (!ok) showMessage("❌ Couldn't discard the draft. Try again, or reload the page.");
     if (isCreatingNew) {
       setEditMode(false);
       setIsCreatingNew(false);
@@ -2000,78 +1873,49 @@ export default function Docs() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <label style={s.label}>Content</label>
                     <div style={{ display: 'flex', gap: '0.25rem' }}>
-                      <button style={s.editorTab(editorMode === 'wysiwyg')} onClick={() => switchEditorMode('wysiwyg')}>Visual</button>
-                      <button style={s.editorTab(editorMode === 'markdown')} onClick={() => switchEditorMode('markdown')}>Markdown</button>
-                      <button style={s.editorTab(editorMode === 'code')} onClick={() => switchEditorMode('code')}>HTML</button>
+                      <button style={s.editorTab(editorMode === 'wysiwyg')} onClick={() => switchEditorMode('wysiwyg')}>Edit</button>
+                      <button style={s.editorTab(editorMode === 'markdown')} onClick={() => switchEditorMode('markdown')}>Markdown (view only)</button>
                     </div>
                   </div>
-                  
-                  {editorMode === 'wysiwyg' && (
-                    <>
-                      {/* Toolbar + editable area now share one scrolling container
-                          (wysiwygScrollBox) so the sticky toolbar has a scrolling
-                          ancestor to stick within - see style comment above. */}
-                      <div style={s.wysiwygScrollBox}>
-                        <div style={s.wysiwygToolbar}>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('bold')} title="Bold"><b>B</b></button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('italic')} title="Italic"><i>I</i></button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('underline')} title="Underline"><u>U</u></button>
-                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h1')} title="Heading 1">H1</button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h2')} title="Heading 2">H2</button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'h3')} title="Heading 3">H3</button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('formatBlock', 'p')} title="Paragraph">P</button>
-                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('insertUnorderedList')} title="Bullet List">• List</button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('insertOrderedList')} title="Numbered List">1. List</button>
-                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
-                          <button style={s.toolbarBtn} onClick={insertLink} title="Insert Link"><i className="ti ti-link" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Link</button>
-                          <button style={s.toolbarBtn} onClick={() => execCommand('removeFormat')} title="Clear Formatting"><i className="ti ti-x" style={{ fontSize: '0.9em' }} aria-hidden="true"></i> Clear</button>
-                          <span style={{ borderLeft: '1px solid #838C95', margin: '0 0.25rem' }}></span>
-                          {[
-                            { label: '+ Table', icon: 'ti-table-plus', title: 'Insert a table', run: insertTable },
-                            { label: '+ Row', icon: 'ti-row-insert-bottom', title: 'Add a row below', run: addRow },
-                            { label: '+ Column', icon: 'ti-column-insert-right', title: 'Add a column to the right', run: addColumn },
-                            { label: '− Row', icon: 'ti-row-remove', title: 'Delete this row', run: removeRow },
-                            { label: '− Column', icon: 'ti-column-remove', title: 'Delete this column', run: removeColumn },
-                            { label: '− Table', icon: 'ti-table-minus', title: 'Delete this table', run: removeTable }
-                          ].map(b => (
-                            <button key={b.title} style={s.toolbarBtn} title={b.title} aria-label={b.title}
-                              onMouseDown={(e) => e.preventDefault()} onClick={b.run}>
-                              <i className={`ti ${b.icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {b.label}
-                            </button>
-                          ))}
+
+                  {/* Unpublished changes found when the doc was opened. The
+                      editor stays read-only until one of these is chosen. */}
+                  {pendingDraft && (() => {
+                    const draftTables = countTables(pendingDraft.content?.content || '');
+                    const liveTables = countTables(editContentHtml);
+                    return (
+                      <div role="alert" style={{ background: '#C3552215', border: '1px solid #C35522', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ flex: '1 1 18rem', fontSize: '0.9rem' }}>
+                          You have unpublished changes to this doc from {new Date(pendingDraft.updated_at).toLocaleString()}. Below is the published doc.
+                          {draftTables < liveTables && (
+                            <div style={{ marginTop: '0.35rem', fontWeight: 'bold', color: '#D45D25' }}>
+                              Careful: the unpublished changes have {draftTables} {draftTables === 1 ? 'table' : 'tables'}, and the published doc has {liveTables}. They may have been damaged by the old editor.
+                            </div>
+                          )}
                         </div>
-                        <div
-                          ref={editorRef}
-                          contentEditable
-                          style={s.wysiwygEditor}
-                          className="doc-content"
-                          dangerouslySetInnerHTML={{ __html: editContentHtml }}
-                          onBlur={() => setEditContentHtml(editorRef.current?.innerHTML || '')}
-                          onKeyDown={handleEditorKeyDown}
-                          onPaste={handleEditorPaste}
-                        />
+                        <button style={s.btnSec} onClick={useDraft}>Use my unpublished changes</button>
+                        <button style={s.btn} onClick={dropDraft}>Discard them and edit the published doc</button>
                       </div>
-                    </>
+                    );
+                  })()}
+
+                  {editorMode === 'wysiwyg' && (
+                    <DocEditor
+                      key={editorKey}
+                      initialHtml={editContentHtml}
+                      editable={!pendingDraft}
+                      onChange={(html) => setEditContentHtml(html)}
+                      onMessage={showMessage}
+                    />
                   )}
-                  
+
                   {editorMode === 'markdown' && (
-                    <textarea 
-                      value={editContentMd} 
-                      onChange={(e) => setEditContentMd(e.target.value)} 
-                      style={s.textarea} 
-                      placeholder="# Heading&#10;&#10;Regular paragraph text.&#10;&#10;**bold** and *italic*&#10;&#10;- List item&#10;- Another item&#10;&#10;[Link text](url)" 
-                    />
-                  )}
-                  
-                  {editorMode === 'code' && (
-                    <textarea 
-                      value={editContentHtml} 
-                      onChange={(e) => setEditContentHtml(e.target.value)} 
-                      style={{ ...s.textarea, fontFamily: 'monospace', fontSize: '0.8rem' }} 
-                      placeholder="<h1>Heading</h1>&#10;<p>Paragraph text</p>" 
-                    />
+                    <>
+                      <p style={{ fontSize: '0.8rem', color: '#838C95', margin: '0 0 0.5rem' }}>
+                        This is the markdown copy, made from the doc each time it's saved. It can't be edited here. To bring markdown in, paste it into the editor, or use "Paste as markdown".
+                      </p>
+                      <textarea readOnly value={editContentMd} style={{ ...s.textarea, fontFamily: 'monospace', fontSize: '0.8rem' }} />
+                    </>
                   )}
                 </div>
 
@@ -2363,6 +2207,20 @@ export default function Docs() {
         .doc-content h3 { font-size: 1.25rem; font-weight: bold; margin: 1.25rem 0 0.5rem 0; color: #fff; }
         .doc-content p { margin: 0.75rem 0; color: #e2e8f0; }
         .doc-content ul, .doc-content ol { margin: 0.75rem 0; padding-left: 1.5rem; color: #e2e8f0; }
+        /* Tailwind's base styles remove list bullets and numbers; put them back
+           for docs, including nested lists. */
+        .doc-content ul { list-style: disc; }
+        .doc-content ol { list-style: decimal; }
+        .doc-content ul ul { list-style: circle; }
+        .doc-content ul ul ul { list-style: square; }
+        .doc-content li > p { margin: 0; }
+        .doc-content li > ul, .doc-content li > ol { margin: 0.25rem 0; }
+        .doc-content h4 { font-size: 1.1rem; font-weight: bold; margin: 1rem 0 0.5rem 0; color: #fff; }
+        .doc-content blockquote { border-left: 3px solid #334155; margin: 0.75rem 0; padding: 0.25rem 0 0.25rem 1rem; color: #cbd5e1; }
+        .doc-content hr { border: none; border-top: 1px solid #334155; margin: 1.5rem 0; }
+        .doc-content pre { background: #1e293b; padding: 0.75rem 1rem; border-radius: 0.375rem; overflow-x: auto; }
+        .doc-content u { text-decoration: underline; }
+        .doc-content s { text-decoration: line-through; }
         .doc-content li { margin: 0.25rem 0; }
         .doc-content a { color: #3B9B73; text-decoration: underline; }
         .doc-content a:hover { color: #3B9B73; }
