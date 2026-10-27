@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { fetchUserRoleKeys, hasAnyRole } from '../lib/roles';
+import { fetchMyPermissions, hasPermission } from '../lib/permissions';
 import { notifyLegacy } from '../lib/notify';
 
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
@@ -80,7 +80,7 @@ function FormattedText({ text }) {
 export default function Ideas() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [userRoleKeys, setUserRoleKeys] = useState([]);
+  const [myPermissions, setMyPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   
@@ -118,6 +118,25 @@ export default function Ideas() {
 
   const [topicOptions, setTopicOptions] = useState([]); // option_lists rows, list_key='feedback_topics'
   const [requestTopics, setRequestTopics] = useState({}); // request_id -> [value_key, ...]
+
+  // Related feedback: groups an admin has linked, and links people have suggested.
+  const [groups, setGroups] = useState({}); // group id -> feedback_groups row
+  const [suggestions, setSuggestions] = useState([]); // feedback_link_suggestions rows, oldest first
+  const [linkFormFor, setLinkFormFor] = useState(null); // request id whose link/suggest form is open
+  const [linkTarget, setLinkTarget] = useState('');
+  const [linkNote, setLinkNote] = useState('');
+  const [linkName, setLinkName] = useState('');
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [groupDescDraft, setGroupDescDraft] = useState('');
+  const [decliningId, setDecliningId] = useState(null); // suggestion id being declined
+  const [declineNote, setDeclineNote] = useState('');
+  const [linkBusy, setLinkBusy] = useState(false);
+  // Admins: tick several items and link them all at once.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkName, setBulkName] = useState('');
+  const [bulkNote, setBulkNote] = useState('');
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -162,8 +181,8 @@ export default function Ideas() {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${userId}`, { headers });
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) setUserProfile(data[0]);
-      const roleKeys = await fetchUserRoleKeys(userId, headers);
-      setUserRoleKeys(roleKeys);
+      const permissionKeys = await fetchMyPermissions(headers);
+      setMyPermissions(permissionKeys);
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
@@ -242,7 +261,55 @@ export default function Ideas() {
       }
       setRequestTopics(reqTopicsMap);
 
+      await loadLinks();
     } catch (error) { console.error('Error loading data:', error); }
+  };
+
+  // Groups and suggested links. Called on page load, and again after any
+  // linking change (with refreshMembership, to pick up which items moved
+  // into or out of a group - combining groups can move items the page
+  // didn't touch directly).
+  const loadLinks = async (refreshMembership = false) => {
+    try {
+      const headers = getAuthHeaders(false);
+      const groupsRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_groups?select=*`, { headers, cache: 'no-store' });
+      const groupsData = await groupsRes.json();
+      const groupsMap = {};
+      if (Array.isArray(groupsData)) groupsData.forEach(g => { groupsMap[g.id] = g; });
+      setGroups(groupsMap);
+
+      const sugRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_link_suggestions?select=*&order=created_at.asc`, { headers, cache: 'no-store' });
+      const sugData = await sugRes.json();
+      setSuggestions(Array.isArray(sugData) ? sugData : []);
+
+      if (refreshMembership) {
+        const memRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?select=id,group_id`, { headers, cache: 'no-store' });
+        const memData = await memRes.json();
+        if (Array.isArray(memData)) {
+          const byId = {};
+          memData.forEach(m => { byId[m.id] = m.group_id; });
+          setRequests(prev => prev.map(r => (r.id in byId ? { ...r, group_id: byId[r.id] } : r)));
+        }
+      }
+    } catch (error) { console.error('Error loading related feedback:', error); }
+  };
+
+  // Call one of the database functions that change groups. These check the
+  // "Manage feedback" permission themselves; a refusal comes back as an
+  // error with the reason, which is shown rather than a false success.
+  const callRpc = async (fn, body) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      let detail = `the database returned ${res.status}`;
+      try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
+      throw new Error(detail);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
   };
 
   // Shared messages, drawn just below the nav bar by _app.js (lib/notify.js).
@@ -254,7 +321,156 @@ export default function Ideas() {
   const getUserName = (userId) => userProfiles[userId]?.display_name || userProfiles[userId]?.email?.split('@')[0] || 'Anonymous';
   const getTopicsForRequest = (requestId) => requestTopics[requestId] || [];
   const getTopicLabel = (valueKey) => topicOptions.find(t => t.value_key === valueKey)?.label || valueKey;
-  const isAdmin = hasAnyRole(userRoleKeys);
+  const isAdmin = hasPermission(myPermissions, 'feedback.manage');
+
+  // --- Related feedback helpers ---
+  const getRequest = (requestId) => requests.find(r => r.id === requestId);
+  const samePair = (sug, a, b) =>
+    (sug.request_a === a && sug.request_b === b) || (sug.request_a === b && sug.request_b === a);
+  const pendingForRequest = (requestId) =>
+    suggestions.filter(sg => sg.status === 'pending' && (sg.request_a === requestId || sg.request_b === requestId));
+  const declinedForPair = (a, b) => suggestions.filter(sg => sg.status === 'declined' && samePair(sg, a, b));
+  const pendingForPair = (a, b) => suggestions.find(sg => sg.status === 'pending' && samePair(sg, a, b));
+  const inSameGroup = (a, b) => {
+    const ga = getRequest(a)?.group_id;
+    return !!ga && ga === getRequest(b)?.group_id;
+  };
+
+  const openLinkForm = (requestId) => {
+    setLinkFormFor(linkFormFor === requestId ? null : requestId);
+    setLinkTarget('');
+    setLinkNote('');
+    setLinkName('');
+  };
+
+  // People without "Manage feedback" suggest a link; admins link directly.
+  const submitLink = async (requestId) => {
+    if (!user || !linkTarget || linkBusy) return;
+    setLinkBusy(true);
+    try {
+      if (isAdmin) {
+        await callRpc('link_feedback', {
+          p_request_ids: [requestId, linkTarget],
+          p_name: linkName.trim() || null,
+          p_description: linkNote.trim() || null
+        });
+        // A waiting suggestion for this same pair is now settled by the link.
+        const pending = pendingForPair(requestId, linkTarget);
+        if (pending) await callRpc('decide_feedback_suggestion', { p_suggestion_id: pending.id, p_accept: true, p_note: null });
+        showMessage('✅ Linked as related feedback');
+      } else {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback_link_suggestions`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+          body: JSON.stringify({
+            request_a: requestId,
+            request_b: linkTarget,
+            note: linkNote.trim() || null,
+            created_by: user.id
+          })
+        });
+        if (!res.ok) {
+          let detail = `the database returned ${res.status}`;
+          try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
+          throw new Error(detail);
+        }
+        showMessage('✅ Suggestion sent - an admin will take a look');
+      }
+      setLinkFormFor(null);
+      await loadLinks(true);
+    } catch (error) {
+      console.error('Error linking feedback:', error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+    }
+    setLinkBusy(false);
+  };
+
+  const decideSuggestion = async (suggestionId, accept, note) => {
+    if (linkBusy) return;
+    setLinkBusy(true);
+    try {
+      await callRpc('decide_feedback_suggestion', { p_suggestion_id: suggestionId, p_accept: accept, p_note: (note || '').trim() || null });
+      setDecliningId(null);
+      setDeclineNote('');
+      await loadLinks(true);
+      showMessage(accept ? '✅ Linked as related feedback' : '✅ Suggestion declined');
+    } catch (error) {
+      console.error('Error deciding suggestion:', error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+    }
+    setLinkBusy(false);
+  };
+
+  const unlinkRequest = async (requestId) => {
+    if (linkBusy) return;
+    setLinkBusy(true);
+    try {
+      await callRpc('unlink_feedback', { p_request_id: requestId });
+      await loadLinks(true);
+      showMessage('✅ Removed from the group');
+    } catch (error) {
+      console.error('Error unlinking feedback:', error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+    }
+    setLinkBusy(false);
+  };
+
+  const toggleSelected = (requestId) =>
+    setSelectedIds(prev => (prev.includes(requestId) ? prev.filter(id => id !== requestId) : [...prev, requestId]));
+
+  const stopSelecting = () => {
+    setSelectMode(false);
+    setSelectedIds([]);
+    setBulkName('');
+    setBulkNote('');
+  };
+
+  const linkSelected = async () => {
+    if (selectedIds.length < 2 || linkBusy) return;
+    setLinkBusy(true);
+    try {
+      await callRpc('link_feedback', {
+        p_request_ids: selectedIds,
+        p_name: bulkName.trim() || null,
+        p_description: bulkNote.trim() || null
+      });
+      // Waiting suggestions between any two of these are now settled by the link.
+      const settled = suggestions.filter(sg =>
+        sg.status === 'pending' && selectedIds.includes(sg.request_a) && selectedIds.includes(sg.request_b));
+      for (const sg of settled) {
+        await callRpc('decide_feedback_suggestion', { p_suggestion_id: sg.id, p_accept: true, p_note: null });
+      }
+      const count = selectedIds.length;
+      stopSelecting();
+      await loadLinks(true);
+      showMessage(`✅ Linked ${count} items as related feedback`);
+    } catch (error) {
+      console.error('Error linking selected feedback:', error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+    }
+    setLinkBusy(false);
+  };
+
+  const startEditGroup = (group) => {
+    setEditingGroupId(group.id);
+    setGroupNameDraft(group.name || '');
+    setGroupDescDraft(group.description || '');
+  };
+
+  const saveGroup = async (groupId) => {
+    if (linkBusy) return;
+    setLinkBusy(true);
+    try {
+      await callRpc('update_feedback_group', { p_group_id: groupId, p_name: groupNameDraft, p_description: groupDescDraft });
+      setEditingGroupId(null);
+      await loadLinks();
+      showMessage('✅ Group saved');
+    } catch (error) {
+      console.error('Error saving group:', error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+    }
+    setLinkBusy(false);
+  };
 
   const toggleVote = async (requestId) => {
     if (!user) return;
@@ -522,6 +738,31 @@ export default function Ideas() {
       return new Date(b.created_at) - new Date(a.created_at);
     });
 
+  // Linked feedback is shown together, as one block. A group takes its place
+  // in the list from its strongest item: the one with the most votes (or,
+  // sorting by recent, the newest), since that's the item decisions go by.
+  const compareRequests = (a, b) => {
+    if (sortBy === 'votes') {
+      const diff = getVoteCount(b.id) - getVoteCount(a.id);
+      if (diff !== 0) return diff;
+    }
+    return new Date(b.created_at) - new Date(a.created_at);
+  };
+  const blocks = (() => {
+    const byKey = new Map();
+    filteredRequests.forEach(r => {
+      const groupId = r.group_id && groups[r.group_id] ? r.group_id : null;
+      const key = groupId ? `g:${groupId}` : `r:${r.id}`;
+      if (!byKey.has(key)) byKey.set(key, { key, groupId, members: [] });
+      byKey.get(key).members.push(r);
+    });
+    const list = [...byKey.values()];
+    list.forEach(b => b.members.sort(compareRequests));
+    list.sort((x, y) => compareRequests(x.members[0], y.members[0]));
+    return list;
+  })();
+  const groupSize = (groupId) => requests.filter(r => r.group_id === groupId).length;
+
   // Count of items matching a given type AND all currently-active non-type
   // filters (status, topic) - this is what makes the tab badges reflect the
   // active filter instead of always showing the all-time total for that type.
@@ -575,6 +816,430 @@ export default function Ideas() {
       color: selected ? '#3B9B73' : '#838C95'
     }),
     topicBadge: { display: 'inline-block', background: '#334155', color: '#838C95', padding: '0.15rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', marginRight: '0.375rem', marginBottom: '0.25rem' }
+  };
+
+  const renderCard = (req) => {
+    const voteCount = getVoteCount(req.id);
+    const voted = hasVoted(req.id);
+    const reqComments = getComments(req.id);
+    const isExpanded = expandedId === req.id;
+    const statusColor = statusColors[req.status] || statusColors.open;
+    const reqType = typeLabels[req.request_type] || typeLabels.feature;
+    const reqTopics = getTopicsForRequest(req.id);
+
+    return (
+      <div key={req.id} style={s.card}>
+        <div style={{ display: 'flex' }}>
+          <div style={{ 
+            padding: '1rem', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            borderRight: '1px solid #334155',
+            minWidth: '60px'
+          }}>
+            <button
+              onClick={() => user && toggleVote(req.id)}
+              disabled={!user}
+              style={{
+                background: voted ? '#256B45' : '#334155',
+                border: 'none',
+                borderRadius: '0.375rem',
+                padding: '0.5rem',
+                cursor: user ? 'pointer' : 'default',
+                opacity: user ? 1 : 0.5,
+                transition: 'background 0.2s'
+              }}
+            >
+              <span style={{ fontSize: '1.25rem' }}>▲</span>
+            </button>
+            <span style={{ fontWeight: 'bold', fontSize: '1.25rem', marginTop: '0.25rem' }}>{voteCount}</span>
+          </div>
+
+          <div style={{ flex: 1, padding: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ 
+                  fontSize: '0.7rem', 
+                  padding: '0.2rem 0.5rem', 
+                  borderRadius: '0.25rem',
+                  background: `${reqType.color}20`,
+                  color: reqType.color
+                }}>
+                  <i className={`ti ti-${reqType.icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {reqType.label}
+                </span>
+                {selectMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(req.id)}
+                    onChange={() => toggleSelected(req.id)}
+                    aria-label={`Select "${req.title}" to link`}
+                    style={{ width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
+                  />
+                )}
+                <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
+              </div>
+              <span style={{ 
+                fontSize: '0.7rem', 
+                padding: '0.25rem 0.5rem', 
+                borderRadius: '0.25rem',
+                background: statusColor.bg,
+                color: statusColor.text,
+                textTransform: 'uppercase',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap'
+              }}>
+                {req.status}
+              </span>
+            </div>
+
+            {/* Topic badges */}
+            {reqTopics.length > 0 && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                {reqTopics.map(tk => <span key={tk} style={s.topicBadge}>{getTopicLabel(tk)}</span>)}
+              </div>
+            )}
+            
+            {req.description && (
+              <div style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
+            )}
+            {pollOptions[req.id] && pollOptions[req.id].length > 0 && (() => {
+              const options = pollOptions[req.id];
+              const counts = options.map(o => pollVotes[o.id] || 0);
+              const totalVotes = counts.reduce((a, b) => a + b, 0);
+              const myVote = myPollVote[req.id];
+              return (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  {options.map((opt, i) => {
+                    const count = counts[i];
+                    const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+                    const isMine = myVote === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => castPollVote(req.id, opt.id)}
+                        disabled={!user}
+                        style={{
+                          position: 'relative',
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          background: '#334155',
+                          border: isMine ? '2px solid #6882B6' : '2px solid transparent',
+                          borderRadius: '0.375rem',
+                          padding: '0.5rem 0.75rem',
+                          marginBottom: '0.375rem',
+                          cursor: user ? 'pointer' : 'default',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute', left: 0, top: 0, bottom: 0,
+                          width: `${pct}%`, background: '#3B9B7320', zIndex: 0
+                        }} />
+                        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
+                          <span>{isMine && '✓ '}{opt.option_text}</span>
+                          <span style={{ color: '#838C95' }}>{count} {count === 1 ? 'vote' : 'votes'} ({pct}%)</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {!user && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Log in to vote</div>}
+                  {isAdmin && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <button onClick={() => toggleBreakdown(req.id)} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
+                        {breakdownOpenFor === req.id ? 'Hide' : 'Show'} breakdown by role
+                      </button>
+                      {breakdownOpenFor === req.id && (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#838C95' }}>
+                          {!pollBreakdown[req.id] ? 'Loading...' : options.map(opt => {
+                            const roleCounts = pollBreakdown[req.id][opt.id] || {};
+                            const roleEntries = Object.entries(roleCounts);
+                            return (
+                              <div key={opt.id} style={{ marginBottom: '0.375rem' }}>
+                                <strong style={{ color: '#e2e8f0' }}>{opt.option_text}:</strong>{' '}
+                                {roleEntries.length === 0 ? 'no votes' : roleEntries.map(([role, count]) => `${role}: ${count}`).join(', ')}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {req.admin_response && (
+              <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.375rem', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                <span style={{ color: '#3B9B73', fontWeight: 'bold' }}>Admin:</span> {req.admin_response}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#838C95', flexWrap: 'wrap' }}>
+              <span>by {getUserName(req.created_by)}</span>
+              <span>{new Date(req.created_at).toLocaleDateString()}</span>
+              <button 
+                onClick={() => setExpandedId(isExpanded ? null : req.id)}
+                style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}
+              >
+                💬 {reqComments.length} {isExpanded ? '▼' : '▶'}
+              </button>
+
+              {user && (
+                <button
+                  onClick={() => openLinkForm(req.id)}
+                  style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}
+                  title={isAdmin ? 'Link this with related feedback' : 'Suggest that this is related to other feedback'}
+                >
+                  <i className="ti ti-link" aria-hidden="true"></i> {isAdmin ? 'Link related' : 'Suggest related'}
+                </button>
+              )}
+
+              {isAdmin && req.group_id && (
+                <button
+                  onClick={() => unlinkRequest(req.id)}
+                  disabled={linkBusy}
+                  style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}
+                  title="Take this item out of its group"
+                >
+                  <i className="ti ti-unlink" aria-hidden="true"></i> Remove from group
+                </button>
+              )}
+
+              {isAdmin && (
+                <select
+                  value={req.status}
+                  onChange={(e) => updateStatus(req.id, e.target.value)}
+                  style={{ ...s.select, padding: '0.25rem', fontSize: '0.7rem' }}
+                >
+                  <option value="open">Open</option>
+                  <option value="planned">Planned</option>
+                  <option value="done">Done</option>
+                  <option value="declined">Declined</option>
+                </select>
+              )}
+            </div>
+
+            {/* Admin: recategorize topics after the fact */}
+            {isAdmin && topicOptions.length > 0 && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {topicOptions.map(topic => {
+                    const selected = reqTopics.includes(topic.value_key);
+                    return (
+                      <button
+                        key={topic.value_key}
+                        onClick={() => toggleRequestTopic(req.id, topic.value_key)}
+                        style={{ ...s.topicChip(selected), padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                      >
+                        {selected ? '✓ ' : '+ '}{topic.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Suggested links waiting for an admin. Everyone can see them;
+                only admins can accept or decline. */}
+            {pendingForRequest(req.id).map(sg => {
+              const otherId = sg.request_a === req.id ? sg.request_b : sg.request_a;
+              const other = getRequest(otherId);
+              const pastDeclines = declinedForPair(sg.request_a, sg.request_b);
+              return (
+                <div key={sg.id} style={{ marginTop: '0.75rem', padding: '0.6rem 0.75rem', background: '#0f172a', border: '1px dashed #6882B6', borderRadius: '0.5rem', fontSize: '0.8rem' }}>
+                  <div style={{ color: '#e2e8f0' }}>
+                    <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>{' '}
+                    Suggested as related to <strong>{other ? other.title : 'another item'}</strong>
+                    <span style={{ color: '#838C95' }}> · by {getUserName(sg.created_by)}, {new Date(sg.created_at).toLocaleDateString()}</span>
+                  </div>
+                  {sg.note && <div style={{ color: '#838C95', marginTop: '0.25rem' }}>"{sg.note}"</div>}
+                  {pastDeclines.length > 0 && (
+                    <div style={{ color: '#838C95', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                      Declined before{pastDeclines.map(d => ` on ${new Date(d.decided_at || d.created_at).toLocaleDateString()}${d.admin_notes ? `: "${d.admin_notes}"` : ''}`).join(';')}
+                    </div>
+                  )}
+                  {isAdmin && (
+                    decliningId === sg.id ? (
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                        <input
+                          type="text"
+                          placeholder="Why aren't these related? (optional)"
+                          value={declineNote}
+                          onChange={(e) => setDeclineNote(e.target.value)}
+                          style={{ ...s.input, marginBottom: 0, flex: 1, minWidth: '12rem', padding: '0.4rem 0.6rem' }}
+                        />
+                        <button onClick={() => decideSuggestion(sg.id, false, declineNote)} disabled={linkBusy} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}>Decline</button>
+                        <button onClick={() => { setDecliningId(null); setDeclineNote(''); }} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <button onClick={() => decideSuggestion(sg.id, true)} disabled={linkBusy} style={{ ...s.btn, fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}>Link them</button>
+                        <button onClick={() => { setDecliningId(sg.id); setDeclineNote(''); }} disabled={linkBusy} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}>Not related</button>
+                      </div>
+                    )
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Link (admins) or suggest (everyone else signed in) */}
+            {linkFormFor === req.id && user && (() => {
+              const candidates = requests
+                .filter(r => r.id !== req.id && !inSameGroup(r.id, req.id))
+                .sort((a, b) => a.title.localeCompare(b.title));
+              const pending = linkTarget ? pendingForPair(req.id, linkTarget) : null;
+              const declines = linkTarget ? declinedForPair(req.id, linkTarget) : [];
+              const blocked = !isAdmin && !!pending;
+              return (
+                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '0.5rem' }}>
+                    {isAdmin ? 'Link this with:' : 'Which feedback looks related to this one?'}
+                  </div>
+                  <select value={linkTarget} onChange={(e) => setLinkTarget(e.target.value)} style={{ ...s.select, width: '100%', marginBottom: '0.5rem' }}>
+                    <option value="">Pick an item...</option>
+                    {candidates.map(r => (
+                      <option key={r.id} value={r.id}>{r.title}{r.group_id ? ' (already in a group)' : ''}</option>
+                    ))}
+                  </select>
+                  {pending && (
+                    <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
+                      {isAdmin ? 'Someone already suggested this pair; linking them settles that suggestion.' : 'Someone already suggested this pair, and it\'s waiting for an admin.'}
+                    </div>
+                  )}
+                  {declines.length > 0 && (
+                    <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem', fontStyle: 'italic' }}>
+                      An admin decided these weren't related{declines.map(d => ` on ${new Date(d.decided_at || d.created_at).toLocaleDateString()}${d.admin_notes ? `: "${d.admin_notes}"` : ''}`).join(';')}.
+                      {!isAdmin && ' You can still suggest it again.'}
+                    </div>
+                  )}
+                  {isAdmin && (
+                    <input
+                      type="text"
+                      placeholder={(() => {
+                        const g = groups[req.group_id] || groups[getRequest(linkTarget)?.group_id];
+                        return g?.name ? `Group name (currently "${g.name}")` : 'Group name (optional)';
+                      })()}
+                      value={linkName}
+                      onChange={(e) => setLinkName(e.target.value)}
+                      style={{ ...s.input, marginBottom: '0.5rem', padding: '0.5rem 0.6rem' }}
+                    />
+                  )}
+                  <textarea
+                    placeholder={isAdmin ? 'Why are these linked? (optional)' : 'Why do these look related? (optional)'}
+                    value={linkNote}
+                    onChange={(e) => setLinkNote(e.target.value)}
+                    style={{ ...s.textarea, minHeight: '60px', marginBottom: '0.5rem' }}
+                  />
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={() => submitLink(req.id)}
+                      disabled={!linkTarget || blocked || linkBusy}
+                      style={{ ...s.btn, opacity: (!linkTarget || blocked || linkBusy) ? 0.5 : 1 }}
+                    >
+                      {isAdmin ? 'Link' : 'Suggest'}
+                    </button>
+                    <button onClick={() => setLinkFormFor(null)} style={s.btnSec}>Cancel</button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {isExpanded && (
+              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
+                {reqComments.length === 0 && (
+                  <p style={{ color: '#838C95', fontSize: '0.875rem', fontStyle: 'italic' }}>No comments yet</p>
+                )}
+                
+                {reqComments.map(c => (
+                  <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
+                    <span style={{ fontWeight: 'bold', color: '#3B9B73' }}>{getUserName(c.user_id)}</span>
+                    <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}</span>
+                    <p style={{ marginTop: '0.25rem', color: '#e2e8f0' }}>{c.comment}</p>
+                  </div>
+                ))}
+
+                {user ? (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Add a comment..."
+                      value={expandedId === req.id ? newComment : ''}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addComment(req.id)}
+                      style={{ ...s.input, marginBottom: 0, flex: 1 }}
+                    />
+                    <button onClick={() => addComment(req.id)} disabled={!newComment.trim()} style={s.btn}>Post</button>
+                  </div>
+                ) : (
+                  <p style={{ color: '#838C95', fontSize: '0.875rem', marginTop: '0.75rem' }}>
+                    <Link href="/?login=true" style={{ color: '#3B9B73' }}>Log in</Link> to comment
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // A group of linked feedback: its name and why it was linked, then each
+  // item as its usual card. Every item keeps its own status, votes and comments.
+  const renderGroup = (block) => {
+    const group = groups[block.groupId];
+    const total = groupSize(block.groupId);
+    const hidden = total - block.members.length;
+    const topVotes = Math.max(...requests.filter(r => r.group_id === block.groupId).map(r => getVoteCount(r.id)));
+    const editing = editingGroupId === block.groupId;
+    return (
+      <div key={block.key} style={{ borderLeft: '3px solid #6882B6', background: '#6882B60D', borderRadius: '0.75rem', padding: '0.75rem 0.75rem 0.01rem 0.75rem', marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '0.75rem' }}>
+          {editing ? (
+            <div>
+              <input
+                type="text"
+                placeholder="Group name (optional)"
+                value={groupNameDraft}
+                onChange={(e) => setGroupNameDraft(e.target.value)}
+                style={{ ...s.input, marginBottom: '0.5rem', padding: '0.5rem 0.6rem' }}
+              />
+              <textarea
+                placeholder="Why are these linked? (optional)"
+                value={groupDescDraft}
+                onChange={(e) => setGroupDescDraft(e.target.value)}
+                style={{ ...s.textarea, minHeight: '60px', marginBottom: '0.5rem' }}
+              />
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button onClick={() => saveGroup(block.groupId)} disabled={linkBusy} style={{ ...s.btn, fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>Save</button>
+                <button onClick={() => setEditingGroupId(null)} style={{ ...s.btnSec, fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>
+                <span style={{ fontWeight: 'bold', color: '#e2e8f0' }}>{group?.name || 'Related feedback'}</span>
+                <span style={{ fontSize: '0.75rem', color: '#838C95' }}>
+                  {total} linked items · most votes: {topVotes}
+                  {hidden > 0 && ` · ${hidden} hidden by your filters`}
+                </span>
+                {isAdmin && (
+                  <button onClick={() => startEditGroup(group)} style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}>
+                    <i className="ti ti-pencil" aria-hidden="true"></i> Edit
+                  </button>
+                )}
+              </div>
+              {group?.description && (
+                <div style={{ color: '#838C95', fontSize: '0.8rem', marginTop: '0.25rem' }}><FormattedText text={group.description} /></div>
+              )}
+            </>
+          )}
+        </div>
+        {block.members.map(renderCard)}
+      </div>
+    );
   };
 
   if (loading) {
@@ -755,6 +1420,11 @@ export default function Ideas() {
               <option value="recent">Most Recent</option>
             </select>
             <span style={{ color: '#838C95', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
+            {isAdmin && !selectMode && (
+              <button onClick={() => setSelectMode(true)} style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <i className="ti ti-link" aria-hidden="true"></i> Select items to link
+              </button>
+            )}
           </div>
           {filtersExpanded && (
             <div style={{ ...s.card, padding: '0.75rem' }}>
@@ -812,237 +1482,47 @@ export default function Ideas() {
           )}
         </div>
 
-        {filteredRequests.map(req => {
-          const voteCount = getVoteCount(req.id);
-          const voted = hasVoted(req.id);
-          const reqComments = getComments(req.id);
-          const isExpanded = expandedId === req.id;
-          const statusColor = statusColors[req.status] || statusColors.open;
-          const reqType = typeLabels[req.request_type] || typeLabels.feature;
-          const reqTopics = getTopicsForRequest(req.id);
-
-          return (
-            <div key={req.id} style={s.card}>
-              <div style={{ display: 'flex' }}>
-                <div style={{ 
-                  padding: '1rem', 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  borderRight: '1px solid #334155',
-                  minWidth: '60px'
-                }}>
-                  <button
-                    onClick={() => user && toggleVote(req.id)}
-                    disabled={!user}
-                    style={{
-                      background: voted ? '#256B45' : '#334155',
-                      border: 'none',
-                      borderRadius: '0.375rem',
-                      padding: '0.5rem',
-                      cursor: user ? 'pointer' : 'default',
-                      opacity: user ? 1 : 0.5,
-                      transition: 'background 0.2s'
-                    }}
-                  >
-                    <span style={{ fontSize: '1.25rem' }}>▲</span>
-                  </button>
-                  <span style={{ fontWeight: 'bold', fontSize: '1.25rem', marginTop: '0.25rem' }}>{voteCount}</span>
-                </div>
-
-                <div style={{ flex: 1, padding: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <span style={{ 
-                        fontSize: '0.7rem', 
-                        padding: '0.2rem 0.5rem', 
-                        borderRadius: '0.25rem',
-                        background: `${reqType.color}20`,
-                        color: reqType.color
-                      }}>
-                        <i className={`ti ti-${reqType.icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {reqType.label}
-                      </span>
-                      <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
-                    </div>
-                    <span style={{ 
-                      fontSize: '0.7rem', 
-                      padding: '0.25rem 0.5rem', 
-                      borderRadius: '0.25rem',
-                      background: statusColor.bg,
-                      color: statusColor.text,
-                      textTransform: 'uppercase',
-                      fontWeight: 'bold',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {req.status}
-                    </span>
-                  </div>
-
-                  {/* Topic badges */}
-                  {reqTopics.length > 0 && (
-                    <div style={{ marginBottom: '0.5rem' }}>
-                      {reqTopics.map(tk => <span key={tk} style={s.topicBadge}>{getTopicLabel(tk)}</span>)}
-                    </div>
-                  )}
-                  
-                  {req.description && (
-                    <div style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
-                  )}
-                  {pollOptions[req.id] && pollOptions[req.id].length > 0 && (() => {
-                    const options = pollOptions[req.id];
-                    const counts = options.map(o => pollVotes[o.id] || 0);
-                    const totalVotes = counts.reduce((a, b) => a + b, 0);
-                    const myVote = myPollVote[req.id];
-                    return (
-                      <div style={{ marginBottom: '0.75rem' }}>
-                        {options.map((opt, i) => {
-                          const count = counts[i];
-                          const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
-                          const isMine = myVote === opt.id;
-                          return (
-                            <button
-                              key={opt.id}
-                              onClick={() => castPollVote(req.id, opt.id)}
-                              disabled={!user}
-                              style={{
-                                position: 'relative',
-                                display: 'block',
-                                width: '100%',
-                                textAlign: 'left',
-                                background: '#334155',
-                                border: isMine ? '2px solid #6882B6' : '2px solid transparent',
-                                borderRadius: '0.375rem',
-                                padding: '0.5rem 0.75rem',
-                                marginBottom: '0.375rem',
-                                cursor: user ? 'pointer' : 'default',
-                                overflow: 'hidden'
-                              }}
-                            >
-                              <div style={{
-                                position: 'absolute', left: 0, top: 0, bottom: 0,
-                                width: `${pct}%`, background: '#3B9B7320', zIndex: 0
-                              }} />
-                              <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem' }}>
-                                <span>{isMine && '✓ '}{opt.option_text}</span>
-                                <span style={{ color: '#838C95' }}>{count} {count === 1 ? 'vote' : 'votes'} ({pct}%)</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                        {!user && <div style={{ fontSize: '0.75rem', color: '#838C95' }}>Log in to vote</div>}
-                        {isAdmin && (
-                          <div style={{ marginTop: '0.5rem' }}>
-                            <button onClick={() => toggleBreakdown(req.id)} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
-                              {breakdownOpenFor === req.id ? 'Hide' : 'Show'} breakdown by role
-                            </button>
-                            {breakdownOpenFor === req.id && (
-                              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#838C95' }}>
-                                {!pollBreakdown[req.id] ? 'Loading...' : options.map(opt => {
-                                  const roleCounts = pollBreakdown[req.id][opt.id] || {};
-                                  const roleEntries = Object.entries(roleCounts);
-                                  return (
-                                    <div key={opt.id} style={{ marginBottom: '0.375rem' }}>
-                                      <strong style={{ color: '#e2e8f0' }}>{opt.option_text}:</strong>{' '}
-                                      {roleEntries.length === 0 ? 'no votes' : roleEntries.map(([role, count]) => `${role}: ${count}`).join(', ')}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {req.admin_response && (
-                    <div style={{ background: '#0f172a', padding: '0.75rem', borderRadius: '0.375rem', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                      <span style={{ color: '#3B9B73', fontWeight: 'bold' }}>Admin:</span> {req.admin_response}
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#838C95', flexWrap: 'wrap' }}>
-                    <span>by {getUserName(req.created_by)}</span>
-                    <span>{new Date(req.created_at).toLocaleDateString()}</span>
-                    <button 
-                      onClick={() => setExpandedId(isExpanded ? null : req.id)}
-                      style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}
-                    >
-                      💬 {reqComments.length} {isExpanded ? '▼' : '▶'}
-                    </button>
-                    
-                    {isAdmin && (
-                      <select
-                        value={req.status}
-                        onChange={(e) => updateStatus(req.id, e.target.value)}
-                        style={{ ...s.select, padding: '0.25rem', fontSize: '0.7rem' }}
-                      >
-                        <option value="open">Open</option>
-                        <option value="planned">Planned</option>
-                        <option value="done">Done</option>
-                        <option value="declined">Declined</option>
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Admin: recategorize topics after the fact */}
-                  {isAdmin && topicOptions.length > 0 && (
-                    <div style={{ marginTop: '0.5rem' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                        {topicOptions.map(topic => {
-                          const selected = reqTopics.includes(topic.value_key);
-                          return (
-                            <button
-                              key={topic.value_key}
-                              onClick={() => toggleRequestTopic(req.id, topic.value_key)}
-                              style={{ ...s.topicChip(selected), padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
-                            >
-                              {selected ? '✓ ' : '+ '}{topic.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {isExpanded && (
-                    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                      {reqComments.length === 0 && (
-                        <p style={{ color: '#838C95', fontSize: '0.875rem', fontStyle: 'italic' }}>No comments yet</p>
-                      )}
-                      
-                      {reqComments.map(c => (
-                        <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
-                          <span style={{ fontWeight: 'bold', color: '#3B9B73' }}>{getUserName(c.user_id)}</span>
-                          <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}</span>
-                          <p style={{ marginTop: '0.25rem', color: '#e2e8f0' }}>{c.comment}</p>
-                        </div>
-                      ))}
-
-                      {user ? (
-                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                          <input
-                            type="text"
-                            placeholder="Add a comment..."
-                            value={expandedId === req.id ? newComment : ''}
-                            onChange={(e) => setNewComment(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && addComment(req.id)}
-                            style={{ ...s.input, marginBottom: 0, flex: 1 }}
-                          />
-                          <button onClick={() => addComment(req.id)} disabled={!newComment.trim()} style={s.btn}>Post</button>
-                        </div>
-                      ) : (
-                        <p style={{ color: '#838C95', fontSize: '0.875rem', marginTop: '0.75rem' }}>
-                          <Link href="/?login=true" style={{ color: '#3B9B73' }}>Log in</Link> to comment
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+        {/* Admins: link several ticked items at once. Ticking items that are
+            already in different groups combines those groups into one. */}
+        {isAdmin && selectMode && (
+          <div style={{ ...s.card, padding: '0.75rem', border: '1px solid #6882B6', position: 'sticky', top: '4.5rem', zIndex: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>
+                <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>{' '}
+                {selectedIds.length === 0 ? 'Tick the items you want to link' : `${selectedIds.length} selected`}
+                {selectedIds.length === 1 && ' - pick at least one more'}
+              </span>
+              {selectedIds.length > 0 && (
+                <button onClick={() => setSelectedIds([])} style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}>Clear selection</button>
+              )}
             </div>
-          );
-        })}
+            <input
+              type="text"
+              placeholder="Group name (optional)"
+              value={bulkName}
+              onChange={(e) => setBulkName(e.target.value)}
+              style={{ ...s.input, marginBottom: '0.5rem', padding: '0.5rem 0.6rem' }}
+            />
+            <textarea
+              placeholder="Why are these linked? (optional)"
+              value={bulkNote}
+              onChange={(e) => setBulkNote(e.target.value)}
+              style={{ ...s.textarea, minHeight: '50px', marginBottom: '0.5rem' }}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={linkSelected}
+                disabled={selectedIds.length < 2 || linkBusy}
+                style={{ ...s.btn, opacity: (selectedIds.length < 2 || linkBusy) ? 0.5 : 1 }}
+              >
+                Link selected
+              </button>
+              <button onClick={stopSelecting} style={s.btnSec}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {blocks.map(block => (block.groupId ? renderGroup(block) : renderCard(block.members[0])))}
 
         {filteredRequests.length === 0 && (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#838C95' }}>
