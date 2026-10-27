@@ -132,6 +132,11 @@ export default function Ideas() {
   const [decliningId, setDecliningId] = useState(null); // suggestion id being declined
   const [declineNote, setDeclineNote] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
+  // Admins: tick several items and link them all at once.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkName, setBulkName] = useState('');
+  const [bulkNote, setBulkNote] = useState('');
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -405,6 +410,42 @@ export default function Ideas() {
       showMessage('✅ Removed from the group');
     } catch (error) {
       console.error('Error unlinking feedback:', error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+    }
+    setLinkBusy(false);
+  };
+
+  const toggleSelected = (requestId) =>
+    setSelectedIds(prev => (prev.includes(requestId) ? prev.filter(id => id !== requestId) : [...prev, requestId]));
+
+  const stopSelecting = () => {
+    setSelectMode(false);
+    setSelectedIds([]);
+    setBulkName('');
+    setBulkNote('');
+  };
+
+  const linkSelected = async () => {
+    if (selectedIds.length < 2 || linkBusy) return;
+    setLinkBusy(true);
+    try {
+      await callRpc('link_feedback', {
+        p_request_ids: selectedIds,
+        p_name: bulkName.trim() || null,
+        p_description: bulkNote.trim() || null
+      });
+      // Waiting suggestions between any two of these are now settled by the link.
+      const settled = suggestions.filter(sg =>
+        sg.status === 'pending' && selectedIds.includes(sg.request_a) && selectedIds.includes(sg.request_b));
+      for (const sg of settled) {
+        await callRpc('decide_feedback_suggestion', { p_suggestion_id: sg.id, p_accept: true, p_note: null });
+      }
+      const count = selectedIds.length;
+      stopSelecting();
+      await loadLinks(true);
+      showMessage(`✅ Linked ${count} items as related feedback`);
+    } catch (error) {
+      console.error('Error linking selected feedback:', error);
       showMessage(`❌ Couldn't save that: ${error.message}`);
     }
     setLinkBusy(false);
@@ -827,6 +868,15 @@ export default function Ideas() {
                 }}>
                   <i className={`ti ti-${reqType.icon}`} style={{ fontSize: '0.9em' }} aria-hidden="true"></i> {reqType.label}
                 </span>
+                {selectMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(req.id)}
+                    onChange={() => toggleSelected(req.id)}
+                    aria-label={`Select "${req.title}" to link`}
+                    style={{ width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
+                  />
+                )}
                 <h3 style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{req.title}</h3>
               </div>
               <span style={{ 
@@ -1370,6 +1420,11 @@ export default function Ideas() {
               <option value="recent">Most Recent</option>
             </select>
             <span style={{ color: '#838C95', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
+            {isAdmin && !selectMode && (
+              <button onClick={() => setSelectMode(true)} style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <i className="ti ti-link" aria-hidden="true"></i> Select items to link
+              </button>
+            )}
           </div>
           {filtersExpanded && (
             <div style={{ ...s.card, padding: '0.75rem' }}>
@@ -1426,6 +1481,46 @@ export default function Ideas() {
             </div>
           )}
         </div>
+
+        {/* Admins: link several ticked items at once. Ticking items that are
+            already in different groups combines those groups into one. */}
+        {isAdmin && selectMode && (
+          <div style={{ ...s.card, padding: '0.75rem', border: '1px solid #6882B6', position: 'sticky', top: '4.5rem', zIndex: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>
+                <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>{' '}
+                {selectedIds.length === 0 ? 'Tick the items you want to link' : `${selectedIds.length} selected`}
+                {selectedIds.length === 1 && ' - pick at least one more'}
+              </span>
+              {selectedIds.length > 0 && (
+                <button onClick={() => setSelectedIds([])} style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}>Clear selection</button>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="Group name (optional)"
+              value={bulkName}
+              onChange={(e) => setBulkName(e.target.value)}
+              style={{ ...s.input, marginBottom: '0.5rem', padding: '0.5rem 0.6rem' }}
+            />
+            <textarea
+              placeholder="Why are these linked? (optional)"
+              value={bulkNote}
+              onChange={(e) => setBulkNote(e.target.value)}
+              style={{ ...s.textarea, minHeight: '50px', marginBottom: '0.5rem' }}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={linkSelected}
+                disabled={selectedIds.length < 2 || linkBusy}
+                style={{ ...s.btn, opacity: (selectedIds.length < 2 || linkBusy) ? 0.5 : 1 }}
+              >
+                Link selected
+              </button>
+              <button onClick={stopSelecting} style={s.btnSec}>Cancel</button>
+            </div>
+          </div>
+        )}
 
         {blocks.map(block => (block.groupId ? renderGroup(block) : renderCard(block.members[0])))}
 
