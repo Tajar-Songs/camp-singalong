@@ -90,7 +90,7 @@ export default function Ideas() {
   // Read through the feedback views, which never say who posted: only
   // whether it's mine, and the poster's name when they share it.
   const [requests, setRequests] = useState([]); // live items
-  const [trashed, setTrashed] = useState([]); // in the trash: mine, or everyone's for admins
+  const [trashed, setTrashed] = useState([]); // my own items in the trash (only I can see them)
   const [showTrash, setShowTrash] = useState(false);
   const [comments, setComments] = useState({});
 
@@ -109,6 +109,14 @@ export default function Ideas() {
   const [editCommentText, setEditCommentText] = useState('');
   const [commentAsAdmin, setCommentAsAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Reporting something as concerning: which thing the form is open for
+  // ('feature_requests:<id>', 'feature_comments:<id>' or
+  // 'feedback_link_suggestions:<id>'), the reason, and what I've reported
+  // while on the page.
+  const [reportingFor, setReportingFor] = useState(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportedKeys, setReportedKeys] = useState([]);
 
   const [sortBy, setSortBy] = useState('votes');
   // Status: multi-select now (someone may want "everything not done" =
@@ -351,7 +359,7 @@ export default function Ideas() {
 
   const getVoteCount = (requestId) => requests.find(r => r.id === requestId)?.vote_count || 0;
   const hasVoted = (requestId) => !!user && !!requests.find(r => r.id === requestId)?.i_voted;
-  // Comments still in the trash show only to their author (and admins), in place.
+  // Comments still in the trash show only to their author, in place.
   const getComments = (requestId) => comments[requestId] || [];
   const liveComments = (requestId) => getComments(requestId).filter(c => !c.deleted_at);
   // The name on a post, comment or suggestion: shown only when the person shares it.
@@ -793,6 +801,25 @@ export default function Ideas() {
 
   const restoreItem = (req) => runMine('restore_feedback', { p_request_id: req.id }, '✅ Restored');
 
+  // A copy is saved when it's reported, so it can still be reviewed if it's
+  // later edited or deleted. Who reported and who posted stay private.
+  const submitReport = async (table, id) => {
+    const key = `${table}:${id}`;
+    if (busy || !reportReason.trim()) return;
+    setBusy(true);
+    try {
+      await callRpc('report_concern', { p_target_table: table, p_target_id: id, p_reason: reportReason });
+      setReportedKeys(prev => [...prev, key]);
+      setReportingFor(null);
+      setReportReason('');
+      showMessage('✅ Thanks for letting us know. A platform health admin will take a look, and your report is private.');
+    } catch (error) {
+      console.error('Error reporting:', error);
+      showMessage(`❌ Couldn't send that report: ${error.message}`);
+    }
+    setBusy(false);
+  };
+
   const startEditComment = (c) => {
     setEditingCommentId(c.id);
     setEditCommentText(c.comment || '');
@@ -1068,6 +1095,49 @@ export default function Ideas() {
 
   const smallLinkBtn = { background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem', padding: 0 };
 
+  // "Report" on someone else's feedback, comment or suggestion.
+  const renderReportLink = (table, id, what) => {
+    if (!user) return null;
+    const key = `${table}:${id}`;
+    if (reportedKeys.includes(key)) {
+      return <span style={{ fontSize: '0.75rem', color: '#838C95' }}><i className="ti ti-flag" aria-hidden="true"></i> Reported</span>;
+    }
+    return (
+      <button
+        onClick={() => { setReportingFor(reportingFor === key ? null : key); setReportReason(''); }}
+        style={smallLinkBtn}
+        title={`Report this ${what} as concerning`}
+      >
+        <i className="ti ti-flag" aria-hidden="true"></i> Report
+      </button>
+    );
+  };
+
+  const renderReportForm = (table, id, what) => {
+    if (reportingFor !== `${table}:${id}`) return null;
+    return (
+      <div style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', background: '#0f172a', border: '1px solid #C35522', borderRadius: '0.5rem' }}>
+        <div style={{ fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '0.4rem' }}>
+          What's concerning about this {what}? <span style={{ color: '#D45D25' }}>*</span>
+        </div>
+        <textarea
+          value={reportReason}
+          onChange={(e) => setReportReason(e.target.value)}
+          placeholder="A few words is fine"
+          style={{ ...s.textarea, minHeight: '60px', marginBottom: '0.4rem', boxSizing: 'border-box' }}
+        />
+        <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
+          Platform health admins will see it as it is right now, even if it's changed or deleted later. Your report is private: nobody is told who sent it.
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button onClick={() => submitReport(table, id)} disabled={busy || !reportReason.trim()}
+            style={{ ...s.btn, background: '#C35522', opacity: (busy || !reportReason.trim()) ? 0.5 : 1, fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>Send report</button>
+          <button onClick={() => setReportingFor(null)} style={{ ...s.btnSec, fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>Cancel</button>
+        </div>
+      </div>
+    );
+  };
+
   const renderCard = (req) => {
     const voteCount = getVoteCount(req.id);
     const voted = hasVoted(req.id);
@@ -1266,6 +1336,7 @@ export default function Ideas() {
                   </>
                 )
               )}
+              {!req.is_mine && renderReportLink('feature_requests', req.id, 'feedback')}
 
               {user && (
                 <button
@@ -1301,6 +1372,8 @@ export default function Ideas() {
                 </select>
               )}
             </div>
+
+            {renderReportForm('feature_requests', req.id, 'feedback')}
 
             {/* Admin: recategorize topics after the fact */}
             {isAdmin && topicOptions.length > 0 && (
@@ -1341,6 +1414,10 @@ export default function Ideas() {
                     <span style={{ color: '#838C95' }}> · by {authorLabel(sg)}{sg.is_mine && ' (you)'}, {new Date(sg.created_at).toLocaleDateString()}</span>
                   </div>
                   {sg.note && <div style={{ color: '#838C95', marginTop: '0.25rem' }}>"{sg.note}"</div>}
+                  {!sg.is_mine && (
+                    <div style={{ marginTop: '0.25rem' }}>{renderReportLink('feedback_link_suggestions', sg.id, 'suggestion')}</div>
+                  )}
+                  {renderReportForm('feedback_link_suggestions', sg.id, 'suggestion')}
                   {pastDeclines.length > 0 && (
                     <div style={{ color: '#838C95', marginTop: '0.25rem', fontStyle: 'italic' }}>
                       Declined before{describeDeclines(pastDeclines)}
@@ -1492,11 +1569,11 @@ export default function Ideas() {
                 )}
 
                 {reqComments.map(c => {
-                  // In the trash: only its author (and admins) see it, here in place.
+                  // In the trash: only its author sees it, here in place.
                   if (c.deleted_at) {
                     return (
                       <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.8rem', color: '#838C95', fontStyle: 'italic', padding: '0.4rem 0.6rem', border: '1px dashed #334155', borderRadius: '0.375rem' }}>
-                        <i className="ti ti-trash" aria-hidden="true"></i> {c.is_mine ? 'Your comment' : `A comment by ${c.as_admin ? 'Admin' : authorLabel(c)}`} was deleted · {daysLeft(c.deleted_at)} days left to restore
+                        <i className="ti ti-trash" aria-hidden="true"></i> Your comment was deleted · {daysLeft(c.deleted_at)} days left to restore
                         {' · '}
                         <button onClick={() => restoreComment(c)} disabled={busy} style={{ ...smallLinkBtn, color: '#6882B6', textDecoration: 'underline', fontStyle: 'normal' }}>Restore</button>
                         <div style={{ marginTop: '0.25rem', opacity: 0.7 }}>"{c.comment}"</div>
@@ -1515,6 +1592,7 @@ export default function Ideas() {
                       )}
                       {c.is_mine && <span style={{ color: '#838C95' }}> (you)</span>}
                       <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}{c.edited_at && ' · edited'}</span>
+                      {!c.is_mine && <span style={{ marginLeft: '0.75rem' }}>{renderReportLink('feature_comments', c.id, 'comment')}</span>}
                       {c.is_mine && !editingThis && (
                         confirmTrashId === c.id ? (
                           <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', display: 'inline-flex', gap: '0.4rem', alignItems: 'center' }}>
@@ -1542,6 +1620,7 @@ export default function Ideas() {
                       ) : (
                         <p style={{ marginTop: '0.25rem', color: '#e2e8f0' }}>{c.comment}</p>
                       )}
+                      {renderReportForm('feature_comments', c.id, 'comment')}
                     </div>
                   );
                 })}
@@ -1963,25 +2042,25 @@ export default function Ideas() {
         )}
 
         {/* The trash: deleted feedback can be restored for 30 days, then it's
-            gone for good. People see their own; admins see everyone's. */}
+            gone for good. Only the person who posted it can see or restore it. */}
         {user && trashed.length > 0 && (
           <div style={{ marginTop: '2rem' }}>
             <button onClick={() => setShowTrash(!showTrash)} style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
               <i className="ti ti-trash" aria-hidden="true"></i>
-              {isAdmin ? 'Deleted feedback' : 'Your deleted feedback'} ({trashed.length})
+              Your deleted feedback ({trashed.length})
               <i className={`ti ti-chevron-${showTrash ? 'up' : 'down'}`} aria-hidden="true"></i>
             </button>
             {showTrash && (
               <div style={{ ...s.card, padding: '0.75rem', marginTop: '0.5rem' }}>
                 <p style={{ color: '#838C95', fontSize: '0.8rem', margin: '0 0 0.75rem' }}>
-                  Deleted feedback stays here for 30 days in case you change your mind, then it's removed for good, with its comments and votes. Only {isAdmin ? 'its poster and admins' : 'you (and admins)'} can see it here.
+                  Deleted feedback stays here for 30 days in case you change your mind, then it's removed for good, with its comments and votes. Only you can see it here.
                 </p>
                 {trashed.map(r => (
                   <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0', borderTop: '1px solid #334155', fontSize: '0.875rem' }}>
                     <div>
                       <div style={{ color: '#e2e8f0' }}>{r.title}</div>
                       <div style={{ color: '#838C95', fontSize: '0.75rem' }}>
-                        {r.is_mine ? 'Yours' : `by ${authorLabel(r)}`} · deleted {new Date(r.deleted_at).toLocaleDateString()} · {daysLeft(r.deleted_at)} days left
+                        Deleted {new Date(r.deleted_at).toLocaleDateString()} · {daysLeft(r.deleted_at)} days left
                       </div>
                     </div>
                     <button onClick={() => restoreItem(r)} disabled={busy} style={{ ...s.btnSec, fontSize: '0.8rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap' }}>Restore</button>
