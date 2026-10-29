@@ -13,10 +13,11 @@ export default async function handler(req, res) {
     const { id } = req.query;
     const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` };
 
-    const [itemRes, commentsRes, votesRes, optionsRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/feature_requests?id=eq.${id}&select=*`, { headers, cache: 'no-store' }),
-      fetch(`${SUPABASE_URL}/rest/v1/feature_comments?request_id=eq.${id}&select=comment,created_at,user_profiles(display_name)&order=created_at.asc`, { headers, cache: 'no-store' }),
-      fetch(`${SUPABASE_URL}/rest/v1/feature_votes?request_id=eq.${id}&select=user_id`, { headers, cache: 'no-store' }),
+    // Read through the feedback views: names appear only when the person
+    // shares them, votes only as a total, and nothing in the trash.
+    const [itemRes, commentsRes, optionsRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/feedback_items?id=eq.${id}&deleted_at=is.null&select=id,title,description,request_type,status,vote_count,author_name,created_at,edited_at`, { headers, cache: 'no-store' }),
+      fetch(`${SUPABASE_URL}/rest/v1/feedback_comments?request_id=eq.${id}&deleted_at=is.null&select=comment,as_admin,author_name,created_at,edited_at&order=created_at.asc`, { headers, cache: 'no-store' }),
       fetch(`${SUPABASE_URL}/rest/v1/feature_request_options?request_id=eq.${id}&select=id,option_text,display_order&order=display_order.asc`, { headers, cache: 'no-store' })
     ]);
 
@@ -28,13 +29,11 @@ export default async function handler(req, res) {
 
     const commentsData = await commentsRes.json();
     const comments = Array.isArray(commentsData) ? commentsData.map(c => ({
-      author: c.user_profiles?.display_name || 'Unknown',
+      author: c.as_admin ? 'Admin' : (c.author_name || 'Anonymous'),
       comment: c.comment,
-      created_at: c.created_at
+      created_at: c.created_at,
+      edited_at: c.edited_at
     })) : [];
-
-    const votesData = await votesRes.json();
-    const vote_count = Array.isArray(votesData) ? votesData.length : 0;
 
     const optionsData = await optionsRes.json();
     let options = null;
@@ -64,8 +63,10 @@ export default async function handler(req, res) {
       description: item.description,
       type: item.request_type,
       status: item.status,
-      vote_count,
+      author: item.author_name || 'Anonymous',
+      vote_count: item.vote_count || 0,
       created_at: item.created_at,
+      edited_at: item.edited_at,
       comments,
       options
     });
