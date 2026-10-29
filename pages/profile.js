@@ -32,6 +32,13 @@ export default function Profile() {
   // Home page pins: my own number, up to the admins' maximum
   const [pinLimit, setPinLimit] = useState(3);
   const [pinMax, setPinMax] = useState(6);
+  // Sharing: an overall choice, and optionally a choice per kind of thing
+  // (kinds are an admin-editable option list, 'sharing_kinds').
+  const [sharing, setSharing] = useState({}); // kind_key ('general' or a kind) -> 'share' | 'dont_share' | 'ask'
+  const [sharingKinds, setSharingKinds] = useState([]);
+  const [showKinds, setShowKinds] = useState(false);
+  const [followingCount, setFollowingCount] = useState(0); // my posts with no choice of their own
+  const [sharingNotice, setSharingNotice] = useState('');
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -82,7 +89,72 @@ export default function Profile() {
         if (limits?.max) setPinMax(limits.max);
       }
       setIsAdmin(hasAnyRole(await fetchUserRoleKeys(userId, getAuthHeaders(false))));
+      await loadSharing(userId);
     } catch (error) { console.error('Error loading profile:', error); }
+  };
+
+  const loadSharing = async (userId) => {
+    try {
+      const headers = getAuthHeaders(false);
+      const [setRes, kindsRes, countRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/user_sharing_settings?user_id=eq.${userId}&select=kind_key,choice`, { headers, cache: 'no-store' }),
+        fetch(`${SUPABASE_URL}/rest/v1/option_lists?list_key=eq.sharing_kinds&select=value_key,label,description&order=display_order.asc`, { headers }),
+        fetch(`${SUPABASE_URL}/rest/v1/rpc/my_posts_following_sharing`, { method: 'POST', headers: getAuthHeaders(), body: '{}' })
+      ]);
+      const rows = await setRes.json();
+      const map = {};
+      if (Array.isArray(rows)) rows.forEach(r => { map[r.kind_key] = r.choice; });
+      setSharing(map);
+      const kinds = await kindsRes.json();
+      setSharingKinds(Array.isArray(kinds) ? kinds : []);
+      if (countRes.ok) setFollowingCount(Number(await countRes.json()) || 0);
+    } catch (error) { console.error('Error loading sharing settings:', error); }
+  };
+
+  const SHARING_LABELS = { share: 'Share', dont_share: "Don't share", ask: 'Always ask me' };
+  // No choice at all means "Don't share".
+  const effectiveSharing = (map, kind) => map[kind] || map.general || 'dont_share';
+
+  // Saves one choice ('inherit' removes a kind's own choice, so it follows
+  // the overall one), then says what it means for earlier feedback.
+  const saveSharing = async (kind, choice) => {
+    if (!user) return;
+    const before = sharing;
+    const after = { ...sharing };
+    if (choice === 'inherit') delete after[kind]; else after[kind] = choice;
+    setSharing(after);
+    try {
+      const res = choice === 'inherit'
+        ? await fetch(`${SUPABASE_URL}/rest/v1/user_sharing_settings?user_id=eq.${user.id}&kind_key=eq.${kind}`, {
+            method: 'DELETE', headers: getAuthHeaders()
+          })
+        : await fetch(`${SUPABASE_URL}/rest/v1/user_sharing_settings?on_conflict=user_id,kind_key`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify({ user_id: user.id, kind_key: kind, choice, updated_at: new Date().toISOString() })
+          });
+      if (!res.ok) {
+        let detail = `the database returned ${res.status}`;
+        try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
+        throw new Error(detail);
+      }
+      notify.success('Sharing choice saved');
+      const was = effectiveSharing(before, 'feedback_name');
+      const now = effectiveSharing(after, 'feedback_name');
+      if ((was === 'share') !== (now === 'share') && followingCount > 0) {
+        const n = followingCount;
+        const posts = `${n} earlier ${n === 1 ? 'post' : 'posts'} on the Feedback page (feedback, comments and suggestions where you didn't pick for that post)`;
+        setSharingNotice(now === 'share'
+          ? `Heads up: ${posts} will now show your name. To keep a post or comment anonymous, edit it and choose "Post anonymously instead".`
+          : `Heads up: ${posts} will now show as Anonymous instead of your name. To show your name on a post or comment, edit it and choose "Show my name instead".`);
+      } else {
+        setSharingNotice('');
+      }
+    } catch (error) {
+      console.error('Error saving sharing choice:', error);
+      notify.error(`Couldn't save: ${error.message}`);
+      setSharing(before);
+    }
   };
 
   // Saves only the fields passed, and checks that the save actually
@@ -199,6 +271,61 @@ export default function Profile() {
           <button onClick={saveProfile} disabled={saving} style={s.btn}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
+        </div>
+
+        {/* Sharing - personal (blue) */}
+        <div style={s.card}>
+          <h2 style={s.cardTitle}>Sharing</h2>
+          <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '-0.5rem 0 1rem' }}>
+            Choose what other people using Tajar can see about you, like your name on feedback you post.
+            Sharing only ever means other people on this site can see it. We never share or sell your information to anyone outside Tajar, and we don't mine your data.
+          </p>
+
+          <p style={{ fontWeight: 'bold', fontSize: '0.9rem', margin: '0 0 0.5rem' }}>Overall</p>
+          {choiceRow('sharing-general', [
+            { value: 'share', label: 'Share', help: 'Show my display name wherever there\'s a choice to.' },
+            { value: 'dont_share', label: 'Don\'t share', help: 'Keep my name off things. This is where everyone starts.' },
+            { value: 'ask', label: 'Always ask me', help: 'Ask each time I post, and I\'ll choose then.' }
+          ], effectiveSharing(sharing, 'general'), (v) => saveSharing('general', v))}
+          {!displayName.trim() && (
+            <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '0.5rem 0 0' }}>
+              You don't have a display name yet, so even when you share, you'll show as Anonymous.
+            </p>
+          )}
+
+          {sharingKinds.length > 0 && (
+            <div style={{ marginTop: '1.25rem' }}>
+              <button
+                onClick={() => setShowKinds(!showKinds)}
+                style={{ background: 'none', border: 'none', color: '#6882B6', cursor: 'pointer', fontSize: '0.9rem', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+              >
+                Choose for each kind <i className={`ti ti-chevron-${showKinds ? 'up' : 'down'}`} aria-hidden="true"></i>
+              </button>
+              {showKinds && sharingKinds.map(k => (
+                <div key={k.value_key} style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
+                  <p style={{ fontWeight: 'bold', fontSize: '0.9rem', margin: '0 0 0.2rem' }}>{k.label}</p>
+                  {k.description && <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>{k.description}</p>}
+                  {choiceRow(`sharing-${k.value_key}`, [
+                    { value: 'inherit', label: `Use my overall choice (${SHARING_LABELS[effectiveSharing(sharing, 'general')]})` },
+                    { value: 'share', label: 'Share' },
+                    { value: 'dont_share', label: 'Don\'t share' },
+                    { value: 'ask', label: 'Always ask me' }
+                  ], sharing[k.value_key] || 'inherit', (v) => saveSharing(k.value_key, v))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p style={{ color: '#838C95', fontSize: '0.85rem', margin: '1rem 0 0' }}>
+            When you post, you can always pick differently for that one post. Posts where you didn't pick follow these settings, even if you change them later.
+            Votes are always private: only totals are shown.
+          </p>
+          {sharingNotice && (
+            <div role="status" style={{ marginTop: '0.75rem', padding: '0.6rem 0.75rem', border: '1px solid #5371AC', background: '#5371AC1A', borderRadius: '0.5rem', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <span>{sharingNotice}</span>
+              <button onClick={() => setSharingNotice('')} aria-label="Dismiss" style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer' }}>✕</button>
+            </div>
+          )}
         </div>
 
         {/* Reports other people send - personal (blue) */}
