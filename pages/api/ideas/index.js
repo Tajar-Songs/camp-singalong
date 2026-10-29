@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   try {
     const { type } = req.query;
 
-    let url = `${SUPABASE_URL}/rest/v1/feature_requests?select=id,title,description,request_type,status,created_at&order=created_at.desc`;
+    let url = `${SUPABASE_URL}/rest/v1/feedback_items?deleted_at=is.null&select=id,title,description,request_type,status,created_at&order=created_at.desc`;
 
     if (type) {
       url += `&request_type=eq.${type}`;
