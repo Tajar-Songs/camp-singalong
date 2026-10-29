@@ -6,6 +6,9 @@ import { notifyLegacy } from '../lib/notify';
 const SUPABASE_URL = 'https://xjkboyiszwrclireyecd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E8eTKRrsLnSHEYMD2V2MhQ_S9XUSV5l';
 
+// Topic filter value meaning "items with no topic" (can't clash with a real topic key).
+const NO_TOPIC = '__no_topic__';
+
 // Lightweight, dependency-free formatter for idea/feedback descriptions.
 // Supports: **bold**, *italic*, # / ## headers, - or * bullet lists, blank-line paragraphs.
 // Deliberately does NOT support raw HTML - everything renders as React text nodes, so
@@ -123,7 +126,8 @@ export default function Ideas() {
   const [groups, setGroups] = useState({}); // group id -> feedback_groups row
   const [suggestions, setSuggestions] = useState([]); // feedback_link_suggestions rows, oldest first
   const [linkFormFor, setLinkFormFor] = useState(null); // request id whose link/suggest form is open
-  const [linkTarget, setLinkTarget] = useState('');
+  const [linkTargets, setLinkTargets] = useState([]); // other items picked in that form
+  const [linkSearch, setLinkSearch] = useState('');
   const [linkNote, setLinkNote] = useState('');
   const [linkName, setLinkName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState(null);
@@ -132,11 +136,20 @@ export default function Ideas() {
   const [decliningId, setDecliningId] = useState(null); // suggestion id being declined
   const [declineNote, setDeclineNote] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
-  // Admins: tick several items and link them all at once.
+  const [suggestionPicks, setSuggestionPicks] = useState({}); // suggestion id -> item ids an admin has ticked to link
+  // Tick several items and link (admins) or suggest (everyone else) them all at once.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkName, setBulkName] = useState('');
   const [bulkNote, setBulkNote] = useState('');
+  const [submitting, setSubmitting] = useState(false); // stops a quick double click posting twice
+
+  // Filters about the person looking, kept separate from filters about the
+  // item itself (Style Guide: personal/relational filters are their own group).
+  const [mineFilters, setMineFilters] = useState([]); // 'posted' | 'voted' | 'commented'
+  const [mineMode, setMineMode] = useState('any');
+  const [relatedFilters, setRelatedFilters] = useState([]); // 'linked' | 'unlinked' | 'suggested'
+  const [relatedMode, setRelatedMode] = useState('any');
 
   const getAuthHeaders = (includeContentType = true) => {
     const token = localStorage.getItem('supabase_access_token') || SUPABASE_KEY;
@@ -324,60 +337,75 @@ export default function Ideas() {
   const isAdmin = hasPermission(myPermissions, 'feedback.manage');
 
   // --- Related feedback helpers ---
+  // A suggestion names two or more items: older ones as a pair, newer ones as a list.
   const getRequest = (requestId) => requests.find(r => r.id === requestId);
-  const samePair = (sug, a, b) =>
-    (sug.request_a === a && sug.request_b === b) || (sug.request_a === b && sug.request_b === a);
+  const suggestionItems = (sg) => (Array.isArray(sg.request_ids) && sg.request_ids.length > 0 ? sg.request_ids : [sg.request_a, sg.request_b]).filter(Boolean);
   const pendingForRequest = (requestId) =>
-    suggestions.filter(sg => sg.status === 'pending' && (sg.request_a === requestId || sg.request_b === requestId));
-  const declinedForPair = (a, b) => suggestions.filter(sg => sg.status === 'declined' && samePair(sg, a, b));
-  const pendingForPair = (a, b) => suggestions.find(sg => sg.status === 'pending' && samePair(sg, a, b));
+    suggestions.filter(sg => sg.status === 'pending' && suggestionItems(sg).includes(requestId));
+  // Declined before: any declined suggestion that put two or more of these items together.
+  const declinedAmong = (ids) =>
+    suggestions.filter(sg => sg.status === 'declined' && suggestionItems(sg).filter(id => ids.includes(id)).length >= 2);
+  const samePendingSet = (ids) =>
+    suggestions.find(sg => {
+      if (sg.status !== 'pending') return false;
+      const items = suggestionItems(sg);
+      return items.length === ids.length && items.every(id => ids.includes(id));
+    });
   const inSameGroup = (a, b) => {
     const ga = getRequest(a)?.group_id;
     return !!ga && ga === getRequest(b)?.group_id;
   };
+  const describeDeclines = (list) =>
+    list.map(d => ` on ${new Date(d.decided_at || d.created_at).toLocaleDateString()}${d.admin_notes ? `: "${d.admin_notes}"` : ''}`).join(';');
 
   const openLinkForm = (requestId) => {
     setLinkFormFor(linkFormFor === requestId ? null : requestId);
-    setLinkTarget('');
+    setLinkTargets([]);
+    setLinkSearch('');
     setLinkNote('');
     setLinkName('');
   };
 
-  // People without "Manage feedback" suggest a link; admins link directly.
+  // One path for every way of relating items: admins link them; everyone
+  // else signed in sends one suggestion naming all of them.
+  const relateItems = async (ids, name, note) => {
+    const unique = [...new Set(ids)];
+    if (unique.length < 2) throw new Error('Pick at least two items.');
+    if (isAdmin) {
+      await callRpc('link_feedback', {
+        p_request_ids: unique,
+        p_name: (name || '').trim() || null,
+        p_description: (note || '').trim() || null
+      });
+      // Waiting suggestions whose items are all among these are now settled by the link.
+      const settled = suggestions.filter(sg =>
+        sg.status === 'pending' && suggestionItems(sg).every(id => unique.includes(id)));
+      for (const sg of settled) {
+        await callRpc('decide_feedback_suggestion', { p_suggestion_id: sg.id, p_accept: true, p_note: null });
+      }
+      return `✅ Linked ${unique.length} items as related feedback`;
+    }
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback_link_suggestions`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ request_ids: unique, note: (note || '').trim() || null, created_by: user.id })
+    });
+    if (!res.ok) {
+      let detail = `the database returned ${res.status}`;
+      try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
+      throw new Error(detail);
+    }
+    return '✅ Suggestion sent - an admin will take a look';
+  };
+
   const submitLink = async (requestId) => {
-    if (!user || !linkTarget || linkBusy) return;
+    if (!user || linkTargets.length === 0 || linkBusy) return;
     setLinkBusy(true);
     try {
-      if (isAdmin) {
-        await callRpc('link_feedback', {
-          p_request_ids: [requestId, linkTarget],
-          p_name: linkName.trim() || null,
-          p_description: linkNote.trim() || null
-        });
-        // A waiting suggestion for this same pair is now settled by the link.
-        const pending = pendingForPair(requestId, linkTarget);
-        if (pending) await callRpc('decide_feedback_suggestion', { p_suggestion_id: pending.id, p_accept: true, p_note: null });
-        showMessage('✅ Linked as related feedback');
-      } else {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback_link_suggestions`, {
-          method: 'POST',
-          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
-          body: JSON.stringify({
-            request_a: requestId,
-            request_b: linkTarget,
-            note: linkNote.trim() || null,
-            created_by: user.id
-          })
-        });
-        if (!res.ok) {
-          let detail = `the database returned ${res.status}`;
-          try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
-          throw new Error(detail);
-        }
-        showMessage('✅ Suggestion sent - an admin will take a look');
-      }
+      const msg = await relateItems([requestId, ...linkTargets], linkName, linkNote);
       setLinkFormFor(null);
       await loadLinks(true);
+      showMessage(msg);
     } catch (error) {
       console.error('Error linking feedback:', error);
       showMessage(`❌ Couldn't save that: ${error.message}`);
@@ -385,11 +413,21 @@ export default function Ideas() {
     setLinkBusy(false);
   };
 
-  const decideSuggestion = async (suggestionId, accept, note) => {
+  // Accepting may link only the ticked items (at least two); declining keeps
+  // the suggestion on record so it shows as "declined before".
+  const decideSuggestion = async (sg, accept, note) => {
     if (linkBusy) return;
+    const items = suggestionItems(sg);
+    const picked = suggestionPicks[sg.id] || items;
+    if (accept && picked.length < 2) { showMessage('❌ Tick at least two items to link'); return; }
     setLinkBusy(true);
     try {
-      await callRpc('decide_feedback_suggestion', { p_suggestion_id: suggestionId, p_accept: accept, p_note: (note || '').trim() || null });
+      await callRpc('decide_feedback_suggestion', {
+        p_suggestion_id: sg.id,
+        p_accept: accept,
+        p_note: (note || '').trim() || null,
+        p_request_ids: accept && picked.length < items.length ? picked : null
+      });
       setDecliningId(null);
       setDeclineNote('');
       await loadLinks(true);
@@ -429,21 +467,10 @@ export default function Ideas() {
     if (selectedIds.length < 2 || linkBusy) return;
     setLinkBusy(true);
     try {
-      await callRpc('link_feedback', {
-        p_request_ids: selectedIds,
-        p_name: bulkName.trim() || null,
-        p_description: bulkNote.trim() || null
-      });
-      // Waiting suggestions between any two of these are now settled by the link.
-      const settled = suggestions.filter(sg =>
-        sg.status === 'pending' && selectedIds.includes(sg.request_a) && selectedIds.includes(sg.request_b));
-      for (const sg of settled) {
-        await callRpc('decide_feedback_suggestion', { p_suggestion_id: sg.id, p_accept: true, p_note: null });
-      }
-      const count = selectedIds.length;
+      const msg = await relateItems(selectedIds, bulkName, bulkNote);
       stopSelecting();
       await loadLinks(true);
-      showMessage(`✅ Linked ${count} items as related feedback`);
+      showMessage(msg);
     } catch (error) {
       console.error('Error linking selected feedback:', error);
       showMessage(`❌ Couldn't save that: ${error.message}`);
@@ -559,7 +586,12 @@ export default function Ideas() {
   };
 
   const submitIdea = async () => {
-    if (!user || !newTitle.trim()) return;
+    if (!user || !newTitle.trim() || submitting) return;
+    setSubmitting(true);
+    try { await submitIdeaNow(); } finally { setSubmitting(false); }
+  };
+
+  const submitIdeaNow = async () => {
     if (ADMIN_ONLY_TYPES.includes(newType) && !isAdmin) {
       showMessage('❌ Only admins can post this type');
       return;
@@ -722,9 +754,29 @@ export default function Ideas() {
     if (statusFilters.length > 0 && !statusFilters.includes(r.status)) return false;
     if (topicFilter.length > 0) {
       const reqTopics = getTopicsForRequest(r.id);
-      const matches = topicFilterMode === 'all'
-        ? topicFilter.every(t => reqTopics.includes(t))
-        : topicFilter.some(t => reqTopics.includes(t));
+      // NO_TOPIC matches items that have no topic at all.
+      const hasTopic = (t) => (t === NO_TOPIC ? reqTopics.length === 0 : reqTopics.includes(t));
+      const matches = topicFilterMode === 'all' ? topicFilter.every(hasTopic) : topicFilter.some(hasTopic);
+      if (!matches) return false;
+    }
+    if (mineFilters.length > 0 && user) {
+      const isMine = (m) => {
+        if (m === 'posted') return r.created_by === user.id;
+        if (m === 'voted') return hasVoted(r.id);
+        if (m === 'commented') return getComments(r.id).some(c => c.user_id === user.id);
+        return false;
+      };
+      const matches = mineMode === 'all' ? mineFilters.every(isMine) : mineFilters.some(isMine);
+      if (!matches) return false;
+    }
+    if (relatedFilters.length > 0) {
+      const isRelated = (k) => {
+        if (k === 'linked') return !!(r.group_id && groups[r.group_id]);
+        if (k === 'unlinked') return !(r.group_id && groups[r.group_id]);
+        if (k === 'suggested') return pendingForRequest(r.id).length > 0;
+        return false;
+      };
+      const matches = relatedMode === 'all' ? relatedFilters.every(isRelated) : relatedFilters.some(isRelated);
       if (!matches) return false;
     }
     return true;
@@ -817,6 +869,39 @@ export default function Ideas() {
     }),
     topicBadge: { display: 'inline-block', background: '#334155', color: '#838C95', padding: '0.15rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', marginRight: '0.375rem', marginBottom: '0.25rem' }
   };
+
+  const filtersChanged = statusFilters.length !== 1 || statusFilters[0] !== 'open'
+    || topicFilter.length > 0 || mineFilters.length > 0 || relatedFilters.length > 0;
+
+  // A small multi-select filter group: checkboxes, with its own any/all
+  // choice (Style Guide: explicit any/all on every multi-select group).
+  const renderCheckGroup = (title, radioName, options, selected, setSelected, mode, setMode) => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+        <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>{title}</div>
+        <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+            <input type="radio" name={radioName} checked={mode === 'any'} onChange={() => setMode('any')} /> any
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
+            <input type="radio" name={radioName} checked={mode === 'all'} onChange={() => setMode('all')} /> all
+          </label>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        {options.map(o => (
+          <label key={o.value} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(o.value)}
+              onChange={() => setSelected(prev => prev.includes(o.value) ? prev.filter(v => v !== o.value) : [...prev, o.value])}
+            />
+            {o.label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 
   const renderCard = (req) => {
     const voteCount = getVoteCount(req.id);
@@ -1042,22 +1127,45 @@ export default function Ideas() {
             )}
 
             {/* Suggested links waiting for an admin. Everyone can see them;
-                only admins can accept or decline. */}
+                only admins can accept (all of the items, or the ones they tick)
+                or decline. */}
             {pendingForRequest(req.id).map(sg => {
-              const otherId = sg.request_a === req.id ? sg.request_b : sg.request_a;
-              const other = getRequest(otherId);
-              const pastDeclines = declinedForPair(sg.request_a, sg.request_b);
+              const items = suggestionItems(sg);
+              const others = items.filter(id => id !== req.id);
+              const pastDeclines = declinedAmong(items).filter(d => d.id !== sg.id);
+              const picks = suggestionPicks[sg.id] || items;
               return (
                 <div key={sg.id} style={{ marginTop: '0.75rem', padding: '0.6rem 0.75rem', background: '#0f172a', border: '1px dashed #6882B6', borderRadius: '0.5rem', fontSize: '0.8rem' }}>
                   <div style={{ color: '#e2e8f0' }}>
                     <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>{' '}
-                    Suggested as related to <strong>{other ? other.title : 'another item'}</strong>
+                    Suggested as related to{' '}
+                    {others.map((id, i) => (
+                      <span key={id}>{i > 0 ? (i === others.length - 1 ? ' and ' : ', ') : ''}<strong>{getRequest(id)?.title || 'an item that no longer exists'}</strong></span>
+                    ))}
                     <span style={{ color: '#838C95' }}> · by {getUserName(sg.created_by)}, {new Date(sg.created_at).toLocaleDateString()}</span>
                   </div>
                   {sg.note && <div style={{ color: '#838C95', marginTop: '0.25rem' }}>"{sg.note}"</div>}
                   {pastDeclines.length > 0 && (
                     <div style={{ color: '#838C95', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                      Declined before{pastDeclines.map(d => ` on ${new Date(d.decided_at || d.created_at).toLocaleDateString()}${d.admin_notes ? `: "${d.admin_notes}"` : ''}`).join(';')}
+                      Declined before{describeDeclines(pastDeclines)}
+                    </div>
+                  )}
+                  {isAdmin && items.length > 2 && decliningId !== sg.id && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <div style={{ color: '#838C95', fontSize: '0.75rem', marginBottom: '0.25rem' }}>Link which of these?</div>
+                      {items.map(id => (
+                        <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: 'pointer', color: '#e2e8f0', marginBottom: '0.15rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={picks.includes(id)}
+                            onChange={() => setSuggestionPicks(prev => {
+                              const cur = prev[sg.id] || items;
+                              return { ...prev, [sg.id]: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] };
+                            })}
+                          />
+                          {getRequest(id)?.title || 'An item that no longer exists'}
+                        </label>
+                      ))}
                     </div>
                   )}
                   {isAdmin && (
@@ -1070,12 +1178,18 @@ export default function Ideas() {
                           onChange={(e) => setDeclineNote(e.target.value)}
                           style={{ ...s.input, marginBottom: 0, flex: 1, minWidth: '12rem', padding: '0.4rem 0.6rem' }}
                         />
-                        <button onClick={() => decideSuggestion(sg.id, false, declineNote)} disabled={linkBusy} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}>Decline</button>
+                        <button onClick={() => decideSuggestion(sg, false, declineNote)} disabled={linkBusy} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}>Decline</button>
                         <button onClick={() => { setDecliningId(null); setDeclineNote(''); }} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}>Cancel</button>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                        <button onClick={() => decideSuggestion(sg.id, true)} disabled={linkBusy} style={{ ...s.btn, fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}>Link them</button>
+                        <button
+                          onClick={() => decideSuggestion(sg, true)}
+                          disabled={linkBusy || picks.length < 2}
+                          style={{ ...s.btn, fontSize: '0.75rem', padding: '0.3rem 0.75rem', opacity: (linkBusy || picks.length < 2) ? 0.5 : 1 }}
+                        >
+                          {picks.length < items.length ? `Link these ${picks.length}` : 'Link them'}
+                        </button>
                         <button onClick={() => { setDecliningId(sg.id); setDeclineNote(''); }} disabled={linkBusy} style={{ ...s.btnSec, fontSize: '0.75rem', padding: '0.3rem 0.75rem' }}>Not related</button>
                       </div>
                     )
@@ -1084,41 +1198,73 @@ export default function Ideas() {
               );
             })}
 
-            {/* Link (admins) or suggest (everyone else signed in) */}
+            {/* Link (admins) or suggest (everyone else signed in), picking any
+                number of other items. The list narrows as you type; picked
+                items show as removable chips in a fixed-height area, so the
+                form doesn't grow with each pick (Style Guide). */}
             {linkFormFor === req.id && user && (() => {
-              const candidates = requests
-                .filter(r => r.id !== req.id && !inSameGroup(r.id, req.id))
+              const term = linkSearch.trim().toLowerCase();
+              const matches = requests
+                .filter(r => r.id !== req.id && !inSameGroup(r.id, req.id) && !linkTargets.includes(r.id))
+                .filter(r => !term || r.title.toLowerCase().includes(term))
                 .sort((a, b) => a.title.localeCompare(b.title));
-              const pending = linkTarget ? pendingForPair(req.id, linkTarget) : null;
-              const declines = linkTarget ? declinedForPair(req.id, linkTarget) : [];
-              const blocked = !isAdmin && !!pending;
+              const chosen = [req.id, ...linkTargets];
+              const samePending = !isAdmin && linkTargets.length > 0 ? samePendingSet(chosen) : null;
+              const declines = linkTargets.length > 0 ? declinedAmong(chosen) : [];
+              const blocked = linkTargets.length === 0 || linkBusy || !!samePending;
               return (
                 <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '0.5rem' }}>
-                    {isAdmin ? 'Link this with:' : 'Which feedback looks related to this one?'}
+                    {isAdmin ? 'Link this with:' : 'Which feedback looks related to this one? Pick as many as apply.'}
                   </div>
-                  <select value={linkTarget} onChange={(e) => setLinkTarget(e.target.value)} style={{ ...s.select, width: '100%', marginBottom: '0.5rem' }}>
-                    <option value="">Pick an item...</option>
-                    {candidates.map(r => (
-                      <option key={r.id} value={r.id}>{r.title}{r.group_id ? ' (already in a group)' : ''}</option>
+                  <div style={{ minHeight: '2rem', maxHeight: '4.5rem', overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '0.375rem', alignContent: 'flex-start', marginBottom: '0.5rem', padding: '0.25rem', border: '1px dashed #334155', borderRadius: '0.375rem' }}>
+                    {linkTargets.length === 0 && <span style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.2rem 0.25rem' }}>Nothing picked yet</span>}
+                    {linkTargets.map(id => (
+                      <button
+                        key={id}
+                        onClick={() => setLinkTargets(prev => prev.filter(x => x !== id))}
+                        style={{ ...s.topicChip(true), fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}
+                        title="Remove"
+                      >
+                        {getRequest(id)?.title} ✕
+                      </button>
                     ))}
-                  </select>
-                  {pending && (
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Type to find feedback..."
+                    value={linkSearch}
+                    onChange={(e) => setLinkSearch(e.target.value)}
+                    style={{ ...s.input, marginBottom: '0.25rem', padding: '0.5rem 0.6rem' }}
+                  />
+                  <div style={{ maxHeight: '10rem', overflowY: 'auto', border: '1px solid #334155', borderRadius: '0.375rem', marginBottom: '0.5rem' }}>
+                    {matches.length === 0 && <div style={{ fontSize: '0.75rem', color: '#838C95', padding: '0.4rem 0.6rem' }}>No matching feedback</div>}
+                    {matches.map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => setLinkTargets(prev => [...prev, r.id])}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #1e293b', color: '#e2e8f0', cursor: 'pointer', fontSize: '0.8rem', padding: '0.4rem 0.6rem' }}
+                      >
+                        + {r.title}{r.group_id && groups[r.group_id] ? <span style={{ color: '#838C95' }}> (already in a group)</span> : ''}
+                      </button>
+                    ))}
+                  </div>
+                  {samePending && (
                     <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
-                      {isAdmin ? 'Someone already suggested this pair; linking them settles that suggestion.' : 'Someone already suggested this pair, and it\'s waiting for an admin.'}
+                      These are already suggested together and waiting for an admin.
                     </div>
                   )}
                   {declines.length > 0 && (
                     <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem', fontStyle: 'italic' }}>
-                      An admin decided these weren't related{declines.map(d => ` on ${new Date(d.decided_at || d.created_at).toLocaleDateString()}${d.admin_notes ? `: "${d.admin_notes}"` : ''}`).join(';')}.
-                      {!isAdmin && ' You can still suggest it again.'}
+                      An admin decided some of these weren't related{describeDeclines(declines)}.
+                      {!isAdmin && ' You can still suggest them again.'}
                     </div>
                   )}
                   {isAdmin && (
                     <input
                       type="text"
                       placeholder={(() => {
-                        const g = groups[req.group_id] || groups[getRequest(linkTarget)?.group_id];
+                        const g = groups[req.group_id] || linkTargets.map(id => groups[getRequest(id)?.group_id]).find(Boolean);
                         return g?.name ? `Group name (currently "${g.name}")` : 'Group name (optional)';
                       })()}
                       value={linkName}
@@ -1133,12 +1279,8 @@ export default function Ideas() {
                     style={{ ...s.textarea, minHeight: '60px', marginBottom: '0.5rem' }}
                   />
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      onClick={() => submitLink(req.id)}
-                      disabled={!linkTarget || blocked || linkBusy}
-                      style={{ ...s.btn, opacity: (!linkTarget || blocked || linkBusy) ? 0.5 : 1 }}
-                    >
-                      {isAdmin ? 'Link' : 'Suggest'}
+                    <button onClick={() => submitLink(req.id)} disabled={blocked} style={{ ...s.btn, opacity: blocked ? 0.5 : 1 }}>
+                      {isAdmin ? 'Link' : 'Suggest'}{linkTargets.length > 0 ? ` (${linkTargets.length + 1} items)` : ''}
                     </button>
                     <button onClick={() => setLinkFormFor(null)} style={s.btnSec}>Cancel</button>
                   </div>
@@ -1356,7 +1498,7 @@ export default function Ideas() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button onClick={submitIdea} disabled={!newTitle.trim()} style={{ ...s.btn, opacity: newTitle.trim() ? 1 : 0.5 }}>Submit</button>
+                <button onClick={submitIdea} disabled={!newTitle.trim() || submitting} style={{ ...s.btn, opacity: (newTitle.trim() && !submitting) ? 1 : 0.5 }}>{submitting ? 'Submitting...' : 'Submit'}</button>
                 <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); setNewOptions(['', '']); setNewTopics([]); }} style={s.btnSec}>Cancel</button>
               </div>
             </div>
@@ -1412,7 +1554,7 @@ export default function Ideas() {
               onClick={() => setFiltersExpanded(!filtersExpanded)}
               style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}
             >
-              <span>Filter{(statusFilters.length !== 1 || statusFilters[0] !== 'open' || topicFilter.length > 0) ? ` (${statusFilters.length + topicFilter.length})` : ''}</span>
+              <span>Filter{filtersChanged ? ` (${statusFilters.length + topicFilter.length + mineFilters.length + relatedFilters.length})` : ''}</span>
               <i className={`ti ti-chevron-${filtersExpanded ? 'up' : 'down'}`} aria-hidden="true"></i>
             </button>
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ ...s.select, marginBottom: 0 }}>
@@ -1420,15 +1562,15 @@ export default function Ideas() {
               <option value="recent">Most Recent</option>
             </select>
             <span style={{ color: '#838C95', fontSize: '0.875rem' }}>{filteredRequests.length} items</span>
-            {isAdmin && !selectMode && (
+            {user && !selectMode && (
               <button onClick={() => setSelectMode(true)} style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <i className="ti ti-link" aria-hidden="true"></i> Select items to link
+                <i className="ti ti-link" aria-hidden="true"></i> {isAdmin ? 'Select items to link' : 'Select related items'}
               </button>
             )}
           </div>
           {filtersExpanded && (
             <div style={{ ...s.card, padding: '0.75rem' }}>
-              <div style={{ marginBottom: topicOptions.length > 0 ? '0.75rem' : 0 }}>
+              <div style={{ marginBottom: '0.75rem' }}>
                 <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase', marginBottom: '0.375rem' }}>Status</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                   {['open', 'planned', 'done', 'declined'].map(st => (
@@ -1444,7 +1586,7 @@ export default function Ideas() {
                 </div>
               </div>
               {topicOptions.length > 0 && (
-                <div>
+                <div style={{ marginBottom: '0.75rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
                     <div style={{ fontSize: '0.7rem', color: '#838C95', textTransform: 'uppercase' }}>Topic</div>
                     <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
@@ -1457,7 +1599,7 @@ export default function Ideas() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
-                    {topicOptions.map(topic => {
+                    {[...topicOptions, { value_key: NO_TOPIC, label: 'No topic' }].map(topic => {
                       const selected = topicFilter.includes(topic.value_key);
                       return (
                         <button
@@ -1472,9 +1614,23 @@ export default function Ideas() {
                   </div>
                 </div>
               )}
-              {(statusFilters.length > 0 || topicFilter.length > 0) && (
+              {renderCheckGroup('Related', 'relatedMode', [
+                { value: 'linked', label: 'Linked' },
+                { value: 'unlinked', label: 'Not linked' },
+                { value: 'suggested', label: 'Suggestion waiting' }
+              ], relatedFilters, setRelatedFilters, relatedMode, setRelatedMode)}
+              {user && (
+                <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #334155' }}>
+                  {renderCheckGroup('Mine', 'mineMode', [
+                    { value: 'posted', label: 'Posted by me' },
+                    { value: 'voted', label: 'I voted for' },
+                    { value: 'commented', label: 'I commented on' }
+                  ], mineFilters, setMineFilters, mineMode, setMineMode)}
+                </div>
+              )}
+              {(statusFilters.length > 0 || topicFilter.length > 0 || mineFilters.length > 0 || relatedFilters.length > 0) && (
                 <button
-                  onClick={() => { setStatusFilters([]); setTopicFilter([]); }}
+                  onClick={() => { setStatusFilters([]); setTopicFilter([]); setMineFilters([]); setRelatedFilters([]); }}
                   style={{ ...s.btnSec, marginTop: '0.75rem', width: '100%', fontSize: '0.8rem' }}
                 >Clear all filters</button>
               )}
@@ -1482,45 +1638,62 @@ export default function Ideas() {
           )}
         </div>
 
-        {/* Admins: link several ticked items at once. Ticking items that are
-            already in different groups combines those groups into one. */}
-        {isAdmin && selectMode && (
-          <div style={{ ...s.card, padding: '0.75rem', border: '1px solid #6882B6', position: 'sticky', top: '4.5rem', zIndex: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>
-                <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>{' '}
-                {selectedIds.length === 0 ? 'Tick the items you want to link' : `${selectedIds.length} selected`}
-                {selectedIds.length === 1 && ' - pick at least one more'}
-              </span>
-              {selectedIds.length > 0 && (
-                <button onClick={() => setSelectedIds([])} style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}>Clear selection</button>
+        {/* Tick several items and link them (admins) or suggest them as
+            related (everyone else signed in). Linking items already in
+            different groups combines those groups into one. */}
+        {user && selectMode && (() => {
+          const samePending = !isAdmin && selectedIds.length >= 2 ? samePendingSet(selectedIds) : null;
+          const declines = selectedIds.length >= 2 ? declinedAmong(selectedIds) : [];
+          const blocked = selectedIds.length < 2 || linkBusy || !!samePending;
+          return (
+            <div style={{ ...s.card, padding: '0.75rem', border: '1px solid #6882B6', position: 'sticky', top: '4.5rem', zIndex: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>
+                  <i className="ti ti-link" style={{ color: '#6882B6' }} aria-hidden="true"></i>{' '}
+                  {selectedIds.length === 0
+                    ? (isAdmin ? 'Tick the items you want to link' : 'Tick the items that look related')
+                    : `${selectedIds.length} selected`}
+                  {selectedIds.length === 1 && ' - pick at least one more'}
+                </span>
+                {selectedIds.length > 0 && (
+                  <button onClick={() => setSelectedIds([])} style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}>Clear selection</button>
+                )}
+              </div>
+              {samePending && (
+                <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem' }}>
+                  These items are already suggested together and waiting for an admin.
+                </div>
               )}
+              {declines.length > 0 && (
+                <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.5rem', fontStyle: 'italic' }}>
+                  An admin decided some of these weren't related{describeDeclines(declines)}.
+                  {!isAdmin && ' You can still suggest them again.'}
+                </div>
+              )}
+              {isAdmin && (
+                <input
+                  type="text"
+                  placeholder="Group name (optional)"
+                  value={bulkName}
+                  onChange={(e) => setBulkName(e.target.value)}
+                  style={{ ...s.input, marginBottom: '0.5rem', padding: '0.5rem 0.6rem' }}
+                />
+              )}
+              <textarea
+                placeholder={isAdmin ? 'Why are these linked? (optional)' : 'Why do these look related? (optional)'}
+                value={bulkNote}
+                onChange={(e) => setBulkNote(e.target.value)}
+                style={{ ...s.textarea, minHeight: '50px', marginBottom: '0.5rem' }}
+              />
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button onClick={linkSelected} disabled={blocked} style={{ ...s.btn, opacity: blocked ? 0.5 : 1 }}>
+                  {isAdmin ? 'Link selected' : 'Suggest selected'}
+                </button>
+                <button onClick={stopSelecting} style={s.btnSec}>Cancel</button>
+              </div>
             </div>
-            <input
-              type="text"
-              placeholder="Group name (optional)"
-              value={bulkName}
-              onChange={(e) => setBulkName(e.target.value)}
-              style={{ ...s.input, marginBottom: '0.5rem', padding: '0.5rem 0.6rem' }}
-            />
-            <textarea
-              placeholder="Why are these linked? (optional)"
-              value={bulkNote}
-              onChange={(e) => setBulkNote(e.target.value)}
-              style={{ ...s.textarea, minHeight: '50px', marginBottom: '0.5rem' }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                onClick={linkSelected}
-                disabled={selectedIds.length < 2 || linkBusy}
-                style={{ ...s.btn, opacity: (selectedIds.length < 2 || linkBusy) ? 0.5 : 1 }}
-              >
-                Link selected
-              </button>
-              <button onClick={stopSelecting} style={s.btnSec}>Cancel</button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {blocks.map(block => (block.groupId ? renderGroup(block) : renderCard(block.members[0])))}
 
