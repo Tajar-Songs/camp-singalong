@@ -87,11 +87,29 @@ export default function Ideas() {
   const [loading, setLoading] = useState(true);
 
   
-  const [requests, setRequests] = useState([]);
-  const [votes, setVotes] = useState({});
+  // Read through the feedback views, which never say who posted: only
+  // whether it's mine, and the poster's name when they share it.
+  const [requests, setRequests] = useState([]); // live items
+  const [trashed, setTrashed] = useState([]); // in the trash: mine, or everyone's for admins
+  const [showTrash, setShowTrash] = useState(false);
   const [comments, setComments] = useState({});
-  const [userProfiles, setUserProfiles] = useState({});
-  
+
+  // Sharing: my current choice for showing my name on feedback
+  // ('share' | 'dont_share' | 'ask'), and per-form choices for this post.
+  // A form's choice is undefined/null to follow my setting, or true/false.
+  const [mySharing, setMySharing] = useState('dont_share');
+  const [nameChoices, setNameChoices] = useState({});
+
+  // Editing and deleting my own feedback and comments.
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [confirmTrashId, setConfirmTrashId] = useState(null); // item or comment id waiting for "Yes, delete"
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editCommentText, setEditCommentText] = useState('');
+  const [commentAsAdmin, setCommentAsAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+
   const [sortBy, setSortBy] = useState('votes');
   // Status: multi-select now (someone may want "everything not done" =
   // Open + Planned together), defaulting to just Open to match the
@@ -161,6 +179,18 @@ export default function Ideas() {
   useEffect(() => { checkAuth(); }, []);
   useEffect(() => { loadData(); }, []);
   useEffect(() => {
+    if (!user) { setMySharing('dont_share'); return; }
+    const loadSharing = async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/my_sharing_choice`, {
+          method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ p_kind: 'feedback_name' })
+        });
+        if (res.ok) setMySharing((await res.json()) || 'dont_share');
+      } catch (error) { console.error('Error loading sharing setting:', error); }
+    };
+    loadSharing();
+  }, [user]);
+  useEffect(() => {
     if (!user) { setMyPollVote({}); return; }
     const loadMyVotes = async () => {
       try {
@@ -199,33 +229,32 @@ export default function Ideas() {
     } catch (error) { console.error('Error loading profile:', error); }
   };
 
+  // Items, with vote totals and whether I voted (votes themselves are private).
+  const loadItems = async () => {
+    const reqRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_items?select=*&order=created_at.desc`, { headers: getAuthHeaders(false), cache: 'no-store' });
+    const reqData = await reqRes.json();
+    const rows = Array.isArray(reqData) ? reqData : [];
+    setRequests(rows.filter(r => !r.deleted_at));
+    setTrashed(rows.filter(r => r.deleted_at));
+  };
+
+  const loadComments = async () => {
+    const commentsRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_comments?select=*&order=created_at.asc`, { headers: getAuthHeaders(false), cache: 'no-store' });
+    const commentsData = await commentsRes.json();
+    const commentsMap = {};
+    if (Array.isArray(commentsData)) {
+      commentsData.forEach(c => {
+        if (!commentsMap[c.request_id]) commentsMap[c.request_id] = [];
+        commentsMap[c.request_id].push(c);
+      });
+    }
+    setComments(commentsMap);
+  };
+
   const loadData = async () => {
     try {
-      const reqRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?select=*&order=created_at.desc`, { headers: getAuthHeaders(false) });
-      const reqData = await reqRes.json();
-      setRequests(Array.isArray(reqData) ? reqData : []);
-
-      const votesRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_votes?select=*`, { headers: getAuthHeaders(false) });
-      const votesData = await votesRes.json();
-      const votesMap = {};
-      if (Array.isArray(votesData)) {
-        votesData.forEach(v => {
-          if (!votesMap[v.request_id]) votesMap[v.request_id] = [];
-          votesMap[v.request_id].push(v.user_id);
-        });
-      }
-      setVotes(votesMap);
-
-      const commentsRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_comments?select=*&order=created_at.asc`, { headers: getAuthHeaders(false) });
-      const commentsData = await commentsRes.json();
-      const commentsMap = {};
-      if (Array.isArray(commentsData)) {
-        commentsData.forEach(c => {
-          if (!commentsMap[c.request_id]) commentsMap[c.request_id] = [];
-          commentsMap[c.request_id].push(c);
-        });
-      }
-      setComments(commentsMap);
+      await loadItems();
+      await loadComments();
 
       const optRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_request_options?select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
       const optData = await optRes.json();
@@ -248,14 +277,6 @@ export default function Ideas() {
         pvData.forEach(row => { countMap[row.option_id] = Number(row.vote_count); });
       }
       setPollVotes(countMap);
-
-      const profilesRes = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=id,display_name,email`, { headers: getAuthHeaders(false) });
-      const profilesData = await profilesRes.json();
-      const profilesMap = {};
-      if (Array.isArray(profilesData)) {
-        profilesData.forEach(p => { profilesMap[p.id] = p; });
-      }
-      setUserProfiles(profilesMap);
 
       // Load topic option definitions (admin-editable via /option-lists, list_key='feedback_topics')
       const topicOptRes = await fetch(`${SUPABASE_URL}/rest/v1/option_lists?list_key=eq.feedback_topics&select=*&order=display_order.asc`, { headers: getAuthHeaders(false) });
@@ -291,12 +312,12 @@ export default function Ideas() {
       if (Array.isArray(groupsData)) groupsData.forEach(g => { groupsMap[g.id] = g; });
       setGroups(groupsMap);
 
-      const sugRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_link_suggestions?select=*&order=created_at.asc`, { headers, cache: 'no-store' });
+      const sugRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_suggestions?select=*&order=created_at.asc`, { headers, cache: 'no-store' });
       const sugData = await sugRes.json();
       setSuggestions(Array.isArray(sugData) ? sugData : []);
 
       if (refreshMembership) {
-        const memRes = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?select=id,group_id`, { headers, cache: 'no-store' });
+        const memRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_items?select=id,group_id`, { headers, cache: 'no-store' });
         const memData = await memRes.json();
         if (Array.isArray(memData)) {
           const byId = {};
@@ -328,10 +349,15 @@ export default function Ideas() {
   // Shared messages, drawn just below the nav bar by _app.js (lib/notify.js).
   const showMessage = (msg) => notifyLegacy(msg);
 
-  const getVoteCount = (requestId) => votes[requestId]?.length || 0;
-  const hasVoted = (requestId) => user && votes[requestId]?.includes(user.id);
+  const getVoteCount = (requestId) => requests.find(r => r.id === requestId)?.vote_count || 0;
+  const hasVoted = (requestId) => !!user && !!requests.find(r => r.id === requestId)?.i_voted;
+  // Comments still in the trash show only to their author (and admins), in place.
   const getComments = (requestId) => comments[requestId] || [];
-  const getUserName = (userId) => userProfiles[userId]?.display_name || userProfiles[userId]?.email?.split('@')[0] || 'Anonymous';
+  const liveComments = (requestId) => getComments(requestId).filter(c => !c.deleted_at);
+  // The name on a post, comment or suggestion: shown only when the person shares it.
+  const authorLabel = (row) => row?.author_name || 'Anonymous';
+  const myName = (userProfile?.display_name || '').trim();
+  const daysLeft = (deletedAt) => Math.max(0, 30 - Math.floor((Date.now() - new Date(deletedAt).getTime()) / 86400000));
   const getTopicsForRequest = (requestId) => requestTopics[requestId] || [];
   const getTopicLabel = (valueKey) => topicOptions.find(t => t.value_key === valueKey)?.label || valueKey;
   const isAdmin = hasPermission(myPermissions, 'feedback.manage');
@@ -368,7 +394,7 @@ export default function Ideas() {
 
   // One path for every way of relating items: admins link them; everyone
   // else signed in sends one suggestion naming all of them.
-  const relateItems = async (ids, name, note) => {
+  const relateItems = async (ids, name, note, nameKey) => {
     const unique = [...new Set(ids)];
     if (unique.length < 2) throw new Error('Pick at least two items.');
     if (isAdmin) {
@@ -388,7 +414,7 @@ export default function Ideas() {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback_link_suggestions`, {
       method: 'POST',
       headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ request_ids: unique, note: (note || '').trim() || null, created_by: user.id })
+      body: JSON.stringify({ request_ids: unique, note: (note || '').trim() || null, created_by: user.id, show_name: nameToSave(nameKey) })
     });
     if (!res.ok) {
       let detail = `the database returned ${res.status}`;
@@ -402,8 +428,9 @@ export default function Ideas() {
     if (!user || linkTargets.length === 0 || linkBusy) return;
     setLinkBusy(true);
     try {
-      const msg = await relateItems([requestId, ...linkTargets], linkName, linkNote);
+      const msg = await relateItems([requestId, ...linkTargets], linkName, linkNote, 'link');
       setLinkFormFor(null);
+      clearNameChoice('link');
       await loadLinks(true);
       showMessage(msg);
     } catch (error) {
@@ -467,8 +494,9 @@ export default function Ideas() {
     if (selectedIds.length < 2 || linkBusy) return;
     setLinkBusy(true);
     try {
-      const msg = await relateItems(selectedIds, bulkName, bulkNote);
+      const msg = await relateItems(selectedIds, bulkName, bulkNote, 'bulk');
       stopSelecting();
+      clearNameChoice('bulk');
       await loadLinks(true);
       showMessage(msg);
     } catch (error) {
@@ -502,27 +530,27 @@ export default function Ideas() {
   const toggleVote = async (requestId) => {
     if (!user) return;
     const alreadyVoted = hasVoted(requestId);
+    // Votes are private: only the total, and whether I voted, are shown.
+    // One vote each (the database allows only one per person per item).
     try {
-      if (alreadyVoted) {
-        await fetch(`${SUPABASE_URL}/rest/v1/feature_votes?request_id=eq.${requestId}&user_id=eq.${user.id}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders()
-        });
-        setVotes(prev => ({
-          ...prev,
-          [requestId]: prev[requestId].filter(id => id !== user.id)
-        }));
-      } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/feature_votes`, {
-          method: 'POST',
-          headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ request_id: requestId, user_id: user.id })
-        });
-        setVotes(prev => ({
-          ...prev,
-          [requestId]: [...(prev[requestId] || []), user.id]
-        }));
+      const r = alreadyVoted
+        ? await fetch(`${SUPABASE_URL}/rest/v1/feature_votes?request_id=eq.${requestId}&user_id=eq.${user.id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+          })
+        : await fetch(`${SUPABASE_URL}/rest/v1/feature_votes`, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ request_id: requestId, user_id: user.id })
+          });
+      if (!r.ok) {
+        // Most likely the page was out of date (say, voted in another tab): catch up.
+        await loadItems();
+        throw new Error(`the database returned ${r.status}`);
       }
+      setRequests(prev => prev.map(x => (x.id === requestId
+        ? { ...x, i_voted: !alreadyVoted, vote_count: Math.max(0, (x.vote_count || 0) + (alreadyVoted ? -1 : 1)) }
+        : x)));
     } catch (error) {
       console.error('Error toggling vote:', error);
       showMessage('❌ Error voting');
@@ -585,8 +613,22 @@ export default function Ideas() {
     }
   };
 
+  // --- Showing my name ---
+  // A form's choice: undefined/null follows my sharing setting (and keeps
+  // following it if I change the setting later); true/false is fixed for
+  // that post. With "Always ask me", every post needs a choice.
+  const nameChoiceFor = (key) => (nameChoices[key] === undefined ? null : nameChoices[key]);
+  const setNameChoice = (key, value) => setNameChoices(prev => ({ ...prev, [key]: value }));
+  const clearNameChoice = (key) => setNameChoices(prev => { const next = { ...prev }; delete next[key]; return next; });
+  const nameToSave = (key) => nameChoiceFor(key);
+  const nameReady = (key) => mySharing !== 'ask' || nameChoiceFor(key) !== null;
+  const showsName = (key) => {
+    const v = nameChoiceFor(key);
+    return v === null ? mySharing === 'share' : v;
+  };
+
   const submitIdea = async () => {
-    if (!user || !newTitle.trim() || submitting) return;
+    if (!user || !newTitle.trim() || submitting || !nameReady('new')) return;
     setSubmitting(true);
     try { await submitIdeaNow(); } finally { setSubmitting(false); }
   };
@@ -597,14 +639,16 @@ export default function Ideas() {
       return;
     }
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests`, {
+      // Only the new id comes back; the item itself is read through the view.
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_requests?select=id`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
         body: JSON.stringify({
           title: newTitle.trim(),
           description: newDescription.trim() || null,
           request_type: newType,
-          created_by: user.id
+          created_by: user.id,
+          show_name: nameToSave('new')
         })
       });
       if (!res.ok) {
@@ -616,7 +660,10 @@ export default function Ideas() {
       const data = await res.json();
       if (data[0]) {
         const newRequestId = data[0].id;
-        setRequests(prev => [data[0], ...prev]);
+        const itemRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback_items?id=eq.${newRequestId}&select=*`, { headers: getAuthHeaders(false), cache: 'no-store' });
+        const itemData = await itemRes.json();
+        if (Array.isArray(itemData) && itemData[0]) setRequests(prev => [itemData[0], ...prev]);
+        else await loadItems();
 
         const filledOptions = newOptions.map(o => o.trim()).filter(Boolean);
         if (newType === 'needs_input' && filledOptions.length > 0) {
@@ -663,6 +710,7 @@ export default function Ideas() {
         setNewType('feature');
         setNewOptions(['', '']);
         setNewTopics([]);
+        clearNameChoice('new');
         setShowNewForm(false);
         showMessage(topicsSavedOk ? '✅ Idea submitted!' : '✅ Idea submitted, but topics could not be saved');
       }
@@ -672,31 +720,97 @@ export default function Ideas() {
     }
   };
 
+  // Admins can comment as "Admin" (no name shown either way) or as themselves.
   const addComment = async (requestId) => {
-    if (!user || !newComment.trim()) return;
+    const asAdmin = isAdmin && commentAsAdmin;
+    if (!user || !newComment.trim() || busy || (!asAdmin && !nameReady('comment'))) return;
+    setBusy(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/feature_comments`, {
         method: 'POST',
-        headers: { ...getAuthHeaders(), 'Prefer': 'return=representation' },
+        headers: { ...getAuthHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({
           request_id: requestId,
           user_id: user.id,
-          comment: newComment.trim()
+          comment: newComment.trim(),
+          as_admin: asAdmin,
+          show_name: asAdmin ? null : nameToSave('comment')
         })
       });
-      const data = await res.json();
-      if (data[0]) {
-        setComments(prev => ({
-          ...prev,
-          [requestId]: [...(prev[requestId] || []), data[0]]
-        }));
-        setNewComment('');
+      if (!res.ok) {
+        let detail = `the database returned ${res.status}`;
+        try { const err = await res.json(); detail = err.message || detail; } catch (e) { /* not JSON */ }
+        throw new Error(detail);
       }
+      await loadComments();
+      setNewComment('');
+      setCommentAsAdmin(false);
+      clearNameChoice('comment');
     } catch (error) {
       console.error('Error adding comment:', error);
-      showMessage('❌ Error commenting');
+      showMessage(`❌ Couldn't post that comment: ${error.message}`);
+    }
+    setBusy(false);
+  };
+
+  // --- My own feedback and comments: edit, delete (to the trash), restore ---
+  const runMine = async (fn, body, successText, after) => {
+    if (busy) return false;
+    setBusy(true);
+    try {
+      await callRpc(fn, body);
+      if (after) after();
+      await loadItems();
+      await loadComments();
+      showMessage(successText);
+      setBusy(false);
+      return true;
+    } catch (error) {
+      console.error(`Error (${fn}):`, error);
+      showMessage(`❌ Couldn't save that: ${error.message}`);
+      setBusy(false);
+      return false;
     }
   };
+
+  const startEdit = (req) => {
+    setEditingId(req.id);
+    setEditTitle(req.title || '');
+    setEditDesc(req.description || '');
+    setNameChoice('edit', req.my_show_name === undefined ? null : req.my_show_name);
+    setConfirmTrashId(null);
+  };
+
+  const saveEdit = (req) => {
+    if (!editTitle.trim() || !nameReady('edit')) return;
+    runMine('edit_my_feedback', {
+      p_request_id: req.id, p_title: editTitle, p_description: editDesc, p_show_name: nameToSave('edit')
+    }, '✅ Saved', () => { setEditingId(null); clearNameChoice('edit'); });
+  };
+
+  const trashItem = (req) => runMine('trash_my_feedback', { p_request_id: req.id },
+    '🗑️ Moved to the trash. You can restore it for 30 days.', () => setConfirmTrashId(null));
+
+  const restoreItem = (req) => runMine('restore_feedback', { p_request_id: req.id }, '✅ Restored');
+
+  const startEditComment = (c) => {
+    setEditingCommentId(c.id);
+    setEditCommentText(c.comment || '');
+    setNameChoice('editComment', c.my_show_name === undefined ? null : c.my_show_name);
+    setConfirmTrashId(null);
+  };
+
+  const saveEditComment = (c) => {
+    if (!editCommentText.trim() || (!c.as_admin && !nameReady('editComment'))) return;
+    runMine('edit_my_comment', {
+      p_comment_id: c.id, p_comment: editCommentText, p_show_name: c.as_admin ? null : nameToSave('editComment')
+    }, '✅ Saved', () => { setEditingCommentId(null); clearNameChoice('editComment'); });
+  };
+
+  const trashComment = (c) => runMine('trash_my_comment', { p_comment_id: c.id },
+    '🗑️ Comment deleted. You can restore it for 30 days.', () => setConfirmTrashId(null));
+
+  const restoreComment = (c) => runMine('restore_comment', { p_comment_id: c.id }, '✅ Comment restored');
 
   const updateStatus = async (requestId, newStatus) => {
     try {
@@ -761,9 +875,9 @@ export default function Ideas() {
     }
     if (mineFilters.length > 0 && user) {
       const isMine = (m) => {
-        if (m === 'posted') return r.created_by === user.id;
-        if (m === 'voted') return hasVoted(r.id);
-        if (m === 'commented') return getComments(r.id).some(c => c.user_id === user.id);
+        if (m === 'posted') return !!r.is_mine;
+        if (m === 'voted') return !!r.i_voted;
+        if (m === 'commented') return liveComments(r.id).some(c => c.is_mine);
         return false;
       };
       const matches = mineMode === 'all' ? mineFilters.every(isMine) : mineFilters.some(isMine);
@@ -903,11 +1017,64 @@ export default function Ideas() {
     </div>
   );
 
+  // Whether my name shows on this post. Follows my sharing setting unless I
+  // pick differently here; with "Always ask me" there's a choice every time.
+  const renderNameChoice = (key) => {
+    const choice = nameChoiceFor(key);
+    const shown = showsName(key);
+    const linkBtn = { background: 'none', border: 'none', color: '#6882B6', cursor: 'pointer', fontSize: '0.75rem', padding: 0, textDecoration: 'underline' };
+    const noName = shown && !myName && (
+      <span style={{ display: 'block', marginTop: '0.2rem' }}>
+        You don't have a display name yet, so this will still show as Anonymous. <Link href="/profile" style={{ color: '#6882B6' }}>Add one on your profile</Link>.
+      </span>
+    );
+    if (mySharing === 'ask') {
+      const opt = (value, label) => (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', color: '#e2e8f0' }}>
+          <input type="radio" name={`name-${key}`} checked={choice === value} onChange={() => setNameChoice(key, value)} style={{ accentColor: '#5371AC' }} />
+          {label}
+        </label>
+      );
+      return (
+        <div style={{ fontSize: '0.75rem', color: '#838C95', margin: '0 0 0.6rem' }}>
+          <div style={{ marginBottom: '0.25rem' }}>
+            Show your name on this? <span style={{ color: '#D45D25' }}>*</span>
+            {' '}<Link href="/profile" style={{ color: '#6882B6' }}>Sharing settings</Link>
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            {opt(true, myName ? `Show my name (${myName})` : 'Show my name')}
+            {opt(false, 'Post anonymously')}
+          </div>
+          {noName}
+        </div>
+      );
+    }
+    const settingShows = mySharing === 'share';
+    return (
+      <div style={{ fontSize: '0.75rem', color: '#838C95', margin: '0 0 0.6rem' }}>
+        <i className={`ti ti-${shown ? 'user' : 'user-question'}`} aria-hidden="true"></i>{' '}
+        {shown ? <>Posting as <strong style={{ color: '#e2e8f0' }}>{myName || 'Anonymous'}</strong></> : <>Posting <strong style={{ color: '#e2e8f0' }}>anonymously</strong></>}
+        {choice !== null && <span> (just this one)</span>}
+        {' · '}
+        <button type="button" onClick={() => setNameChoice(key, !shown === settingShows ? null : !shown)} style={linkBtn}>
+          {shown ? 'Post anonymously instead' : 'Show my name instead'}
+        </button>
+        {' · '}
+        <Link href="/profile" style={{ color: '#6882B6' }}>Sharing settings</Link>
+        {noName}
+      </div>
+    );
+  };
+
+  const smallLinkBtn = { background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem', padding: 0 };
+
   const renderCard = (req) => {
     const voteCount = getVoteCount(req.id);
     const voted = hasVoted(req.id);
     const reqComments = getComments(req.id);
+    const commentCount = liveComments(req.id).length;
     const isExpanded = expandedId === req.id;
+    const isEditing = editingId === req.id;
     const statusColor = statusColors[req.status] || statusColors.open;
     const reqType = typeLabels[req.request_type] || typeLabels.feature;
     const reqTopics = getTopicsForRequest(req.id);
@@ -985,7 +1152,21 @@ export default function Ideas() {
               </div>
             )}
             
-            {req.description && (
+            {isEditing ? (
+              <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#838C95', marginBottom: '0.25rem' }}>
+                  Title <span style={{ color: '#D45D25' }}>*</span> required
+                </div>
+                <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} style={{ ...s.input, marginBottom: '0.5rem' }} />
+                <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="Tell us more... (optional)" style={{ ...s.textarea, minHeight: '80px', marginBottom: '0.5rem' }} />
+                {renderNameChoice('edit')}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={() => saveEdit(req)} disabled={busy || !editTitle.trim() || !nameReady('edit')}
+                    style={{ ...s.btn, opacity: (busy || !editTitle.trim() || !nameReady('edit')) ? 0.5 : 1 }}>Save</button>
+                  <button onClick={() => { setEditingId(null); clearNameChoice('edit'); }} style={s.btnSec}>Cancel</button>
+                </div>
+              </div>
+            ) : req.description && (
               <div style={{ color: '#838C95', fontSize: '0.875rem', marginBottom: '0.5rem' }}><FormattedText text={req.description} /></div>
             )}
             {pollOptions[req.id] && pollOptions[req.id].length > 0 && (() => {
@@ -1062,14 +1243,29 @@ export default function Ideas() {
             )}
 
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', fontSize: '0.75rem', color: '#838C95', flexWrap: 'wrap' }}>
-              <span>by {getUserName(req.created_by)}</span>
-              <span>{new Date(req.created_at).toLocaleDateString()}</span>
-              <button 
+              <span>by {authorLabel(req)}{req.is_mine && ' (you)'}</span>
+              <span>{new Date(req.created_at).toLocaleDateString()}{req.edited_at && ' · edited'}</span>
+              <button
                 onClick={() => setExpandedId(isExpanded ? null : req.id)}
                 style={{ background: 'none', border: 'none', color: '#838C95', cursor: 'pointer', fontSize: '0.75rem' }}
               >
-                💬 {reqComments.length} {isExpanded ? '▼' : '▶'}
+                💬 {commentCount} {isExpanded ? '▼' : '▶'}
               </button>
+
+              {req.is_mine && !isEditing && (
+                confirmTrashId === req.id ? (
+                  <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', color: '#e2e8f0' }}>
+                    Delete this? You can restore it for 30 days.
+                    <button onClick={() => trashItem(req)} disabled={busy} style={{ ...s.btnSec, background: '#C35522', fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>Yes, delete</button>
+                    <button onClick={() => setConfirmTrashId(null)} style={{ ...s.btnSec, fontSize: '0.7rem', padding: '0.2rem 0.5rem' }}>Cancel</button>
+                  </span>
+                ) : (
+                  <>
+                    <button onClick={() => startEdit(req)} style={smallLinkBtn}><i className="ti ti-pencil" aria-hidden="true"></i> Edit</button>
+                    <button onClick={() => setConfirmTrashId(req.id)} style={smallLinkBtn}><i className="ti ti-trash" aria-hidden="true"></i> Delete</button>
+                  </>
+                )
+              )}
 
               {user && (
                 <button
@@ -1142,7 +1338,7 @@ export default function Ideas() {
                     {others.map((id, i) => (
                       <span key={id}>{i > 0 ? (i === others.length - 1 ? ' and ' : ', ') : ''}<strong>{getRequest(id)?.title || 'an item that no longer exists'}</strong></span>
                     ))}
-                    <span style={{ color: '#838C95' }}> · by {getUserName(sg.created_by)}, {new Date(sg.created_at).toLocaleDateString()}</span>
+                    <span style={{ color: '#838C95' }}> · by {authorLabel(sg)}{sg.is_mine && ' (you)'}, {new Date(sg.created_at).toLocaleDateString()}</span>
                   </div>
                   {sg.note && <div style={{ color: '#838C95', marginTop: '0.25rem' }}>"{sg.note}"</div>}
                   {pastDeclines.length > 0 && (
@@ -1211,7 +1407,7 @@ export default function Ideas() {
               const chosen = [req.id, ...linkTargets];
               const samePending = !isAdmin && linkTargets.length > 0 ? samePendingSet(chosen) : null;
               const declines = linkTargets.length > 0 ? declinedAmong(chosen) : [];
-              const blocked = linkTargets.length === 0 || linkBusy || !!samePending;
+              const blocked = linkTargets.length === 0 || linkBusy || !!samePending || (!isAdmin && !nameReady('link'));
               return (
                 <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#0f172a', border: '1px solid #334155', borderRadius: '0.5rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '0.5rem' }}>
@@ -1278,6 +1474,7 @@ export default function Ideas() {
                     onChange={(e) => setLinkNote(e.target.value)}
                     style={{ ...s.textarea, minHeight: '60px', marginBottom: '0.5rem' }}
                   />
+                  {!isAdmin && renderNameChoice('link')}
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button onClick={() => submitLink(req.id)} disabled={blocked} style={{ ...s.btn, opacity: blocked ? 0.5 : 1 }}>
                       {isAdmin ? 'Link' : 'Suggest'}{linkTargets.length > 0 ? ` (${linkTargets.length + 1} items)` : ''}
@@ -1290,31 +1487,91 @@ export default function Ideas() {
 
             {isExpanded && (
               <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
-                {reqComments.length === 0 && (
+                {commentCount === 0 && (
                   <p style={{ color: '#838C95', fontSize: '0.875rem', fontStyle: 'italic' }}>No comments yet</p>
                 )}
-                
-                {reqComments.map(c => (
-                  <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
-                    <span style={{ fontWeight: 'bold', color: '#3B9B73' }}>{getUserName(c.user_id)}</span>
-                    <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}</span>
-                    <p style={{ marginTop: '0.25rem', color: '#e2e8f0' }}>{c.comment}</p>
-                  </div>
-                ))}
 
-                {user ? (
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                    <input
-                      type="text"
-                      placeholder="Add a comment..."
-                      value={expandedId === req.id ? newComment : ''}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && addComment(req.id)}
-                      style={{ ...s.input, marginBottom: 0, flex: 1 }}
-                    />
-                    <button onClick={() => addComment(req.id)} disabled={!newComment.trim()} style={s.btn}>Post</button>
-                  </div>
-                ) : (
+                {reqComments.map(c => {
+                  // In the trash: only its author (and admins) see it, here in place.
+                  if (c.deleted_at) {
+                    return (
+                      <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.8rem', color: '#838C95', fontStyle: 'italic', padding: '0.4rem 0.6rem', border: '1px dashed #334155', borderRadius: '0.375rem' }}>
+                        <i className="ti ti-trash" aria-hidden="true"></i> {c.is_mine ? 'Your comment' : `A comment by ${c.as_admin ? 'Admin' : authorLabel(c)}`} was deleted · {daysLeft(c.deleted_at)} days left to restore
+                        {' · '}
+                        <button onClick={() => restoreComment(c)} disabled={busy} style={{ ...smallLinkBtn, color: '#6882B6', textDecoration: 'underline', fontStyle: 'normal' }}>Restore</button>
+                        <div style={{ marginTop: '0.25rem', opacity: 0.7 }}>"{c.comment}"</div>
+                      </div>
+                    );
+                  }
+                  const editingThis = editingCommentId === c.id;
+                  return (
+                    <div key={c.id} style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
+                      {c.as_admin ? (
+                        <span style={{ fontWeight: 'bold', color: '#3B9B73' }}>
+                          Admin <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', background: '#3B9B7320', color: '#3B9B73', textTransform: 'uppercase', marginLeft: '0.25rem' }}>Team</span>
+                        </span>
+                      ) : (
+                        <span style={{ fontWeight: 'bold', color: '#3B9B73' }}>{authorLabel(c)}</span>
+                      )}
+                      {c.is_mine && <span style={{ color: '#838C95' }}> (you)</span>}
+                      <span style={{ color: '#838C95', marginLeft: '0.5rem' }}>{new Date(c.created_at).toLocaleDateString()}{c.edited_at && ' · edited'}</span>
+                      {c.is_mine && !editingThis && (
+                        confirmTrashId === c.id ? (
+                          <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', display: 'inline-flex', gap: '0.4rem', alignItems: 'center' }}>
+                            Delete this comment?
+                            <button onClick={() => trashComment(c)} disabled={busy} style={{ ...s.btnSec, background: '#C35522', fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>Yes, delete</button>
+                            <button onClick={() => setConfirmTrashId(null)} style={{ ...s.btnSec, fontSize: '0.7rem', padding: '0.15rem 0.45rem' }}>Cancel</button>
+                          </span>
+                        ) : (
+                          <span style={{ marginLeft: '0.75rem', display: 'inline-flex', gap: '0.6rem' }}>
+                            <button onClick={() => startEditComment(c)} style={smallLinkBtn}><i className="ti ti-pencil" aria-hidden="true"></i> Edit</button>
+                            <button onClick={() => setConfirmTrashId(c.id)} style={smallLinkBtn}><i className="ti ti-trash" aria-hidden="true"></i> Delete</button>
+                          </span>
+                        )
+                      )}
+                      {editingThis ? (
+                        <div style={{ marginTop: '0.4rem' }}>
+                          <textarea value={editCommentText} onChange={(e) => setEditCommentText(e.target.value)} style={{ ...s.textarea, minHeight: '60px', marginBottom: '0.5rem' }} />
+                          {!c.as_admin && renderNameChoice('editComment')}
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button onClick={() => saveEditComment(c)} disabled={busy || !editCommentText.trim() || (!c.as_admin && !nameReady('editComment'))}
+                              style={{ ...s.btn, fontSize: '0.8rem', padding: '0.35rem 0.75rem', opacity: (busy || !editCommentText.trim() || (!c.as_admin && !nameReady('editComment'))) ? 0.5 : 1 }}>Save</button>
+                            <button onClick={() => { setEditingCommentId(null); clearNameChoice('editComment'); }} style={{ ...s.btnSec, fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p style={{ marginTop: '0.25rem', color: '#e2e8f0' }}>{c.comment}</p>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {user ? (() => {
+                  const asAdmin = isAdmin && commentAsAdmin;
+                  const blockedComment = !newComment.trim() || busy || (!asAdmin && !nameReady('comment'));
+                  return (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                        <input
+                          type="text"
+                          placeholder="Add a comment..."
+                          value={expandedId === req.id ? newComment : ''}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && !blockedComment && addComment(req.id)}
+                          style={{ ...s.input, marginBottom: 0, flex: 1 }}
+                        />
+                        <button onClick={() => addComment(req.id)} disabled={blockedComment} style={{ ...s.btn, opacity: blockedComment ? 0.5 : 1 }}>Post</button>
+                      </div>
+                      {isAdmin && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#838C95', cursor: 'pointer', marginBottom: '0.35rem' }}>
+                          <input type="checkbox" checked={commentAsAdmin} onChange={(e) => setCommentAsAdmin(e.target.checked)} />
+                          Comment as Admin (shows "Admin" instead of you)
+                        </label>
+                      )}
+                      {!asAdmin && renderNameChoice('comment')}
+                    </div>
+                  );
+                })() : (
                   <p style={{ color: '#838C95', fontSize: '0.875rem', marginTop: '0.75rem' }}>
                     <Link href="/?login=true" style={{ color: '#3B9B73' }}>Log in</Link> to comment
                   </p>
@@ -1497,9 +1754,10 @@ export default function Ideas() {
                   </button>
                 </div>
               )}
+              {renderNameChoice('new')}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button onClick={submitIdea} disabled={!newTitle.trim() || submitting} style={{ ...s.btn, opacity: (newTitle.trim() && !submitting) ? 1 : 0.5 }}>{submitting ? 'Submitting...' : 'Submit'}</button>
-                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); setNewOptions(['', '']); setNewTopics([]); }} style={s.btnSec}>Cancel</button>
+                <button onClick={submitIdea} disabled={!newTitle.trim() || submitting || !nameReady('new')} style={{ ...s.btn, opacity: (newTitle.trim() && !submitting && nameReady('new')) ? 1 : 0.5 }}>{submitting ? 'Submitting...' : 'Submit'}</button>
+                <button onClick={() => { setShowNewForm(false); setNewTitle(''); setNewDescription(''); setNewType('feature'); setNewOptions(['', '']); setNewTopics([]); clearNameChoice('new'); }} style={s.btnSec}>Cancel</button>
               </div>
             </div>
           ) : (
@@ -1644,7 +1902,7 @@ export default function Ideas() {
         {user && selectMode && (() => {
           const samePending = !isAdmin && selectedIds.length >= 2 ? samePendingSet(selectedIds) : null;
           const declines = selectedIds.length >= 2 ? declinedAmong(selectedIds) : [];
-          const blocked = selectedIds.length < 2 || linkBusy || !!samePending;
+          const blocked = selectedIds.length < 2 || linkBusy || !!samePending || (!isAdmin && !nameReady('bulk'));
           return (
             <div style={{ ...s.card, padding: '0.75rem', border: '1px solid #6882B6', position: 'sticky', top: '4.5rem', zIndex: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
@@ -1685,6 +1943,7 @@ export default function Ideas() {
                 onChange={(e) => setBulkNote(e.target.value)}
                 style={{ ...s.textarea, minHeight: '50px', marginBottom: '0.5rem' }}
               />
+              {!isAdmin && renderNameChoice('bulk')}
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button onClick={linkSelected} disabled={blocked} style={{ ...s.btn, opacity: blocked ? 0.5 : 1 }}>
                   {isAdmin ? 'Link selected' : 'Suggest selected'}
@@ -1700,6 +1959,36 @@ export default function Ideas() {
         {filteredRequests.length === 0 && (
           <div style={{ textAlign: 'center', padding: '3rem', color: '#838C95' }}>
             <p>No ideas yet. Be the first to suggest something!</p>
+          </div>
+        )}
+
+        {/* The trash: deleted feedback can be restored for 30 days, then it's
+            gone for good. People see their own; admins see everyone's. */}
+        {user && trashed.length > 0 && (
+          <div style={{ marginTop: '2rem' }}>
+            <button onClick={() => setShowTrash(!showTrash)} style={{ ...s.btnSec, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+              <i className="ti ti-trash" aria-hidden="true"></i>
+              {isAdmin ? 'Deleted feedback' : 'Your deleted feedback'} ({trashed.length})
+              <i className={`ti ti-chevron-${showTrash ? 'up' : 'down'}`} aria-hidden="true"></i>
+            </button>
+            {showTrash && (
+              <div style={{ ...s.card, padding: '0.75rem', marginTop: '0.5rem' }}>
+                <p style={{ color: '#838C95', fontSize: '0.8rem', margin: '0 0 0.75rem' }}>
+                  Deleted feedback stays here for 30 days in case you change your mind, then it's removed for good, with its comments and votes. Only {isAdmin ? 'its poster and admins' : 'you (and admins)'} can see it here.
+                </p>
+                {trashed.map(r => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0', borderTop: '1px solid #334155', fontSize: '0.875rem' }}>
+                    <div>
+                      <div style={{ color: '#e2e8f0' }}>{r.title}</div>
+                      <div style={{ color: '#838C95', fontSize: '0.75rem' }}>
+                        {r.is_mine ? 'Yours' : `by ${authorLabel(r)}`} · deleted {new Date(r.deleted_at).toLocaleDateString()} · {daysLeft(r.deleted_at)} days left
+                      </div>
+                    </div>
+                    <button onClick={() => restoreItem(r)} disabled={busy} style={{ ...s.btnSec, fontSize: '0.8rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap' }}>Restore</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
